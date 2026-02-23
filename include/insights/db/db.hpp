@@ -17,7 +17,8 @@ namespace insights::db {
 struct Database {
   pqxx::connection Cx;
 
-  explicit Database(const std::string &ConnString) : Cx(ConnString) {}
+  explicit Database(const std::string &ConnString)
+      : Cx(ConnString), ConnString(ConnString) {}
 
   static std::expected<std::shared_ptr<Database>, core::Error>
   connect(const std::string &ConnString) {
@@ -31,6 +32,23 @@ struct Database {
       return std::unexpected(core::Error{Err.what()});
     }
   }
+
+  bool reconnect() {
+    spdlog::warn("Database::reconnect - Attempting to reconnect");
+    try {
+      Cx = pqxx::connection(ConnString);
+      spdlog::info("Database::reconnect - Reconnected successfully");
+      return true;
+    } catch (const std::exception &Err) {
+      spdlog::error("Database::reconnect - Failed: {}", Err.what());
+      return false;
+    }
+  }
+
+private:
+  std::string ConnString;
+
+public:
 
   template <core::DbEntity T>
   std::expected<T, core::Error> create(const T &Entity) {

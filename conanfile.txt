@@ -1,15 +1,8 @@
 [requires]
 asio/1.36.0
-openssl/3.6.0
 # glaze/7.0.0  # Using FetchContent for dev build instead
-libpq/17.7
 libpqxx/7.10.5
 spdlog/1.17.0
-
-[options]
-libpq/*:with_ssl=True
-libpq/*:shared=True
-openssl/*:shared=True
 
 [generators]
 CMakeDeps

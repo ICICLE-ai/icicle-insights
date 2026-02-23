@@ -5,12 +5,13 @@
     <img src="assets/logo-light.svg" alt="ICICLE Insights Logo" width="700"/>
   </picture>
 
-  <p><strong>A high-performance C++23 HTTP server for collecting and storing metrics about ICICLE project components</strong></p>
+  <p><strong>A C++23 HTTP server for collecting and storing metrics about ICICLE project components</strong></p>
 
   <p>
-    <a href="#features">Features</a> •
+    <a href="#overview">Overview</a> •
     <a href="#quick-start">Quick Start</a> •
-    <a href="#api-endpoints">API</a> •
+    <a href="#api">API</a> •
+    <a href="#deployment">Deployment</a> •
     <a href="#documentation">Documentation</a>
   </p>
 </div>
@@ -19,50 +20,27 @@
 
 ## Overview
 
-ICICLE Insights tracks repositories, accounts, and platform-level statistics across various platforms including Git hosting services (GitHub, GitLab) and container registries (DockerHub, Quay.io).
+ICICLE Insights collects and stores metrics for the [ICICLE](https://icicle.osu.edu/) research project — tracking repositories and accounts across Git hosting platforms (GitHub) and container registries.
 
-The system monitors metrics across the ICICLE research project ecosystem:
+Metrics tracked include: **stars, forks, clones, views, watchers, followers**.
 
-- **Git Platforms**: stars, forks, clones, views, watchers, followers
-- **Container Registries**: pulls, stars
-
-The project tracks ICICLE components across different research thrusts:
-- AI4CI (AI for Cyberinfrastructure)
-- FoundationAI
-- CI4AI (Cyberinfrastructure for AI)
-- Software
-- Use-inspired domains (Digital Agriculture, Smart Foodsheds, Animal Ecology)
-
-## Features
-
-- **Modern C++23** implementation with `std::expected` for error handling
-- **Async I/O** using ASIO for high performance
-- **Background task scheduler** for periodic metric collection from Git platforms
-- **Type-safe database operations** with PostgreSQL via libpqxx
-- **RESTful API** with JSON serialization using glaze
-- **Generic CRUD operations** using templates and traits
-- **Non-blocking architecture** with thread pool for background tasks
-- **Docker support** for easy deployment
+The server exposes a REST API for querying stored data and runs a background sync task every two weeks to pull fresh statistics from platform APIs.
 
 ## Prerequisites
 
 - C++23 compiler (GCC 13+, Clang 17+, or Apple Clang 15+)
-- [Conan 2.x](https://conan.io/) - Package manager
+- [Conan 2.x](https://conan.io/)
 - [CMake](https://cmake.org/) 3.25+
-- [Ninja](https://ninja-build.org/) - Build system
-- [just](https://just.systems/) - Command runner
-- PostgreSQL - Database
+- [Ninja](https://ninja-build.org/)
+- [just](https://just.systems/)
+- PostgreSQL
 
 ## Quick Start
-
-### 1. Clone the repository
 
 ```bash
 git clone https://github.com/guzman109/icicle-insights.git
 cd icicle-insights
 ```
-
-### 2. Set up environment variables
 
 Create a `.env` file:
 
@@ -70,141 +48,144 @@ Create a `.env` file:
 # Required
 DATABASE_URL=postgresql://user:password@localhost:5432/icicle_insights
 GITHUB_TOKEN=your_github_token
-TAPIS_TOKEN=your_tapis_token
 
 # Optional
-HOST=127.0.0.1         # Server host (default: 127.0.0.1)
-PORT=3000              # Server port (default: 3000)
-LOG_LEVEL=info         # Log level: trace, debug, info, warn, error (default: info)
+HOST=127.0.0.1    # default: 127.0.0.1
+PORT=3000         # default: 3000
+LOG_LEVEL=info    # trace | debug | info | warn | error
+SSL_CERT_FILE=    # path to CA bundle (macOS: /opt/homebrew/etc/ca-certificates/cert.pem)
 ```
 
-### 3. Build and run
+Build and run:
 
 ```bash
-# Install dependencies, configure, build, and run
-just full-build
-just run
-
-# Or individually:
-just deps    # Install dependencies with Conan
-just setup   # Configure CMake
-just build   # Build the project
-just run     # Run the server
+just full-build   # install deps, configure, build
+just run          # start the server on http://localhost:3000
 ```
 
-The server will start on `http://localhost:3000`.
-
-The background task scheduler will automatically run every 2 weeks to update Git platform metrics. See [docs/async-task-patterns.md](docs/async-task-patterns.md) for details on the async architecture.
-
-## API Endpoints
+## API
 
 ### Core
 
-- `GET /health` - Health check endpoint (verifies database connectivity)
-- `GET /routes` - Lists all available API endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Database connectivity check |
+| `GET` | `/routes` | List all registered routes |
 
-### Platforms
+### GitHub Accounts
 
-- `GET /api/git/platforms` - Get all platforms
-- `POST /api/git/platforms` - Create a platform
-- `GET /api/git/platforms/:id` - Get platform by ID
-- `PATCH /api/git/platforms/:id` - Update platform
-- `DELETE /api/git/platforms/:id` - Delete platform
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/github/accounts` | List all accounts |
+| `POST` | `/api/github/accounts` | Create an account |
+| `GET` | `/api/github/accounts/:id` | Get account by ID |
+| `DELETE` | `/api/github/accounts/:id` | Delete account |
 
-### Accounts
+### GitHub Repositories
 
-- `GET /api/git/accounts` - Get all accounts
-- `POST /api/git/accounts` - Create an account
-- `GET /api/git/accounts/:id` - Get account by ID
-- `PATCH /api/git/accounts/:id` - Update account
-- `DELETE /api/git/accounts/:id` - Delete account
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/github/repos` | List all repositories |
+| `POST` | `/api/github/repos` | Create a repository |
+| `GET` | `/api/github/repos/:id` | Get repository by ID |
+| `PATCH` | `/api/github/repos/:id` | Update repository |
+| `DELETE` | `/api/github/repos/:id` | Delete repository |
 
-### Repositories
+## Deployment
 
-- `GET /api/git/repos` - Get all repositories
-- `POST /api/git/repos` - Create a repository
-- `GET /api/git/repos/:id` - Get repository by ID
-- `PATCH /api/git/repos/:id` - Update repository
-- `DELETE /api/git/repos/:id` - Delete repository
+The CI/CD pipeline (GitHub Actions) builds the binary on `ubuntu-24.04`, packages it into a Docker image, and pushes to GHCR.
+
+```bash
+# Pull and run the latest image
+docker pull ghcr.io/icicle-ai/insights:latest
+docker run -p 3000:3000 --env-file .env ghcr.io/icicle-ai/insights:latest
+```
+
+To publish a release, push a version tag:
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+This triggers the full pipeline: build → Docker image → GitHub Release with binary tarball.
+
+### Local Docker build
+
+```bash
+just docker-build   # build image locally
+just docker-run     # run with .env
+```
 
 ## Development
+
+### Common Commands
+
+```bash
+just deps          # Install Conan dependencies
+just setup         # Configure CMake
+just build         # Compile
+just run           # Run the server
+just full-build    # deps + setup + build
+just clean-build   # wipe build dir and rebuild
+
+just act-linux     # Test the linux CI job locally with act
+just act-build     # Test the docker CI job locally with act
+```
 
 ### Project Structure
 
 ```
 .
-├── include/          # Header files
-│   ├── core/         # Foundation utilities
-│   ├── db/           # Database layer
-│   ├── git/          # Git platform models, routing, and tasks
-│   │   ├── models.hpp      # Data models
-│   │   ├── router.hpp      # HTTP route handlers
-│   │   ├── tasks.hpp       # Background task pipeline
-│   │   └── scheduler.hpp   # Periodic task scheduler
-│   ├── containers/   # Container registry models
-│   └── server/       # HTTP server
-├── src/              # Implementation files
-│   ├── git/          # Git route handlers and task implementations
-│   ├── server/       # Server implementation
-│   └── insights.cpp  # Entry point
-├── docs/             # Documentation
-├── tests/            # Test files (HTTP client tests)
-└── data/             # Component data and fixtures
-```
-
-### Common Commands
-
-```bash
-just build           # Build the project
-just run             # Run the server
-just clean-build     # Clean and rebuild from scratch
-just test            # Run tests (if configured)
+├── include/insights/
+│   ├── core/        # Config, error handling, logging, scheduler, HTTP status
+│   ├── db/          # Database layer (Database struct, DbTraits, DbEntity concept)
+│   ├── github/      # GitHub models, routes, and sync tasks
+│   └── server/      # HTTP server setup and middleware
+├── src/
+│   ├── core/        # Health check and route listing endpoints
+│   ├── github/      # Route handlers and sync task implementation
+│   └── insights.cpp # Entry point
+├── docs/            # Developer documentation
+├── .github/
+│   └── workflows/
+│       └── build.yaml  # CI/CD: build → Docker → release
+├── Dockerfile       # Runtime image (ubuntu:24.04)
+├── conanfile.txt    # Conan dependencies
+├── CMakeLists.txt   # Build configuration
+└── justfile         # Build command runner
 ```
 
 ### Code Style
 
-The project follows LLVM naming conventions:
-- **Types**: `PascalCase` (e.g., `Platform`, `HttpStatus`)
-- **Variables**: `PascalCase` (e.g., `Database`, `Config`)
-- **Functions**: `lowerCamelCase` (e.g., `registerRoutes()`, `initServer()`)
-- **Enumerators**: `PascalCase` (e.g., `Ok`, `BadRequest`)
+LLVM naming conventions throughout:
 
-Code formatting is enforced via `.clang-format` and static analysis via `.clang-tidy`.
-
-## Documentation
-
-- [Architecture Guide](docs/architecture.md) - Detailed architecture and design decisions
-- [Async Task Patterns](docs/async-task-patterns.md) - Background task scheduling and async patterns
-- [CLAUDE.md](CLAUDE.md) - Project instructions for AI assistants and build system details
+| Construct | Convention | Example |
+|-----------|-----------|---------|
+| Types | `PascalCase` | `Platform`, `HttpStatus` |
+| Variables | `PascalCase` | `Database`, `Config` |
+| Functions | `lowerCamelCase` | `registerRoutes()`, `syncStats()` |
+| Enumerators | `PascalCase` | `Ok`, `BadRequest` |
+| Members | `PascalCase` | `.Id`, `.Name`, `.AccountId` |
 
 ## Dependencies
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| asio | 1.36.0 | Async I/O and networking |
-| openssl | 3.6.0 | TLS/SSL support |
-| glaze | 7.0.0 | JSON serialization and HTTP routing |
-| libpq | 17.7 | PostgreSQL C client |
+| asio | 1.36.0 | Async I/O, timers, thread pool |
+| openssl | — | TLS for outbound HTTP requests |
+| glaze | main | HTTP server, router, JSON |
 | libpqxx | 7.10.5 | PostgreSQL C++ client |
-| spdlog | 1.17.0 | Logging |
+| spdlog | 1.17.0 | Structured logging |
 
-## Docker
+## Documentation
 
-Build and run with Docker:
-
-```bash
-docker build -t icicle-insights .
-docker run -p 3000:3000 --env-file .env icicle-insights
-```
+- [Architecture](docs/architecture.md) — module structure, core patterns, data model, design decisions
+- [Developer Guide](docs/README.md) — how to add routes, tasks, loggers; debugging tips
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
-
-## Contributing
-
-[Add contribution guidelines here]
+GNU General Public License v3.0 — see [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-This project is part of the [ICICLE (Intelligent Cyberinfrastructure with Computational Learning in the Environment)](https://icicle.osu.edu/) initiative.
+Part of the [ICICLE (Intelligent Cyberinfrastructure with Computational Learning in the Environment)](https://icicle.osu.edu/) initiative.

@@ -3,6 +3,7 @@
 
 CONAN_DEPS_DIR := "build/conan"
 BUILD_DIR := "build"
+OPENSSL_ROOT := if os() == "macos" { `brew --prefix openssl@3` } else { "/usr" }
 
 set dotenv-load := true
 set export := true
@@ -42,3 +43,21 @@ docker-build:
 
 docker-run:
   docker run -itd -p 3000:3000 --env-file=.env --name insights ghcr.io/icicle-ai/insights:latest
+
+act-build:
+  act -j docker \
+        --container-architecture linux/amd64 \
+        -P ubuntu-24.04=ghcr.io/catthehacker/ubuntu:act-24.04 \
+        --secret GITHUB_TOKEN="$(gh auth token)" \
+        --env SSL_CERT_FILE= \
+        --env CURL_CA_BUNDLE= \
+        --env REQUESTS_CA_BUNDLE=
+
+act-linux:
+  act -j linux \
+        --container-architecture linux/amd64 \
+        -P ubuntu-24.04=ghcr.io/catthehacker/ubuntu:act-24.04 \
+        --secret GITHUB_TOKEN="$(gh auth token)" \
+        --env SSL_CERT_FILE= \
+        --env CURL_CA_BUNDLE= \
+        --env REQUESTS_CA_BUNDLE=

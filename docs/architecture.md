@@ -123,8 +123,9 @@ Current routes:
 | POST   | `/api/github/accounts` | Create a GitHub account |
 | GET    | `/api/github/accounts/:id` | Get a GitHub account by ID |
 | DELETE | `/api/github/accounts/:id` | Delete a GitHub account |
+| GET    | `/api/github/repos` | List all GitHub repositories |
+| POST   | `/api/github/repos` | Create a GitHub repository |
 | GET    | `/api/github/repos/:id` | Get a GitHub repository by ID |
-| POST   | `/api/github/repos/:id` | Create a GitHub repository |
 | PATCH  | `/api/github/repos/:id` | Update a GitHub repository |
 | DELETE | `/api/github/repos/:id` | Delete a GitHub repository |
 

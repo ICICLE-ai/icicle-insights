@@ -98,7 +98,7 @@ sequenceDiagram
 ### Implementation
 
 ```cpp
-// include/git/scheduler.hpp
+// include/insights/github/scheduler.hpp
 #pragma once
 #include "core/result.hpp"
 #include "db/db.hpp"
@@ -135,12 +135,12 @@ private:
 ```
 
 ```cpp
-// src/git/scheduler.cpp
-#include "git/scheduler.hpp"
-#include "git/tasks.hpp"
+// src/github/scheduler.cpp
+#include "insights/github/scheduler.hpp"
+#include "insights/github/tasks.hpp"
 #include <spdlog/spdlog.h>
 
-namespace insights::git {
+namespace insights::github {
 
 TaskScheduler::TaskScheduler(asio::io_context &Io,
                              std::shared_ptr<db::Database> Db,
@@ -244,7 +244,7 @@ void TaskScheduler::runTasksAsync() {
 **Concept:** Break `runAll()` into stages that post back to the event loop between steps.
 
 ```cpp
-// src/git/scheduler.cpp (alternative implementation)
+// src/github/scheduler.cpp (alternative implementation)
 
 void TaskScheduler::runTasksAsync() {
   spdlog::info("Starting async task pipeline");
@@ -424,12 +424,12 @@ graph TB
 ### Setup
 
 ```cpp
-// include/git/scheduler.hpp
+// include/insights/github/scheduler.hpp
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/awaitable.hpp>
 
-namespace insights::git {
+namespace insights::github {
 
 class TaskScheduler {
   // ... existing members ...
@@ -444,10 +444,10 @@ private:
 ```
 
 ```cpp
-// src/git/scheduler.cpp
+// src/github/scheduler.cpp
 #include <asio/use_awaitable.hpp>
 
-namespace insights::git {
+namespace insights::github {
 
 void TaskScheduler::runTasksAsync() {
   // Spawn coroutine on the event loop

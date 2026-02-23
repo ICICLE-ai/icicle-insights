@@ -8,6 +8,8 @@ Reference documentation for contributing to ICICLE Insights.
 |-------|-------------|
 | [architecture.md](architecture.md) | Module structure, core patterns, data model, and design decisions |
 | [background-tasks.md](background-tasks.md) | How to schedule recurring background tasks using `scheduleRecurringTask` |
+| [http-client-guide.md](http-client-guide.md) | Building reusable HTTP clients with SSL, connection pooling, and caching |
+| [async-task-patterns.md](async-task-patterns.md) | Five async patterns from thread pools to C++20 coroutines |
 | [logging.md](logging.md) | Per-component named loggers, log file layout, and log configuration |
 | [tls-guide.md](tls-guide.md) | Configuring SSL/TLS for outbound HTTP client requests |
 | [task-persistence.md](task-persistence.md) | Future: persisting task run history and results to the database |

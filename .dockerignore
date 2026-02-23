@@ -14,10 +14,12 @@ build/
 # IDE and editor files
 .vscode/
 .idea/
+.clangd
 *.swp
 *.swo
 *~
 .DS_Store
+.cache/
 
 # CMake generated files
 CMakePresets.json
@@ -31,6 +33,7 @@ CTestTestfile.cmake
 _deps/
 
 # Claude Code
+.claude/
 .claude_code/
 .clinerules
 CLAUDE.md
@@ -50,6 +53,7 @@ test/
 tests/
 
 # Conan local cache
+.conan2/
 conan.lock
 conaninfo.txt
 conanbuildinfo.*
@@ -61,3 +65,13 @@ conanbuildinfo.*
 Dockerfile*
 docker-compose*.yml
 .dockerignore
+
+data/
+assets/
+logs/
+
+# Dev-only files
+example-env.txt
+test-apis.http
+schema.sql
+LICENSE
