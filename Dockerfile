@@ -1,95 +1,91 @@
-# =============================================================================
-# Stage 1: Builder (Alpine)
-# Installs build dependencies and compiles the binary with Conan.
-# =============================================================================
-FROM alpine:3.23.3 AS builder
+# ================================
+# Build image
+# ================================
+FROM swift:6.3-noble AS build
 
-RUN apk add --no-cache \
-  autoconf \
-  automake \
-  bash \
-  ca-certificates \
-  ccache \
-  clang \
-  cmake \
-  curl \
-  git \
-  libc++-dev \
-  libpq-dev \
-  linux-headers \
-  llvm-libunwind-dev \
-  libtool \
-  lld \
-  make \
-  musl-dev \
-  ninja \
-  openssl-dev \
-  perl \
-  pkgconf \
-  py3-pip \
-  python3 \
-  tar \
-  unzip \
-  zip
+# Install OS updates
+RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
+    && apt-get -q update \
+    && apt-get -q dist-upgrade -y \
+    && apt-get install -y libjemalloc-dev
 
-ENV CC=clang
-ENV CXX=clang++
+# Set up a build area
+WORKDIR /build
 
-# Install Conan and auto-detect the build profile from the environment
-RUN pip3 install conan --break-system-packages \
-  && conan profile detect --force
+# First just resolve dependencies.
+# This creates a cached layer that can be reused
+# as long as your Package.swift/Package.resolved
+# files do not change.
+COPY ./Package.* ./
+RUN swift package resolve \
+        $([ -f ./Package.resolved ] && echo "--force-resolved-versions" || true)
 
-WORKDIR /src
-
-COPY conanfile.py .
-COPY conan-overlays/ conan-overlays/
+# Copy entire repo into container
 COPY . .
 
-# Conan packages live in the cache mount and must be visible to cmake, so both
-# steps share a single RUN. The ccache mount accelerates incremental rebuilds
-# when source files change but dependencies do not.
-RUN --mount=type=cache,target=/root/.conan2/p \
-    --mount=type=cache,target=/root/.cache/ccache \
-  conan create conan-overlays/libpq \
-  && conan install . --build=missing \
-    -s compiler.cppstd=gnu23 \
-    -s compiler.libcxx=libc++ \
-    --output-folder=/conan \
-  && cmake -B build -G Ninja \
-    -DCMAKE_TOOLCHAIN_FILE=/conan/conan_toolchain.cmake \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-  && cmake --build build
+RUN mkdir /staging
 
-# =============================================================================
-# Stage 2: Runtime (Alpine)
-# Copies only the compiled binary — no compilers, no Conan, no source.
-# =============================================================================
-FROM alpine:3.23.3
+# Build the application, with optimizations, with static linking, and using jemalloc
+# N.B.: The static version of jemalloc is incompatible with the static Swift runtime.
+RUN --mount=type=cache,target=/build/.build \
+    swift build -c release \
+        --product Insights \
+        --static-swift-stdlib \
+        -Xlinker -ljemalloc && \
+    # Copy main executable to staging area
+    cp "$(swift build -c release --show-bin-path)/Insights" /staging && \
+    # Copy resources bundled by SPM to staging area
+    find -L "$(swift build -c release --show-bin-path)" -regex '.*\.resources$' -exec cp -Ra {} /staging \;
 
-RUN apk add --no-cache \
-  ca-certificates \
-  curl \
-  libgcc \
-  libc++ \
-  libpq \
-  llvm-libunwind \
-  openssl
 
+# Switch to the staging area
+WORKDIR /staging
+
+# Copy static swift backtracer binary to staging area
+RUN cp "/usr/libexec/swift/linux/swift-backtrace-static" ./
+
+# Copy any resources from the public directory and views directory if the directories exist
+# Ensure that by default, neither the directory nor any of its contents are writable.
+RUN [ -d /build/Public ] && { mv /build/Public ./Public && chmod -R a-w ./Public; } || true
+RUN [ -d /build/Resources ] && { mv /build/Resources ./Resources && chmod -R a-w ./Resources; } || true
+
+# ================================
+# Run image
+# ================================
+FROM ubuntu:noble
+
+# Make sure all system packages are up to date, and install only essential packages.
+RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
+    && apt-get -q update \
+    && apt-get -q dist-upgrade -y \
+    && apt-get -q install -y \
+      libjemalloc2 \
+      ca-certificates \
+      tzdata \
+# If your app or its dependencies import FoundationNetworking, also install `libcurl4`.
+      # libcurl4 \
+# If your app or its dependencies import FoundationXML, also install `libxml2`.
+      # libxml2 \
+    && rm -r /var/lib/apt/lists/*
+
+# Create a vapor user and group with /app as its home directory
+RUN useradd --user-group --create-home --system --skel /dev/null --home-dir /app vapor
+
+# Switch to the new home directory
 WORKDIR /app
-COPY --from=builder /src/build/icicle-insights ./icicle-insights
 
-RUN chmod +x ./icicle-insights \
-  && addgroup -S icicle \
-  && adduser -S -G icicle icicle \
-  && mkdir -p /app/logs \
-  && chown -R icicle:icicle /app
-USER icicle
+# Copy built executable and any staged resources from builder
+COPY --from=build --chown=vapor:vapor /staging /app
 
-EXPOSE 5000
+# Provide configuration needed by the built-in crash reporter and some sensible default behaviors.
+ENV SWIFT_BACKTRACE=enable=yes,sanitize=yes,threads=all,images=all,interactive=no,swift-backtrace=./swift-backtrace-static
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://${HOST:-localhost}:${PORT:-5000}/health || exit 1
+# Ensure all further commands run as the vapor user
+USER vapor:vapor
 
-CMD ["./icicle-insights"]
+# Let Docker bind to port 8080
+EXPOSE 8080
+
+# Start the Vapor service when the image is run, default to listening on 8080 in production environment
+ENTRYPOINT ["./Insights"]
+CMD ["serve", "--env", "production", "--hostname", "0.0.0.0", "--port", "8080"]

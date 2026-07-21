@@ -1,0 +1,158 @@
+/* ICICLE Insights dashboard — hand-written layout system.
+   daisyUI (loaded in the page) supplies the themed form controls (btn/select/badge) and the
+   data-theme semantics; everything else here uses concrete tokens so the page renders fully
+   even before daisyUI's stylesheet lands (no async layout race → no clipped charts).
+   Series colors live in dashboard.js (validated CVD-safe palette). */
+
+:root,
+:root[data-theme="light"] {
+  --plane:      #f5f6f8;
+  --surface:    #ffffff;
+  --surface-2:  #f2f3f5;
+  --border:     #e6e8eb;
+  --text:       #1b2430;
+  --muted:      #6b7480;
+  --accent:     #2a78d6;
+  --accent-2:   #1baf7a;
+  --good:       #16a34a;
+  --bad:        #dc2626;
+  --shadow:     0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(16, 24, 40, 0.06);
+  --shadow-sm:  0 1px 2px rgba(16, 24, 40, 0.06);
+
+  --chart-surface:  #ffffff;
+  --chart-text:     #1b2430;
+  --chart-muted:    #6b7480;
+  --chart-grid:     #eceef1;
+  --chart-baseline: #dfe2e6;
+}
+
+:root[data-theme="dark"] {
+  --plane:      #101418;
+  --surface:    #1a1f26;
+  --surface-2:  #151a20;
+  --border:     #2a323c;
+  --text:       #c7ced8;
+  --muted:      #7c8794;
+  --accent:     #3987e5;
+  --accent-2:   #199e70;
+  --good:       #4ade80;
+  --bad:        #f87171;
+  --shadow:     0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 28px rgba(0, 0, 0, 0.35);
+  --shadow-sm:  0 1px 2px rgba(0, 0, 0, 0.3);
+
+  --chart-surface:  #1a1f26;
+  --chart-text:     #c7ced8;
+  --chart-muted:    #7c8794;
+  --chart-grid:     #262d36;
+  --chart-baseline: #2a323c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 600px at 100% -10%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%),
+    var(--plane);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1240px; margin: 0 auto; padding: 20px 24px 72px; }
+
+/* Topbar */
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0 20px; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-mark {
+  width: 38px; height: 38px; border-radius: 11px; flex: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: var(--shadow-sm);
+}
+.brand h1 { margin: 0; font-size: 20px; font-weight: 680; letter-spacing: -0.01em; }
+.brand .sub { margin: 1px 0 0; font-size: 13px; color: var(--muted); }
+
+/* Sticky filter bar */
+.filterbar {
+  position: sticky; top: 8px; z-index: 20;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 10px 12px; margin-bottom: 22px;
+  border: 1px solid var(--border); border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: saturate(140%) blur(10px);
+  box-shadow: var(--shadow-sm);
+}
+.filterbar .flabel { font-size: 12px; color: var(--muted); margin: 0 2px 0 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+.filterbar .spacer { flex: 1; }
+
+/* Sections */
+.section { margin-bottom: 22px; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; margin: 0 2px 12px; }
+.section-head h2 { margin: 0; font-size: 15px; font-weight: 640; }
+.section-head .hint { font-size: 12px; color: var(--muted); }
+
+/* Panels */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+}
+.panel h3 { margin: 0; font-size: 14px; font-weight: 620; }
+.panel .psub { margin: 2px 0 6px; font-size: 12px; color: var(--muted); }
+
+/* Grids */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
+.mini-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+
+/* KPI tile */
+.kpi { position: relative; overflow: hidden; }
+.kpi .k-label { font-size: 12.5px; color: var(--muted); text-transform: capitalize; }
+.kpi .k-value { font-size: 30px; font-weight: 680; letter-spacing: -0.02em; margin-top: 4px; }
+.kpi .k-delta { font-size: 12.5px; font-weight: 560; margin-top: 2px; }
+.kpi .k-delta.up { color: var(--good); }
+.kpi .k-delta.down { color: var(--bad); }
+.kpi .k-delta.flat { color: var(--muted); }
+.kpi .k-spark { margin: 8px -18px -16px; }
+
+/* Chart mounts */
+.chart { width: 100%; }
+.chart-spark { height: 42px; }
+
+/* Profile (resource/account) */
+.profile { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; }
+.profile .p-title { font-size: 19px; font-weight: 680; letter-spacing: -0.01em; }
+.profile .p-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font-size: 12px; font-weight: 560; padding: 3px 9px; border-radius: 999px;
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+}
+.chip.accent { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+
+/* Releases */
+.releases { display: flex; flex-direction: column; gap: 8px; }
+.release-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.release-row:last-child { border-bottom: 0; }
+.release-row .rv { font-weight: 600; font-size: 13.5px; }
+.release-row .rd { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Empty state */
+.empty { text-align: center; color: var(--muted); padding: 48px 0; font-size: 14px; }
+
+/* Segmented range control (daisyUI join gives the shape; we accent the active one) */
+.seg-active { background: color-mix(in srgb, var(--accent) 16%, transparent) !important; border-color: color-mix(in srgb, var(--accent) 45%, transparent) !important; color: var(--text) !important; font-weight: 620; }
+
+/* ApexCharts tooltip → match surface */
+.apexcharts-tooltip,
+.apexcharts-tooltip-title,
+.apexcharts-xaxistooltip,
+.apexcharts-yaxistooltip {
+  background: var(--chart-surface) !important;
+  color: var(--chart-text) !important;
+  border-color: var(--chart-grid) !important;
+  box-shadow: var(--shadow) !important;
+}
+.apexcharts-legend-text { color: var(--chart-text) !important; }
