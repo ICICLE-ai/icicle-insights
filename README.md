@@ -18,8 +18,8 @@
   </p>
 
   <p>
-    <img alt="Swift 6.3" src="https://img.shields.io/badge/%F0%9F%90%A6%20Swift-6.3-F05138">
-    <img alt="Vapor 4" src="https://img.shields.io/badge/%F0%9F%92%A7%20Vapor-4-0D0D0D">
+    <img alt="Swift 6.3" src="https://img.shields.io/badge/Swift-6.3-F05138?logo=swift&logoColor=white">
+    <img alt="Vapor 4" src="https://img.shields.io/badge/Vapor-4-0D0D0D?logo=vapor&logoColor=white">
     <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-Fluent%20ORM-4169E1?logo=postgresql&logoColor=white">
     <img alt="License GPLv3" src="https://img.shields.io/badge/License-GPLv3-blue">
   </p>
