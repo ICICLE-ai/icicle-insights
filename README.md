@@ -5,7 +5,7 @@
     <img src="assets/logo-light.svg" alt="ICICLE Insights Logo" width="700"/>
   </picture>
 
-  <p><strong>A 🐦 Swift 6 &amp; 💧 Vapor service that tracks the reach of open-source work across GitHub, Hugging Face, npm, and PyPI — and turns it into a live dashboard.</strong></p>
+  <p><strong>A Swift Vapor service that tracks the reach of open-source work across GitHub, Hugging Face, npm, and PyPI — and turns it into a live dashboard.</strong></p>
 
   <p>
     <a href="#overview">Overview</a> •
