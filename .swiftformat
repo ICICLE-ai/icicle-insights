@@ -1,0 +1,5 @@
+--indent 4
+--maxwidth 120
+--swiftversion 6.3
+
+--exclude .build,Public,Resources

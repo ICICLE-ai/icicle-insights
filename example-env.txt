@@ -1,22 +1,15 @@
+# Copy to `.env` — every value below is optional and falls back to the default shown.
+# These match the Compose Postgres service (docker compose up db).
+
 # Database Configuration
-DATABASE_URL=postgresql://user:password@localhost:5432/insights
+DATABASE_HOST=localhost          # default: localhost
+DATABASE_PORT=5432               # default: 5432
+DATABASE_USERNAME=vapor_username # default: vapor_username
+DATABASE_PASSWORD=vapor_password # default: vapor_password
 
-# GitHub API Token
-GITHUB_TOKEN=your_github_token_here
+# Database name. When unset, it is chosen by Vapor environment:
+#   --env development -> dev   |   --env testing -> test   |   --env production -> vapor_database
+DATABASE_NAME=dev
 
-# Tapis API Token (optional)
-TAPIS_TOKEN=your_tapis_token_here
-
-# Server Configuration
-HOST=127.0.0.1
-PORT=3000
-
-# SSL/TLS Configuration (optional)
-# Path to CA certificate bundle for HTTPS client requests
-# If not set, defaults to system certificate paths
-# macOS (Homebrew): /opt/homebrew/etc/ca-certificates/cert.pem
-# Linux (Ubuntu/Debian): /etc/ssl/certs/ca-certificates.crt
-SSL_CERT_FILE=/opt/homebrew/etc/ca-certificates/cert.pem
-
-# Logging
+# Logging: trace | debug | info | notice | warning | error | critical
 LOG_LEVEL=info
