@@ -1,54 +1,12 @@
-# Build directories
-build/
-.cmake/
-
-# Environment variables
-.env
-.env.local
-
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+Packages
+.build
+xcuserdata
+*.xcodeproj
+DerivedData/
 .DS_Store
-.cache/
-
-# Compiled binaries
-*.o
-*.a
-*.so
-*.dylib
-*.exe
-*.out
-
-# CMake generated files
-CMakeCache.txt
-CMakeFiles/
-CMakeUserPresets.json
-cmake_install.cmake
-compile_commands.json
-Makefile
-CTestTestfile.cmake
-_deps/
-
-# Conan
-conaninfo.txt
-conanbuildinfo.*
-conan.lock
-CMakePresets.json
-
-# Logs
-*.log
-
-# Core dumps (only in root directory)
-/core
-/core.*
-
-# Claude Code
-.claude_code/
-.clinerules
-.claude/
-
-*.env.json
+db.sqlite
+.swiftpm
+.env
+.env.*
+!.env.example
+default.profraw

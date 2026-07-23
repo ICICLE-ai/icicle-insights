@@ -10,7 +10,7 @@
 # }
 
 
-@accountId = 1
+@accountId = "1"
 ### Create Repository: adae_model
 POST {{baseUrl}}/api/github/repos HTTP/1.1
 Content-Type: application/json

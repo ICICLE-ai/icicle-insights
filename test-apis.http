@@ -1,5 +1,5 @@
 @githubUrl = https://api.github.com
-@repo = harvest
+@repo = food-access-model
 @owner = icicle-ai
 
 # Metrics: Stars (stargazers_count), Forks (forks_count), Watchers (watchers_count)

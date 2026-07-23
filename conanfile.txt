@@ -1,9 +1,0 @@
-[requires]
-asio/1.36.0
-# glaze/7.0.0  # Using FetchContent for dev build instead
-libpqxx/7.10.5
-spdlog/1.17.0
-
-[generators]
-CMakeDeps
-CMakeToolchain
