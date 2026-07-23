@@ -496,21 +496,6 @@ async function loadData() {
   buildIndex();
 }
 
-// Metrics change slowly: refresh on a relaxed interval, async and overlap-guarded, and only
-// re-render when the reading count actually changed (no flicker / zoom reset on static data).
-const POLL_MS = 30_000;
-let polling = false;
-async function poll() {
-  if (polling) return;
-  polling = true;
-  try {
-    const before = state.metrics.length;
-    await loadData();
-    if (state.metrics.length !== before) { syncFilters(); renderMasthead(); render(); }
-  } catch { /* transient; next tick retries */ }
-  finally { polling = false; }
-}
-
 async function boot() {
   const saved = localStorage.getItem("insights-theme");
   document.documentElement.setAttribute("data-theme", saved ?? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
@@ -520,7 +505,6 @@ async function boot() {
   syncFilters();
   renderMasthead();
   render();
-  setInterval(poll, POLL_MS);
 }
 
 boot();
