@@ -12,14 +12,14 @@ struct VaultController: RouteCollection {
                 summary: "List vaults",
                 response: .type([Vault.Public].self),
             )
-        vaults.post(use: create)
-            .openAPI(
-                tags: "Vaults",
-                summary: "Create vault",
-                body: .type(Vault.Create.self),
-                response: .type(Vault.Public.self),
-                statusCode: 201,
-            )
+        // vaults.post(use: create)
+        //     .openAPI(
+        //         tags: "Vaults",
+        //         summary: "Create vault",
+        //         body: .type(Vault.Create.self),
+        //         response: .type(Vault.Public.self),
+        //         statusCode: 201,
+        //     )
         vaults.group(":vaultID") { vault in
             vault.get(use: show)
                 .openAPI(
@@ -27,19 +27,19 @@ struct VaultController: RouteCollection {
                     summary: "Get vault by ID",
                     response: .type(Vault.Public.self),
                 )
-            vault.patch(use: update)
-                .openAPI(
-                    tags: "Vaults",
-                    summary: "Update token in vault",
-                    body: .type(Vault.Update.self),
-                    response: .type(Vault.Public.self),
-                )
-            vault.delete(use: delete)
-                .openAPI(
-                    tags: "Vaults",
-                    summary: "Delete vault",
-                    statusCode: 204,
-                )
+            // vault.patch(use: update)
+            //     .openAPI(
+            //         tags: "Vaults",
+            //         summary: "Update token in vault",
+            //         body: .type(Vault.Update.self),
+            //         response: .type(Vault.Public.self),
+            //     )
+            // vault.delete(use: delete)
+            //     .openAPI(
+            //         tags: "Vaults",
+            //         summary: "Delete vault",
+            //         statusCode: 204,
+            //     )
         }
     }
 
