@@ -12,14 +12,14 @@ struct AccountController: RouteCollection {
                 summary: "List accounts",
                 response: .type([Account.Public].self),
             )
-        accounts.post(use: create)
-            .openAPI(
-                tags: "Accounts",
-                summary: "Create account",
-                body: .type(Account.Create.self),
-                response: .type(Account.Public.self),
-                statusCode: 201,
-            )
+        // accounts.post(use: create)
+        //     .openAPI(
+        //         tags: "Accounts",
+        //         summary: "Create account",
+        //         body: .type(Account.Create.self),
+        //         response: .type(Account.Public.self),
+        //         statusCode: 201,
+        //     )
         accounts.group(":accountID") { account in
             account.get(use: show)
                 .openAPI(
@@ -27,13 +27,13 @@ struct AccountController: RouteCollection {
                     summary: "Get account by ID",
                     response: .type(Account.Public.self),
                 )
-            account.patch(use: update)
-                .openAPI(
-                    tags: "Accounts",
-                    summary: "Update account followers",
-                    body: .type(Account.Update.self),
-                    response: .type(Account.Public.self),
-                )
+            // account.patch(use: update)
+            //     .openAPI(
+            //         tags: "Accounts",
+            //         summary: "Update account followers",
+            //         body: .type(Account.Update.self),
+            //         response: .type(Account.Public.self),
+            //     )
             account.delete(use: delete)
                 .openAPI(
                     tags: "Accounts",
