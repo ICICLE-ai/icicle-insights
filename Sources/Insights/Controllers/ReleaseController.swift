@@ -12,14 +12,14 @@ struct ReleaseController: RouteCollection {
                 summary: "List releases",
                 response: .type([Release.Public].self),
             )
-        releases.post(use: create)
-            .openAPI(
-                tags: "Releases",
-                summary: "Create release",
-                body: .type(Release.Create.self),
-                response: .type(Release.Public.self),
-                statusCode: 201,
-            )
+        // releases.post(use: create)
+        //     .openAPI(
+        //         tags: "Releases",
+        //         summary: "Create release",
+        //         body: .type(Release.Create.self),
+        //         response: .type(Release.Public.self),
+        //         statusCode: 201,
+        //     )
         releases.group(":releaseID") { release in
             release.get(use: show)
                 .openAPI(
@@ -27,12 +27,12 @@ struct ReleaseController: RouteCollection {
                     summary: "Get release by ID",
                     response: .type(Release.Public.self),
                 )
-            release.delete(use: delete)
-                .openAPI(
-                    tags: "Releases",
-                    summary: "Delete release",
-                    statusCode: 204,
-                )
+            // release.delete(use: delete)
+            //     .openAPI(
+            //         tags: "Releases",
+            //         summary: "Delete release",
+            //         statusCode: 204,
+            //     )
         }
     }
 
