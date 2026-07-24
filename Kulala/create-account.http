@@ -1,0 +1,25 @@
+@host=localhost:8080
+
+###
+
+# @name createAccount
+POST /accounts HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "name": "icicle-ai",
+    "platform": "github"
+}
+
+###
+
+PATCH /accounts/{{createAccount.response.body.$.id}} HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "followers": 44
+}
+
+###

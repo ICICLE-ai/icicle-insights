@@ -1,0 +1,119 @@
+@host=localhost:8080
+@accountId=0ba5c0de-0000-0000-0000-000000000000
+
+###
+
+# @name createResource
+POST /resources HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "accountID": "{{accountId}}",
+    "name": "harvest",
+    "type": "repository"
+}
+
+###
+
+POST /releases HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "version": "0.9",
+    "month": 9,
+    "year": 2024
+}
+
+###
+
+POST /releases HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "version": "1.0",
+    "month": 7,
+    "year": 2025
+}
+
+###
+
+POST /releases HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "version": "1.1",
+    "month": 8,
+    "year": 2025
+}
+
+###
+
+POST /releases HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "version": "1.2",
+    "month": 8,
+    "year": 2025
+}
+
+###
+
+POST /releases HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "version": "1.3",
+    "month": 12,
+    "year": 2025
+}
+
+###
+
+POST /releases HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "version": "1.4",
+    "month": 3,
+    "year": 2026
+}
+
+###
+
+POST /metrics HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "reading": 380,
+    "type": "clones"
+}
+
+###
+
+POST /metrics HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "reading": 98,
+    "type": "views"
+}
+
+###

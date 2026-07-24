@@ -1,0 +1,67 @@
+@host=localhost:8080
+@accountId=0ba5c0de-0000-0000-0000-000000000000
+
+###
+
+# @name createResource
+POST /resources HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "accountID": "{{accountId}}",
+    "name": "harp",
+    "type": "repository"
+}
+
+###
+
+POST /releases HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "version": "1.0.0",
+    "month": 4,
+    "year": 2023
+}
+
+###
+
+POST /releases HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "version": "2.0.0",
+    "month": 10,
+    "year": 2023
+}
+
+###
+
+POST /metrics HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "reading": 26,
+    "type": "clones"
+}
+
+###
+
+POST /metrics HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "reading": 127,
+    "type": "views"
+}
+
+###

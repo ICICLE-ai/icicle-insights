@@ -1,0 +1,66 @@
+@host=localhost:8080
+@accountId=0ba5c0de-0000-0000-0000-000000000000
+
+###
+
+# @name createResource
+POST /resources HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "accountID": "{{accountId}}",
+    "name": "tapisui-extension-icicle",
+    "type": "repository"
+}
+
+###
+
+POST /releases HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "version": "0.1.0",
+    "month": 5,
+    "year": 2025
+}
+
+###
+
+POST /metrics HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "reading": 30,
+    "type": "clones"
+}
+
+###
+
+POST /metrics HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "reading": 1,
+    "type": "subscribers"
+}
+
+###
+
+POST /metrics HTTP/1.1
+HOST: {{host}}
+Content-Type: application/json
+
+{
+    "resourceID": "{{createResource.response.body.$.id}}",
+    "reading": 9,
+    "type": "views"
+}
+
+###

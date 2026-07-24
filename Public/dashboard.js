@@ -77,12 +77,23 @@ function metricsByType(metrics) {
   return map;
 }
 
-function aggregate(metrics) {
-  const byTime = new Map();
-  for (const m of metrics) byTime.set(new Date(m.recordedAt).getTime(), (byTime.get(new Date(m.recordedAt).getTime()) ?? 0) + m.reading);
-  return [...byTime.entries()].sort((a, b) => a[0] - b[0]);
+// Portfolio total over time: at each reading's timestamp, sum every resource's most recent
+// reading at or before that moment. Summing per timestamp instead would undercount whenever
+// resources are written at slightly different times — a bulk import spreads one sweep across
+// many timestamps, leaving the final one holding only the few resources that landed in it.
+function totalSeries(metrics) {
+  const ordered = [...metrics].sort((a, b) => new Date(a.recordedAt) - new Date(b.recordedAt));
+  const current = new Map();
+  const points = new Map();
+  for (const m of ordered) {
+    current.set(m.resourceID, m.reading);
+    let sum = 0;
+    for (const v of current.values()) sum += v;
+    points.set(new Date(m.recordedAt).getTime(), sum);
+  }
+  return [...points.entries()].sort((a, b) => a[0] - b[0]);
 }
-const aggregateLast = (metrics) => { const a = aggregate(metrics); return a.length ? a[a.length - 1][1] : 0; };
+const totalLatest = (metrics) => { const s = totalSeries(metrics); return s.length ? s[s.length - 1][1] : 0; };
 
 function latestByResource(metrics) {
   const best = new Map();
@@ -233,7 +244,7 @@ function renderKPIs(byType, showAll) {
   host.replaceChildren();
 
   let entries = [...byType.entries()]
-    .map(([type, metrics]) => ({ type, agg: aggregate(metrics) }))
+    .map(([type, metrics]) => ({ type, agg: totalSeries(metrics) }))
     .filter((x) => x.agg.length);
   entries.sort((a, b) => b.agg[b.agg.length - 1][1] - a.agg[a.agg.length - 1][1]);
   if (!showAll) entries = entries.slice(0, 4);
@@ -295,7 +306,7 @@ function renderLeaders(byType, scope) {
   host.replaceChildren();
 
   // Readings by metric type (magnitude → bar, one hue).
-  const typeEntries = [...byType.entries()].map(([type, m]) => [titleCase(type), aggregateLast(m)]).sort((a, b) => a[1] - b[1]);
+  const typeEntries = [...byType.entries()].map(([type, m]) => [titleCase(type), totalLatest(m)]).sort((a, b) => a[1] - b[1]);
   if (typeEntries.length) {
     const p = panel("Readings by metric type", "latest totals in range");
     const m = el("div", "chart");
@@ -304,7 +315,7 @@ function renderLeaders(byType, scope) {
   }
 
   // Top resources by the dominant metric type.
-  const dominant = [...byType.entries()].sort((a, b) => aggregateLast(b[1]) - aggregateLast(a[1]))[0];
+  const dominant = [...byType.entries()].sort((a, b) => totalLatest(b[1]) - totalLatest(a[1]))[0];
   if (dominant) {
     const [type, metrics] = dominant;
     const latest = latestByResource(metrics);
@@ -343,7 +354,7 @@ function renderTrends(byType, scope) {
   }
 
   const annotations = releaseAnnotations();
-  const ordered = [...byType.entries()].sort((a, b) => aggregateLast(b[1]) - aggregateLast(a[1]));
+  const ordered = [...byType.entries()].sort((a, b) => totalLatest(b[1]) - totalLatest(a[1]));
 
   for (const [type, metrics] of ordered) {
     const { series, total } = trendSeries(metrics);
