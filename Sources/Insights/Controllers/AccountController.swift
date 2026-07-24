@@ -34,12 +34,12 @@ struct AccountController: RouteCollection {
             //         body: .type(Account.Update.self),
             //         response: .type(Account.Public.self),
             //     )
-            account.delete(use: delete)
-                .openAPI(
-                    tags: "Accounts",
-                    summary: "Delete account",
-                    statusCode: 204,
-                )
+            // account.delete(use: delete)
+            //     .openAPI(
+            //         tags: "Accounts",
+            //         summary: "Delete account",
+            //         statusCode: 204,
+            //     )
         }
     }
 
