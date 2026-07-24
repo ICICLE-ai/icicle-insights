@@ -12,14 +12,14 @@ struct ResourceController: RouteCollection {
                 summary: "List resources",
                 response: .type([Resource.Public].self),
             )
-        resources.post(use: create)
-            .openAPI(
-                tags: "Resources",
-                summary: "Create resource",
-                body: .type(Resource.Create.self),
-                response: .type(Resource.Public.self),
-                statusCode: 201,
-            )
+        // resources.post(use: create)
+        //     .openAPI(
+        //         tags: "Resources",
+        //         summary: "Create resource",
+        //         body: .type(Resource.Create.self),
+        //         response: .type(Resource.Public.self),
+        //         statusCode: 201,
+        //     )
         resources.group(":resourceID") { resource in
             resource.get(use: show)
                 .openAPI(
@@ -27,12 +27,12 @@ struct ResourceController: RouteCollection {
                     summary: "Get resource by ID",
                     response: .type(Resource.Public.self),
                 )
-            resource.delete(use: delete)
-                .openAPI(
-                    tags: "Resources",
-                    summary: "Delete resource",
-                    statusCode: 204,
-                )
+            // resource.delete(use: delete)
+            //     .openAPI(
+            //         tags: "Resources",
+            //         summary: "Delete resource",
+            //         statusCode: 204,
+            //     )
         }
     }
 
