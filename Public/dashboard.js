@@ -10,7 +10,7 @@ const CATEGORICAL = {
 const OTHER = "#898781";
 const PLATFORM_LABEL = { github: "GitHub", huggingface: "Hugging Face", npm: "npm", pypi: "PyPI" };
 const PLATFORM_ORDER = ["github", "huggingface", "npm", "pypi"];
-const RESOURCE_ORDER = ["dataset", "image", "model", "package", "service"];
+const RESOURCE_ORDER = ["dataset", "image", "model", "package", "repository", "service"];
 
 const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 const whole = new Intl.NumberFormat("en");

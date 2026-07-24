@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ICICLE Insights — Dashboard</title>
+  <link rel="icon" href="/favicon.ico">
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css" rel="stylesheet" type="text/css">
   <link rel="stylesheet" href="/dashboard.css">
   <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>

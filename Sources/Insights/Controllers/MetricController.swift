@@ -11,7 +11,7 @@ struct MetricController: RouteCollection {
                 tags: "Metrics",
                 summary: "List metrics",
                 query: .type(Filters.self),
-                response: .type([Metric.Public].self),
+                response: .type([Metric.Public].self)
             )
         // metrics.post(use: create)
         //     .openAPI(
@@ -19,20 +19,20 @@ struct MetricController: RouteCollection {
         //         summary: "Create metric",
         //         body: .type(Metric.Create.self),
         //         response: .type(Metric.Public.self),
-        //         statusCode: 201,
+        //         statusCode: 201
         //     )
         metrics.group(":metricID") { metric in
             metric.get(use: show)
                 .openAPI(
                     tags: "Metrics",
                     summary: "Get metric by ID",
-                    response: .type(Metric.Public.self),
+                    response: .type(Metric.Public.self)
                 )
             // metric.delete(use: delete)
             //     .openAPI(
             //         tags: "Metrics",
             //         summary: "Delete metric",
-            //         statusCode: 204,
+            //         statusCode: 204
             //     )
         }
     }

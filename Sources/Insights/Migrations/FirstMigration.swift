@@ -17,10 +17,12 @@ struct FirstMigration: AsyncMigration {
             .case("image")
             .case("model")
             .case("package")
+            .case("repository")
             .case("service")
             .create()
 
         _ = try await database.enum("metric_type")
+            .case("authentications")
             .case("clones")
             .case("downloads")
             .case("forks")

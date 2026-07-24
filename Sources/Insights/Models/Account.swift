@@ -2,7 +2,7 @@ import Fluent
 import struct Foundation.Date
 import struct Foundation.UUID
 
-enum Platform: String, Codable {
+enum Platform: String, Codable, CaseIterable {
     case github, huggingface, npm, pypi
 }
 

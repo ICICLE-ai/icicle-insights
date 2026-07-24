@@ -2,8 +2,8 @@ import Fluent
 import struct Foundation.Date
 import struct Foundation.UUID
 
-enum MetricType: String, Codable {
-    case clones, downloads, forks, likes, pulls, stars, subscribers, views
+enum MetricType: String, Codable, CaseIterable {
+    case authentications, clones, downloads, forks, likes, pulls, stars, subscribers, views
 }
 
 final class Metric: Model, @unchecked Sendable {

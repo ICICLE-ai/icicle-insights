@@ -2,8 +2,10 @@ import Fluent
 import struct Foundation.Date
 import struct Foundation.UUID
 
-enum ResourceType: String, Codable {
-    case dataset, image, model, package, service
+// CaseIterable is what makes SwiftOpenAPI emit the allowed values as an enum in the
+// generated schema rather than a bare string.
+enum ResourceType: String, Codable, CaseIterable {
+    case dataset, image, model, package, repository, service
 }
 
 final class Resource: Model, @unchecked Sendable {

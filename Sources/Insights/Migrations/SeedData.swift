@@ -29,55 +29,56 @@ struct SeedData: AsyncMigration {
     }
 
     private static let catalog: [AccountSpec] = [
-        AccountSpec(name: "vapor", platform: .github, followers: 24_100, resources: [
+        AccountSpec(name: "vapor", platform: .github, followers: 24100, resources: [
             ResourceSpec(name: "vapor", type: .service, popularity: 2.2, releases: ["4.100.0", "4.110.0", "4.121.0"]),
             ResourceSpec(name: "fluent", type: .package, popularity: 1.1, releases: ["4.9.0", "4.12.0", "4.13.0"]),
             ResourceSpec(name: "leaf", type: .package, popularity: 0.8, releases: ["4.3.0", "4.4.0", "4.5.0"]),
         ]),
-        AccountSpec(name: "pointfreeco", platform: .github, followers: 18_900, resources: [
+        AccountSpec(name: "pointfreeco", platform: .github, followers: 18900, resources: [
             ResourceSpec(name: "composable-architecture", type: .package, popularity: 1.7, releases: ["1.10.0", "1.15.0", "1.17.0"]),
             ResourceSpec(name: "snapshot-testing", type: .package, popularity: 0.7, releases: ["1.16.0", "1.17.0"]),
         ]),
-        AccountSpec(name: "apple", platform: .github, followers: 92_500, resources: [
+        AccountSpec(name: "apple", platform: .github, followers: 92500, resources: [
             ResourceSpec(name: "swift", type: .service, popularity: 3.0, releases: ["5.10", "6.0", "6.1"]),
             ResourceSpec(name: "swift-nio", type: .package, popularity: 1.3, releases: ["2.68.0", "2.76.0"]),
         ]),
-        AccountSpec(name: "octocat", platform: .github, followers: 12_480, resources: [
+        AccountSpec(name: "octocat", platform: .github, followers: 12480, resources: [
             ResourceSpec(name: "insights", type: .service, popularity: 1.4, releases: ["1.0.0", "1.1.0", "1.2.0", "2.0.0"]),
             ResourceSpec(name: "insights-cli", type: .package, popularity: 0.7, releases: ["0.9.0", "1.0.0", "1.1.0"]),
             ResourceSpec(name: "insights-banner", type: .image, popularity: 0.5, releases: ["1.0.0"]),
         ]),
-        AccountSpec(name: "huggingface", platform: .huggingface, followers: 51_200, resources: [
+        AccountSpec(name: "huggingface", platform: .huggingface, followers: 51200, resources: [
             ResourceSpec(name: "transformers", type: .model, popularity: 3.0, releases: ["4.44", "4.46", "4.48"]),
             ResourceSpec(name: "datasets", type: .dataset, popularity: 1.5, releases: ["3.0", "3.1"]),
         ]),
-        AccountSpec(name: "meta-llama", platform: .huggingface, followers: 40_300, resources: [
+        AccountSpec(name: "meta-llama", platform: .huggingface, followers: 40300, resources: [
             ResourceSpec(name: "llama-3", type: .model, popularity: 2.4, releases: ["3.0", "3.1", "3.2"]),
         ]),
-        AccountSpec(name: "google", platform: .huggingface, followers: 33_700, resources: [
+        AccountSpec(name: "google", platform: .huggingface, followers: 33700, resources: [
             ResourceSpec(name: "gemma", type: .model, popularity: 1.8, releases: ["1.1", "2.0"]),
             ResourceSpec(name: "c4", type: .dataset, popularity: 0.9, releases: ["2024.1"]),
         ]),
-        AccountSpec(name: "expressjs", platform: .npm, followers: 15_600, resources: [
+        AccountSpec(name: "expressjs", platform: .npm, followers: 15600, resources: [
             ResourceSpec(name: "express", type: .package, popularity: 2.6, releases: ["4.19.0", "4.21.0", "5.0.0"]),
         ]),
-        AccountSpec(name: "vercel", platform: .npm, followers: 28_400, resources: [
+        AccountSpec(name: "vercel", platform: .npm, followers: 28400, resources: [
             ResourceSpec(name: "next", type: .package, popularity: 2.9, releases: ["14.2.0", "15.0.0", "15.1.0"]),
             ResourceSpec(name: "swr", type: .package, popularity: 0.9, releases: ["2.2.0", "2.3.0"]),
         ]),
-        AccountSpec(name: "scikit-learn", platform: .pypi, followers: 22_100, resources: [
+        AccountSpec(name: "scikit-learn", platform: .pypi, followers: 22100, resources: [
             ResourceSpec(name: "scikit-learn", type: .package, popularity: 2.7, releases: ["1.4.0", "1.5.0", "1.6.0"]),
         ]),
-        AccountSpec(name: "pandas-dev", platform: .pypi, followers: 26_800, resources: [
+        AccountSpec(name: "pandas-dev", platform: .pypi, followers: 26800, resources: [
             ResourceSpec(name: "pandas", type: .package, popularity: 3.1, releases: ["2.1.0", "2.2.0", "2.3.0"]),
         ]),
     ]
 
-    // Metric types are chosen by resource type so the mix reads realistically; together
-    // they cover all eight MetricType cases.
+    /// Metric types are chosen by resource type so the mix reads realistically; together
+    /// they cover all eight MetricType cases.
     private static func metricTypes(for type: ResourceType) -> [MetricType] {
         switch type {
-        case .service: [.stars, .forks, .views, .clones, .pulls, .subscribers]
+        case .service: [.authentications, .views]
+        case .repository: [.stars, .forks, .views, .clones, .pulls, .subscribers]
         case .package: [.stars, .forks, .downloads]
         case .model: [.likes, .downloads]
         case .dataset: [.likes, .downloads]
@@ -87,8 +88,9 @@ struct SeedData: AsyncMigration {
 
     private static func baseline(for type: MetricType) -> Double {
         switch type {
-        case .downloads: 6_000
-        case .views: 1_400
+        case .authentications: 100000
+        case .downloads: 6000
+        case .views: 1400
         case .likes: 380
         case .stars: 450
         case .clones: 200
@@ -116,7 +118,7 @@ struct SeedData: AsyncMigration {
             let vault = Vault(
                 accountID: accountID,
                 name: "\(spec.name)-token",
-                expiresAt: now.addingTimeInterval(90 * Self.dayInterval),
+                expiresAt: now.addingTimeInterval(90 * Self.dayInterval)
             )
             try await vault.create(on: database)
 
@@ -134,7 +136,7 @@ struct SeedData: AsyncMigration {
                         base: base,
                         slope: base * Double.random(in: 0.008 ... 0.025),
                         amplitude: base * Double.random(in: 0.05 ... 0.12),
-                        start: start,
+                        start: start
                     )
                 }
 
@@ -144,7 +146,7 @@ struct SeedData: AsyncMigration {
                         resourceID: resourceID,
                         version: version,
                         releasedAt: start.addingTimeInterval(Double(index + 1) / Double(count + 1)
-                            * Double(Self.points - 1) * Self.dayInterval),
+                            * Double(Self.points - 1) * Self.dayInterval)
                     )
                 }
                 try await releases.create(on: database)
@@ -176,7 +178,7 @@ struct SeedData: AsyncMigration {
         base: Double,
         slope: Double,
         amplitude: Double,
-        start: Date,
+        start: Date
     ) async throws {
         var query = SQLQueryString("INSERT INTO metrics (id, resource_id, reading, type, recorded_at) VALUES ")
         for i in 0 ..< Self.points {
@@ -185,7 +187,9 @@ struct SeedData: AsyncMigration {
             let reading = max(0, base + slope * Double(i) + weekly + noise).rounded()
             let recordedAt = start.addingTimeInterval(Double(i) * Self.dayInterval)
 
-            if i > 0 { query.appendLiteral(", ") }
+            if i > 0 {
+                query.appendLiteral(", ")
+            }
             query.appendLiteral("(")
             query.appendInterpolation(bind: UUID())
             query.appendLiteral(", ")

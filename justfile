@@ -23,3 +23,11 @@ fmt:
 
 fmt-check:
     swiftformat Sources Tests Package.swift --lint
+
+build:
+    container  build --tag icicle-insights --file Dockerfile .
+
+start: build
+    container run --env-file .env --name icicle-insights --detach --rm icicle-insights
+stop:
+    container stop icicle-insights
