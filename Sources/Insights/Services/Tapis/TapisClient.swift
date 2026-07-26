@@ -7,33 +7,51 @@ struct TapisClient: Sendable {
     let client: any Client
     let config: TapisConfig
 
-    /// Resolve a Vault secret *name* into its actual value, authenticated with the Tapis
-    /// service token.
-    func readSecret(named name: String) async throws -> String {
-        // TODO(you): set the exact Tapis SK Vault read path for `name`.
-        let uri = URI(string: "\(config.baseURL)/v3/security/vault/secret/\(name)")
-
-        let response = try await client.get(uri) { req in
-            req.headers.add(name: "X-Tapis-Token", value: config.token.rawValue)
-        }
-
-        guard response.status == .ok else {
-            throw JobError.apiRequestFailed(
-                statusCode: Int(response.status.code),
-                message: "Tapis Vault read failed for secret '\(name)'",
-            )
-        }
-
-        // TODO(you): decode the real Tapis SK envelope and pull the secret value out.
-        return try response.content.decode(TapisSecretResponse.self).result.secretValue
+    var vaults: Vaults {
+        Vaults(client: client, config: config)
     }
+
+    // var auth: Auth {
+    //     Auth(client: client, config: config)
+    // }
+    //
+    // var mlHub: MLHub {
+    //     MLHub(client: client, config: config)
+    // }
 }
 
-/// TODO(you): match this to the actual Tapis SK read-secret response body.
-struct TapisSecretResponse: Content {
-    struct Result: Content {
-        let secretValue: String
+
+
+enum TapisClientError: Error, Sendable {
+    case requestFailed(status: HTTPResponseStatus)
+    case invalidResponse
+    case secretNotFound(name: String)
+}
+
+/// Let Tapis failures propagate straight out of controllers: `ErrorMiddleware` renders the
+/// status and reason, and logs the error at `.warning` with the request's method and URL.
+extension TapisClientError: AbortError {
+    var status: HTTPResponseStatus {
+        switch self {
+        case .secretNotFound:
+            .notFound
+        case .invalidResponse:
+            .badGateway
+        // 5xx upstream means Tapis failed. 4xx means we sent something wrong — a stale
+        // service token or a bad body — which our caller cannot fix, so it reads as a 500.
+        case .requestFailed(let status):
+            status.code >= 500 ? .badGateway : .internalServerError
+        }
     }
 
-    let result: Result
+    var reason: String {
+        switch self {
+        case .secretNotFound(let name):
+            "Secret '\(name)' not found in Tapis."
+        case .invalidResponse:
+            "Tapis returned an unreadable response."
+        case .requestFailed(let status):
+            "Tapis request failed with status \(status.code)."
+        }
+    }
 }

@@ -1,20 +1,26 @@
-/// A string wrapper that never renders its value in string conversions.
-///
-/// Modeled on pydantic-settings' `SecretStr`: read `rawValue` only at the point of use
-/// (e.g. building an auth header); any `print`/`"\(secret)"`/logging shows `«redacted»`
-/// so credentials can't leak into logs.
-struct Secret: Sendable, CustomStringConvertible, CustomDebugStringConvertible {
-    let rawValue: String
+struct Secret: Sendable,
+                 CustomStringConvertible,
+                 CustomDebugStringConvertible,
+                 CustomReflectable {
+      private let value: String
 
-    init(_ rawValue: String) {
-        self.rawValue = rawValue
-    }
+      init(_ value: String) {
+          self.value = value
+      }
 
-    var description: String {
-        "«redacted»"
-    }
+      func getSecretValue() -> String {
+          value
+      }
 
-    var debugDescription: String {
-        "«redacted»"
-    }
-}
+      var description: String {
+          "«redacted»"
+      }
+
+      var debugDescription: String {
+          "«redacted»"
+      }
+
+      var customMirror: Mirror {
+          Mirror(reflecting: "«redacted»")
+      }
+  }

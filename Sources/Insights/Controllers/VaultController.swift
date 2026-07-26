@@ -10,36 +10,36 @@ struct VaultController: RouteCollection {
             .openAPI(
                 tags: "Vaults",
                 summary: "List vaults",
-                response: .type([Vault.Public].self),
+                response: .type([Vault.Public].self)
             )
-        // vaults.post(use: create)
-        //     .openAPI(
-        //         tags: "Vaults",
-        //         summary: "Create vault",
-        //         body: .type(Vault.Create.self),
-        //         response: .type(Vault.Public.self),
-        //         statusCode: 201,
-        //     )
+        vaults.post(use: create)
+            .openAPI(
+                tags: "Vaults",
+                summary: "Create vault",
+                body: .type(Vault.Create.self),
+                response: .type(Vault.Public.self),
+                statusCode: 201
+            )
         vaults.group(":vaultID") { vault in
             vault.get(use: show)
                 .openAPI(
                     tags: "Vaults",
                     summary: "Get vault by ID",
-                    response: .type(Vault.Public.self),
+                    response: .type(Vault.Public.self)
                 )
-            // vault.patch(use: update)
-            //     .openAPI(
-            //         tags: "Vaults",
-            //         summary: "Update token in vault",
-            //         body: .type(Vault.Update.self),
-            //         response: .type(Vault.Public.self),
-            //     )
-            // vault.delete(use: delete)
-            //     .openAPI(
-            //         tags: "Vaults",
-            //         summary: "Delete vault",
-            //         statusCode: 204,
-            //     )
+            vault.patch(use: update)
+                .openAPI(
+                    tags: "Vaults",
+                    summary: "Update token in vault",
+                    body: .type(Vault.Update.self),
+                    response: .type(Vault.Public.self)
+                )
+            vault.delete(use: delete)
+                .openAPI(
+                    tags: "Vaults",
+                    summary: "Delete vault",
+                    statusCode: 204
+                )
         }
     }
 
@@ -52,15 +52,20 @@ struct VaultController: RouteCollection {
     func create(req: Request) async throws -> Response {
         let payload = try req.content.decode(Vault.Create.self)
         let vault = payload.toModel()
-        vault.name = vault.name.lowercased()
 
         guard let account = try await Account.find(vault.$account.id, on: req.db)
         else {
             throw Abort(.badRequest, reason: "Account with ID: \(vault.$account.id), not found.")
         }
-        try await account.$vault.create(vault, on: req.db)
 
-        // TODO: Save token in vault
+        vault.name = "\(account.name)-\(account.platform)-api-token"
+
+        // Row and secret must land together: a committed row whose secret failed to write is
+        // metadata pointing at nothing.
+        try await req.db.transaction { db in
+            try await account.$vault.create(vault, on: db)
+            try await req.application.tapis.vaults.writeSecret(named: vault.name, secret: payload.token)
+        }
 
         return try await vault.toPublic().encodeResponse(status: .created, for: req)
     }
@@ -92,9 +97,12 @@ struct VaultController: RouteCollection {
 
         vault.expiresAt = Calendar(identifier: .gregorian).date(from: expirationDate)
 
-        try await vault.save(on: req.db)
-
-        // TODO: Send token to vault
+        // Rotate the token and record the new expiry together, so a failure on either side
+        // never leaves the two disagreeing.
+        try await req.db.transaction { db in
+            try await vault.save(on: db)
+            try await req.application.tapis.vaults.writeSecret(named: vault.name, secret: newValues.token)
+        }
 
         return vault.toPublic()
     }
@@ -106,7 +114,13 @@ struct VaultController: RouteCollection {
             throw Abort(.notFound)
         }
 
-        try await vault.delete(on: req.db)
+        // Soft delete our metadata and destroy the token on the Vault platform together: a
+        // failed destroy must not leave the row deleted with the secret still live.
+        try await req.db.transaction { db in
+            try await vault.delete(on: db)
+            try await req.application.tapis.vaults.destroySecret(named: vault.name)
+        }
+
         return .noContent
     }
 }

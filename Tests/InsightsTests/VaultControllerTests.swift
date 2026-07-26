@@ -7,11 +7,10 @@ import VaporTesting
 @Suite("Vault Controller", .serialized)
 struct VaultControllerTests {
     @Test
-    func `Create lowercases the name`() async throws {
+    func `Create derives the name from the account`() async throws {
         try await withApp { app in
             let account = try await makeAccount(on: app.db)
             let payload = Vault.Create(
-                name: "GitHub-Token",
                 token: "ghp_example",
                 accountID: try account.requireID(),
                 expires: Vault.Expires(day: 31, month: 12, year: 2026),
@@ -24,7 +23,7 @@ struct VaultControllerTests {
                 afterResponse: { res async throws in
                     #expect(res.status == .created)
                     let returned = try res.content.decode(Vault.Public.self)
-                    #expect(returned.name == "github-token")
+                    #expect(returned.name == "octocat-github-api-token")
                     #expect(returned.accountID == account.id)
                 },
             )
@@ -35,7 +34,6 @@ struct VaultControllerTests {
     func `Create with missing account is a bad request`() async throws {
         try await withApp { app in
             let payload = Vault.Create(
-                name: "github-token",
                 token: "ghp_example",
                 accountID: UUID(),
                 expires: Vault.Expires(day: 31, month: 12, year: 2026),
@@ -47,6 +45,74 @@ struct VaultControllerTests {
                 beforeRequest: { req in try req.content.encode(payload) },
                 afterResponse: { res async throws in
                     #expect(res.status == .badRequest)
+                    let count = try await Vault.query(on: app.db).count()
+                    #expect(count == 0)
+                },
+            )
+        }
+    }
+
+    @Test
+    func `Create maps an upstream 5xx to 502`() async throws {
+        try await withApp { app in
+            stubTapis(on: app, status: .serviceUnavailable)
+            let account = try await makeAccount(on: app.db)
+            let payload = Vault.Create(
+                token: "ghp_example",
+                accountID: try account.requireID(),
+                expires: Vault.Expires(day: 31, month: 12, year: 2026),
+            )
+
+            try await app.testing().test(
+                .POST,
+                "vaults",
+                beforeRequest: { req in try req.content.encode(payload) },
+                afterResponse: { res async throws in
+                    #expect(res.status == .badGateway)
+                },
+            )
+        }
+    }
+
+    @Test
+    func `Create maps an upstream 4xx to 500`() async throws {
+        try await withApp { app in
+            stubTapis(on: app, status: .unauthorized)
+            let account = try await makeAccount(on: app.db)
+            let payload = Vault.Create(
+                token: "ghp_example",
+                accountID: try account.requireID(),
+                expires: Vault.Expires(day: 31, month: 12, year: 2026),
+            )
+
+            try await app.testing().test(
+                .POST,
+                "vaults",
+                beforeRequest: { req in try req.content.encode(payload) },
+                afterResponse: { res async throws in
+                    #expect(res.status == .internalServerError)
+                },
+            )
+        }
+    }
+
+    @Test
+    func `Create rolls back the vault row when the secret write fails`() async throws {
+        try await withApp { app in
+            stubTapis(on: app, status: .serviceUnavailable)
+            let account = try await makeAccount(on: app.db)
+            let payload = Vault.Create(
+                token: "ghp_example",
+                accountID: try account.requireID(),
+                expires: Vault.Expires(day: 31, month: 12, year: 2026),
+            )
+
+            try await app.testing().test(
+                .POST,
+                "vaults",
+                beforeRequest: { req in try req.content.encode(payload) },
+                afterResponse: { res async throws in
+                    #expect(res.status == .badGateway)
                     let count = try await Vault.query(on: app.db).count()
                     #expect(count == 0)
                 },

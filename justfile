@@ -8,10 +8,10 @@ run:
     swift run
 
 migrate:
-    swift run Insights migrate
+    swift run Insights migrate --yes
 
 revert:
-    swift run Insights migrate --revert
+    swift run Insights migrate --revert --yes
 
 # Serial: every suite shares the `test` database and runs its own migrate/revert,
 # so they must not run in parallel.
