@@ -45,6 +45,11 @@ func configure(_ app: Application) async throws {
     app.views.use(.leaf)
     app.queues.use(.fluent())
 
+    //services
+    // Shared Tapis client for resolving Vault secrets in sync jobs. Fail-fast: a missing
+    // TAPIS_BASE_URL / TAPIS_TOKEN aborts boot rather than failing on the first Vault call.
+    app.tapis = try TapisClient(client: app.client, config: .fromEnvironment())
+
     // Encode/decode JSON dates as ISO8601 so clients (e.g. the dashboard chart) can parse them.
     let jsonEncoder = JSONEncoder()
     jsonEncoder.dateEncodingStrategy = .iso8601

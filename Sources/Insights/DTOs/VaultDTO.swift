@@ -14,17 +14,15 @@ extension Vault {
     }
 
     struct Create: Content, WithExample {
-        var name: String
         var token: String
         var accountID: Account.IDValue
         var expires: Expires
 
         enum CodingKeys: String, CodingKey {
-            case name, token, accountID, expires
+            case token, accountID, expires
         }
 
         static let example = Create(
-            name: "github-token",
             token: "ghp_exampleToken",
             accountID: UUID(uuidString: "0ba5c0de-0000-0000-0000-000000000000")!,
             expires: Expires(day: 31, month: 12, year: 2026),
@@ -32,7 +30,6 @@ extension Vault {
 
         func toModel() -> Vault {
             let model = Vault()
-            model.name = name
             model.$account.id = accountID
 
             var expirationDate = DateComponents()
