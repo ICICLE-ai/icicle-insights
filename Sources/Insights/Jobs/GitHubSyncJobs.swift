@@ -26,10 +26,11 @@ struct SyncGitHubAccountJob: AsyncJob {
         // Resolve the account's access token from Tapis Vault.
         let token = try await context.application.tapis.readSecret(named: vault.name)
 
-        let url = baseUrl + "/\(account.name)"
+        let url = URI("https://api.github.com/org/\(account.name)")
         let response = try await context.application.client.get(URI(string: url)) { req in
-            req.headers.add(name: .accept, value: "application/vnd.github+json")
+            req.headers.add(na me: .accept, value: "application/vnd.github+json")
             req.headers.add(name: .authorization, value: "Bearer \(token)")
+            req.headers.add(name: "X-GitHub-Api-Version"), "2026-03-10"
         }
         _ = response // TODO(you): decode the GitHub response and update account/metrics.
     }
