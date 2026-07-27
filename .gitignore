@@ -11,4 +11,4 @@ db.sqlite
 !.env.example
 default.profraw
 
-.gitignore
+.memsearch
