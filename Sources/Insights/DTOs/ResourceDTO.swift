@@ -18,9 +18,9 @@ extension Resource {
             accountID: UUID(uuidString: "0ba5c0de-0000-0000-0000-000000000000")!,
         )
 
-        func toModel() -> Resource {
+        func toModel() throws -> Resource {
             let model = Resource()
-            model.name = name
+            model.name = try requireNonBlank(name, "name").lowercased()
             model.type = type
             model.$account.id = accountID
             return model

@@ -12,14 +12,16 @@ struct VaultController: RouteCollection {
                 summary: "List vaults",
                 response: .type([Vault.Public].self)
             )
-        vaults.post(use: create)
-            .openAPI(
-                tags: "Vaults",
-                summary: "Create vault",
-                body: .type(Vault.Create.self),
-                response: .type(Vault.Public.self),
-                statusCode: 201
-            )
+        // Mutating routes stay disabled until auth middleware protects them. The handlers
+        // below are kept intact so re-enabling is just uncommenting the registrations.
+        // vaults.post(use: create)
+        //     .openAPI(
+        //         tags: "Vaults",
+        //         summary: "Create vault",
+        //         body: .type(Vault.Create.self),
+        //         response: .type(Vault.Public.self),
+        //         statusCode: 201
+        //     )
         vaults.group(":vaultID") { vault in
             vault.get(use: show)
                 .openAPI(
@@ -27,19 +29,19 @@ struct VaultController: RouteCollection {
                     summary: "Get vault by ID",
                     response: .type(Vault.Public.self)
                 )
-            vault.patch(use: update)
-                .openAPI(
-                    tags: "Vaults",
-                    summary: "Update token in vault",
-                    body: .type(Vault.Update.self),
-                    response: .type(Vault.Public.self)
-                )
-            vault.delete(use: delete)
-                .openAPI(
-                    tags: "Vaults",
-                    summary: "Delete vault",
-                    statusCode: 204
-                )
+            // vault.patch(use: update)
+            //     .openAPI(
+            //         tags: "Vaults",
+            //         summary: "Update token in vault",
+            //         body: .type(Vault.Update.self),
+            //         response: .type(Vault.Public.self)
+            //     )
+            // vault.delete(use: delete)
+            //     .openAPI(
+            //         tags: "Vaults",
+            //         summary: "Delete vault",
+            //         statusCode: 204
+            //     )
         }
     }
 
@@ -51,20 +53,24 @@ struct VaultController: RouteCollection {
     @Sendable
     func create(req: Request) async throws -> Response {
         let payload = try req.content.decode(Vault.Create.self)
-        let vault = payload.toModel()
+        let vault = try payload.toModel()
 
         guard let account = try await Account.find(vault.$account.id, on: req.db)
         else {
             throw Abort(.badRequest, reason: "Account with ID: \(vault.$account.id), not found.")
         }
 
-        vault.name = "\(account.name)-\(account.platform)-api-token"
-
-        // Row and secret must land together: a committed row whose secret failed to write is
-        // metadata pointing at nothing.
-        try await req.db.transaction { db in
-            try await account.$vault.create(vault, on: db)
-            try await req.application.tapis.vaults.writeSecret(named: vault.name, secret: payload.token)
+        try await conflictOnConstraintFailure(
+            "A vault named '\(vault.name)' already exists for this account.",
+        ) {
+            // Row and secret must land together: a committed row whose secret failed to write is
+            // metadata pointing at nothing.
+            try await req.db.transaction { db in
+                try await account.$vault.create(vault, on: db)
+                try await req.application.tapis.vaults.writeSecret(
+                    named: vault.name, secret: payload.token,
+                )
+            }
         }
 
         return try await vault.toPublic().encodeResponse(status: .created, for: req)
@@ -89,13 +95,10 @@ struct VaultController: RouteCollection {
 
         let newValues = try req.content.decode(Vault.Update.self)
 
-        // Convert expiration date to Date
-        var expirationDate = DateComponents()
-        expirationDate.day = newValues.expires.day
-        expirationDate.month = newValues.expires.month
-        expirationDate.year = newValues.expires.year
+        // Validated here even though the token is not persisted yet — see the TODO below.
+        _ = try requireNonBlank(newValues.token, "token")
 
-        vault.expiresAt = Calendar(identifier: .gregorian).date(from: expirationDate)
+        vault.expiresAt = try newValues.expires.toDate()
 
         // Rotate the token and record the new expiry together, so a failure on either side
         // never leaves the two disagreeing.

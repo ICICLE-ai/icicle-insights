@@ -12,6 +12,8 @@ struct ReleaseController: RouteCollection {
                 summary: "List releases",
                 response: .type([Release.Public].self),
             )
+        // Mutating routes stay disabled until auth middleware protects them. The handlers
+        // below are kept intact so re-enabling is just uncommenting the registrations.
         // releases.post(use: create)
         //     .openAPI(
         //         tags: "Releases",

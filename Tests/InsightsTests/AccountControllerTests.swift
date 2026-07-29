@@ -25,6 +25,60 @@ struct AccountControllerTests {
     }
 
     @Test
+    func `Create supports GitHub Container Registry accounts`() async throws {
+        try await withApp { app in
+            let payload = Account.Create(name: "icicle-ai", platform: .ghcr)
+            try await app.testing().test(
+                .POST,
+                "accounts",
+                beforeRequest: { req in try req.content.encode(payload) },
+                afterResponse: { res async throws in
+                    #expect(res.status == .created)
+                    let returned = try res.content.decode(Account.Public.self)
+                    #expect(returned.name == "icicle-ai")
+                    #expect(returned.platform == .ghcr)
+                },
+            )
+        }
+    }
+
+    @Test
+    func `Create rejects a blank name`() async throws {
+        try await withApp { app in
+            let payload = Account.Create(name: "   ", platform: .github)
+            try await app.testing().test(
+                .POST,
+                "accounts",
+                beforeRequest: { req in try req.content.encode(payload) },
+                afterResponse: { res async throws in
+                    #expect(res.status == .badRequest)
+                    let count = try await Account.query(on: app.db).count()
+                    #expect(count == 0)
+                },
+            )
+        }
+    }
+
+    @Test
+    func `Create rejects a duplicate name on the same platform`() async throws {
+        try await withApp { app in
+            _ = try await makeAccount(on: app.db, name: "octocat", platform: .github)
+
+            let payload = Account.Create(name: "OctoCat", platform: .github)
+            try await app.testing().test(
+                .POST,
+                "accounts",
+                beforeRequest: { req in try req.content.encode(payload) },
+                afterResponse: { res async throws in
+                    #expect(res.status == .conflict)
+                    let count = try await Account.query(on: app.db).count()
+                    #expect(count == 1)
+                },
+            )
+        }
+    }
+
+    @Test
     func `Index returns all accounts`() async throws {
         try await withApp { app in
             _ = try await makeAccount(on: app.db, name: "alpha")
