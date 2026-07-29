@@ -12,14 +12,16 @@ struct AccountController: RouteCollection {
                 summary: "List accounts",
                 response: .type([Account.Public].self),
             )
-        accounts.post(use: create)
-            .openAPI(
-                tags: "Accounts",
-                summary: "Create account",
-                body: .type(Account.Create.self),
-                response: .type(Account.Public.self),
-                statusCode: 201,
-            )
+        // Mutating routes stay disabled until auth middleware protects them. The handlers
+        // below are kept intact so re-enabling is just uncommenting the registrations.
+        // accounts.post(use: create)
+        //     .openAPI(
+        //         tags: "Accounts",
+        //         summary: "Create account",
+        //         body: .type(Account.Create.self),
+        //         response: .type(Account.Public.self),
+        //         statusCode: 201,
+        //     )
         accounts.group(":accountID") { account in
             account.get(use: show)
                 .openAPI(
@@ -51,8 +53,13 @@ struct AccountController: RouteCollection {
     @Sendable
     func create(req: Request) async throws -> Response {
         let account = try req.content.decode(Account.Create.self).toModel()
-        account.name = account.name.lowercased()
-        try await account.save(on: req.db)
+
+        try await conflictOnConstraintFailure(
+            "An account named '\(account.name)' already exists for platform '\(account.platform.rawValue)'.",
+        ) {
+            try await account.save(on: req.db)
+        }
+
         return try await account.toPublic().encodeResponse(status: .created, for: req)
     }
 

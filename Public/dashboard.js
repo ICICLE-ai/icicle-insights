@@ -1,16 +1,18 @@
 // ICICLE Insights dashboard. Client-rendered from the JSON API (/accounts /resources
-// /metrics /releases). One filter bar (range · account · resource) scopes everything below
-// it into three views: All accounts → Account → Resource. Chart form is chosen by the data's
-// job; series colors follow the resource entity from the validated CVD-safe palette.
+// /metrics /releases). One filter bar (snapshot · platform · resource) scopes everything below
+// it into three views: All platforms → Platform → Resource. Accounts are an implementation
+// detail here — they all carry the same handle — so the account dimension is surfaced as the
+// platform it lives on. Chart form is chosen by the data's job; series colors follow the
+// resource entity from the validated CVD-safe palette.
 
 const CATEGORICAL = {
-  light: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"],
-  dark: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"],
+  // Catppuccin Latte and Mocha accents, ordered to separate neighboring hues.
+  light: ["#1e66f5", "#fe640b", "#40a02b", "#8839ef", "#df8e1d", "#ea76cb", "#179299", "#d20f39"],
+  dark: ["#89b4fa", "#fab387", "#a6e3a1", "#cba6f7", "#f9e2af", "#f5c2e7", "#94e2d5", "#f38ba8"],
 };
-const OTHER = "#898781";
-const PLATFORM_LABEL = { github: "GitHub", huggingface: "Hugging Face", npm: "npm", pypi: "PyPI" };
-const PLATFORM_ORDER = ["github", "huggingface", "npm", "pypi"];
-const RESOURCE_ORDER = ["dataset", "image", "model", "package", "repository", "service"];
+const PLATFORM_LABEL = { github: "GitHub", ghcr: "GHCR", huggingface: "Hugging Face", npm: "npm", pypi: "PyPI" };
+const PLATFORM_ORDER = ["github", "ghcr", "huggingface", "npm", "pypi"];
+const RESOURCE_ORDER = ["container", "dataset", "image", "model", "package", "repository", "service"];
 
 const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 const whole = new Intl.NumberFormat("en");
@@ -18,7 +20,7 @@ const dateFmt = new Intl.DateTimeFormat("en", { year: "numeric", month: "short",
 
 const state = {
   accounts: [], resources: [], metrics: [], releases: [],
-  rangeDays: 90, accountFilter: "all", resourceFilter: "all",
+  platformFilter: "all", resourceFilter: "all",
 };
 let charts = [];
 
@@ -27,8 +29,12 @@ let charts = [];
 const isDark = () => document.documentElement.getAttribute("data-theme") === "dark";
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const ramp = () => (isDark() ? CATEGORICAL.dark : CATEGORICAL.light);
-const paletteFor = (i) => (i < ramp().length ? ramp()[i] : OTHER);
-const colorForResource = (rid) => paletteFor(state.resourceRank.get(rid) ?? 99);
+const paletteFor = (i) => (i < ramp().length ? ramp()[i] : (isDark() ? "#6c7086" : "#9ca0b0"));
+
+// No label is drawn on top of a fill anywhere in this dashboard. Both palettes have accents
+// that only one ink can sit on — Mocha's pastels swallow white (1.3:1), Latte's yellow and
+// green swallow Base (2.3:1) — and picking ink per slice leaves one donut wearing two label
+// colors. Donut values ride in the legend instead; bar values ride past the end of the bar.
 
 // ---- helpers -------------------------------------------------------------
 
@@ -44,7 +50,7 @@ function el(tag, className, text) {
 
 function currentScope() {
   if (state.resourceFilter !== "all") return "resource";
-  if (state.accountFilter !== "all") return "account";
+  if (state.platformFilter !== "all") return "platform";
   return "all";
 }
 
@@ -53,17 +59,10 @@ function setSection(name, visible) {
   if (s) s.hidden = !visible;
 }
 
-function windowStartMs() {
-  if (state.rangeDays === "all") return -Infinity;
-  return Date.now() - state.rangeDays * 24 * 3600 * 1000;
-}
-
 function scopedMetrics() {
-  const min = windowStartMs();
   return state.metrics.filter((m) => {
-    if (new Date(m.recordedAt).getTime() < min) return false;
     if (state.resourceFilter !== "all") return m.resourceID === state.resourceFilter;
-    if (state.accountFilter !== "all") return state.resourceAccount.get(m.resourceID) === state.accountFilter;
+    if (state.platformFilter !== "all") return state.resourcePlatform.get(m.resourceID) === state.platformFilter;
     return true;
   });
 }
@@ -105,66 +104,7 @@ function latestByResource(metrics) {
   return best;
 }
 
-// One line per resource, ranked by this metric's own latest value; keep the top 8 (each a
-// distinct hue) and drop the small tail. Ranking per-chart (not by global totals) keeps every
-// metric legible — a star-heavy repo leads the Stars chart even if it has no downloads — and
-// avoids a summed "Other" line blowing out the y-scale.
-const TREND_CAP = 8;
-function trendSeries(metrics) {
-  const byResource = new Map();
-  for (const m of metrics) {
-    if (!byResource.has(m.resourceID)) byResource.set(m.resourceID, []);
-    byResource.get(m.resourceID).push([new Date(m.recordedAt).getTime(), m.reading]);
-  }
-  const all = [];
-  for (const [rid, data] of byResource) {
-    data.sort((a, b) => a[0] - b[0]);
-    all.push({ name: state.resourceNames.get(rid) ?? "?", data, last: data.length ? data[data.length - 1][1] : 0 });
-  }
-  all.sort((a, b) => b.last - a.last);
-  const series = all.slice(0, TREND_CAP);
-  series.forEach((s, i) => { s.color = paletteFor(i); });
-  return { series, total: all.length };
-}
-
 // ---- ApexCharts option builders -----------------------------------------
-
-function trendOptions(series, colors, annotations) {
-  const single = series.length === 1;
-  return {
-    chart: {
-      type: single ? "area" : "line", height: 300, fontFamily: "inherit",
-      foreColor: css("--chart-text"), background: "transparent",
-      toolbar: { show: true, tools: { download: false, selection: false, pan: false, zoom: true, zoomin: true, zoomout: true, reset: true } },
-      animations: { enabled: true, speed: 350 },
-    },
-    colors, series,
-    stroke: { width: 2, curve: "smooth", lineCap: "round" },
-    // Only area charts get a fill. A zero-opacity fill on a `line` chart hides the stroke too
-    // (ApexCharts applies fill opacity to the line), so lines omit `fill` entirely.
-    fill: single ? { type: "gradient", gradient: { opacityFrom: 0.2, opacityTo: 0.02 } } : { type: "solid", opacity: 1 },
-    markers: { size: 0, hover: { size: 5 } },
-    dataLabels: { enabled: false },
-    grid: { borderColor: css("--chart-grid"), strokeDashArray: 0, xaxis: { lines: { show: false } }, padding: { left: 8, right: 12 } },
-    xaxis: {
-      type: "datetime", axisBorder: { color: css("--chart-baseline") }, axisTicks: { color: css("--chart-baseline") },
-      labels: { style: { colors: css("--chart-muted") }, datetimeUTC: false }, tooltip: { enabled: false },
-    },
-    yaxis: { labels: { style: { colors: css("--chart-muted") }, formatter: (v) => compact.format(v) } },
-    legend: { show: series.length > 1, position: "bottom", horizontalAlign: "left", markers: { width: 10, height: 10, radius: 6 }, labels: { colors: css("--chart-text") }, itemMargin: { horizontal: 10, vertical: 4 } },
-    tooltip: { shared: true, intersect: false, theme: isDark() ? "dark" : "light", x: { format: "dd MMM yyyy" }, y: { formatter: (v) => whole.format(v) } },
-    annotations: { xaxis: annotations ?? [] },
-  };
-}
-
-function sparkOptions(data, color) {
-  return {
-    chart: { type: "area", height: 42, sparkline: { enabled: true }, animations: { enabled: false } },
-    series: [{ name: "", data }], colors: [color],
-    stroke: { width: 1.5, curve: "smooth" }, fill: { type: "gradient", gradient: { opacityFrom: 0.35, opacityTo: 0 } },
-    tooltip: { enabled: false },
-  };
-}
 
 function donutOptions(labels, values, colors) {
   const total = values.reduce((a, b) => a + b, 0);
@@ -172,22 +112,46 @@ function donutOptions(labels, values, colors) {
     chart: { type: "donut", height: 250, fontFamily: "inherit", foreColor: css("--chart-text"), background: "transparent" },
     labels, series: values, colors,
     stroke: { width: 2, colors: [css("--chart-surface")] },
-    dataLabels: { enabled: true, formatter: (_v, o) => whole.format(o.w.globals.series[o.seriesIndex]), style: { fontSize: "11px" }, dropShadow: { enabled: false } },
+    dataLabels: { enabled: false },
     plotOptions: { pie: { donut: { size: "64%", labels: { show: true, total: { show: true, label: "Total", color: css("--chart-muted"), formatter: () => whole.format(total) } } } } },
-    legend: { position: "bottom", labels: { colors: css("--chart-text") }, markers: { width: 10, height: 10, radius: 6 } },
+    legend: {
+      position: "bottom", labels: { colors: css("--chart-text") }, markers: { width: 10, height: 10, radius: 6 },
+      formatter: (label, o) => `${label} · ${whole.format(o.w.globals.series[o.seriesIndex])}`,
+    },
     tooltip: { theme: isDark() ? "dark" : "light", y: { formatter: (v) => whole.format(v) } },
   };
 }
 
-function barOptions(categories, values) {
+// Round a raw axis ceiling up to the next readable step so ticks land on whole numbers instead
+// of whatever the headroom multiplier happens to produce (1180 → 1200, not 1180).
+function niceCeil(n) {
+  if (!(n > 0)) return 1;
+  const magnitude = 10 ** Math.floor(Math.log10(n));
+  const step = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find((s) => n <= s * magnitude) ?? 10;
+  return step * magnitude;
+}
+
+// Axis ticks come out of Apex's arithmetic, so the first one can be negative zero or a hair
+// below it; Intl renders that as "-0". Collapsing to +0 is enough (-0 === 0 in JS).
+const axisValue = (v) => compact.format(v === 0 ? 0 : v);
+
+function barOptions(categories, values, colors) {
+  // Labels ride just past the end of each bar rather than on the fill: readable at any bar
+  // length in either theme, where an on-fill label fails on long pastel bars and a short bar
+  // pushes its label onto the panel anyway. The axis carries headroom so the longest one fits.
+  const peak = Math.max(...values, 0);
   return {
     chart: { type: "bar", height: Math.max(190, categories.length * 32 + 60), fontFamily: "inherit", foreColor: css("--chart-text"), background: "transparent", toolbar: { show: false } },
-    series: [{ name: "Total", data: values }], colors: [css("--accent")],
-    plotOptions: { bar: { horizontal: true, borderRadius: 4, borderRadiusApplication: "end", barHeight: "62%" } },
-    dataLabels: { enabled: true, formatter: (v) => compact.format(v), textAnchor: "start", offsetX: 4, style: { colors: [css("--chart-text")], fontWeight: 500 } },
-    xaxis: { categories, labels: { style: { colors: css("--chart-muted") }, formatter: (v) => compact.format(v) }, axisBorder: { show: false }, axisTicks: { show: false } },
-    yaxis: { labels: { style: { colors: css("--chart-text") } } },
-    grid: { borderColor: css("--chart-grid"), xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+    series: [{ name: "Current reading", data: values }], colors: colors ?? [css("--accent")],
+    plotOptions: { bar: { horizontal: true, distributed: Boolean(colors), borderRadius: 4, borderRadiusApplication: "end", barHeight: "62%", dataLabels: { position: "top" } } },
+    dataLabels: { enabled: true, formatter: (v) => compact.format(v), textAnchor: "start", offsetX: 12, style: { colors: [css("--chart-text")], fontWeight: 500 } },
+    // min is pinned because setting max alone lets Apex derive min from the data, which floats
+    // the baseline off zero and makes bar length stop encoding the value.
+    xaxis: { categories, min: 0, max: peak > 0 ? niceCeil(peak * 1.28) : undefined, labels: { style: { colors: css("--chart-muted") }, formatter: axisValue }, axisBorder: { show: false }, axisTicks: { show: false } },
+    // Names sit off the bar starts by the same gap the values keep off the bar ends; the grid
+    // padding gives that shift somewhere to go so the longest name isn't clipped at the edge.
+    yaxis: { labels: { offsetX: -8, style: { colors: css("--chart-text") } } },
+    grid: { borderColor: css("--chart-grid"), padding: { left: 8 }, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
     legend: { show: false },
     tooltip: { theme: isDark() ? "dark" : "light", y: { formatter: (v) => whole.format(v) } },
   };
@@ -221,19 +185,20 @@ function renderContext(scope) {
   const meta = el("div", "p-meta");
   const chips = el("div", "chips");
 
-  if (scope === "account") {
-    const account = state.accounts.find((a) => a.id === state.accountFilter);
-    const resources = state.resources.filter((r) => r.accountID === account.id);
+  if (scope === "platform") {
+    const platform = state.platformFilter;
+    const resources = state.resources.filter((r) => state.resourcePlatform.get(r.id) === platform);
     const rids = new Set(resources.map((r) => r.id));
     const releases = state.releases.filter((r) => rids.has(r.resourceID)).length;
-    host.append(el("div", "p-title", account?.name ?? "Account"));
-    chips.append(chip(platformLabel(account?.platform), true), chip(`${whole.format(account?.followers ?? 0)} followers`), chip(`${resources.length} resources`), chip(`${releases} releases`));
+    // One handle per platform today, but sum anyway so a second account doesn't silently vanish.
+    const followers = state.accounts.filter((a) => a.platform === platform).reduce((sum, a) => sum + (a.followers ?? 0), 0);
+    host.append(el("div", "p-title", platformLabel(platform)));
+    chips.append(chip(`${whole.format(followers)} followers`, true), chip(`${resources.length} resources`), chip(`${releases} releases`));
   } else {
     const resource = state.resources.find((r) => r.id === state.resourceFilter);
-    const account = state.accounts.find((a) => a.id === resource?.accountID);
     const releases = state.releases.filter((r) => r.resourceID === resource?.id).length;
     host.append(el("div", "p-title", resource?.name ?? "Resource"));
-    chips.append(chip(titleCase(resource?.type ?? ""), true), chip(account?.name ?? "", false), chip(platformLabel(account?.platform)), chip(`${releases} releases`));
+    chips.append(chip(titleCase(resource?.type ?? ""), true), chip(platformLabel(state.resourcePlatform.get(resource?.id) ?? "")), chip(`${releases} releases`));
   }
   meta.append(chips);
   host.append(meta);
@@ -244,26 +209,23 @@ function renderKPIs(byType, showAll) {
   host.replaceChildren();
 
   let entries = [...byType.entries()]
-    .map(([type, metrics]) => ({ type, agg: totalSeries(metrics) }))
-    .filter((x) => x.agg.length);
-  entries.sort((a, b) => b.agg[b.agg.length - 1][1] - a.agg[a.agg.length - 1][1]);
+    .map(([type, metrics]) => ({ type, latest: latestByResource(metrics) }))
+    .filter((x) => x.latest.size);
+  entries.sort((a, b) =>
+    [...b.latest.values()].reduce((sum, x) => sum + x.v, 0) -
+    [...a.latest.values()].reduce((sum, x) => sum + x.v, 0));
   if (!showAll) entries = entries.slice(0, 4);
 
-  for (const { type, agg } of entries) {
-    const first = agg[0][1], last = agg[agg.length - 1][1];
-    const pct = first > 0 ? ((last - first) / first) * 100 : 0;
-    const dir = pct > 0.05 ? "up" : pct < -0.05 ? "down" : "flat";
-
+  for (const { type, latest } of entries) {
+    const total = [...latest.values()].reduce((sum, x) => sum + x.v, 0);
+    const resourceLabel = latest.size === 1 ? "resource" : "resources";
     const card = el("div", "panel kpi");
     card.append(
       el("div", "k-label", titleCase(type)),
-      el("div", "k-value", compact.format(last)),
-      el("div", `k-delta ${dir}`, `${pct > 0 ? "+" : ""}${pct.toFixed(1)}% vs range start`),
+      el("div", "k-value", compact.format(total)),
+      el("div", "k-context", `Current total across ${latest.size} ${resourceLabel}`),
     );
-    const spark = el("div", "k-spark");
-    card.append(spark);
     host.append(card);
-    mount(spark, sparkOptions(agg, paletteFor(0)));
   }
 }
 
@@ -274,8 +236,8 @@ function renderDistributions(scope) {
   host.replaceChildren();
 
   // Resources by type (scoped).
-  const resources = scope === "account"
-    ? state.resources.filter((r) => r.accountID === state.accountFilter)
+  const resources = scope === "platform"
+    ? state.resources.filter((r) => state.resourcePlatform.get(r.id) === state.platformFilter)
     : state.resources;
   const typeCounts = RESOURCE_ORDER.map((t) => resources.filter((r) => r.type === t).length);
   const typeLabels = RESOURCE_ORDER.filter((_, i) => typeCounts[i] > 0).map(titleCase);
@@ -286,87 +248,52 @@ function renderDistributions(scope) {
   typePanel.append(typeMount); host.append(typePanel);
   mount(typeMount, donutOptions(typeLabels, typeValues, typeColors));
 
-  // Accounts by platform (only meaningful across all accounts).
+  // Resources by platform (only meaningful across all platforms). Counting accounts here would
+  // just show a flat 1-per-platform, so this counts what actually differs: the resources.
   if (scope === "all") {
-    const counts = PLATFORM_ORDER.map((p) => state.accounts.filter((a) => a.platform === p).length);
+    const counts = PLATFORM_ORDER.map((p) => state.resources.filter((r) => state.resourcePlatform.get(r.id) === p).length);
     const labels = PLATFORM_ORDER.filter((_, i) => counts[i] > 0).map(platformLabel);
     const values = counts.filter((c) => c > 0);
     const colors = PLATFORM_ORDER.map((_, i) => paletteFor(i)).filter((_, i) => counts[i] > 0);
-    const p = panel("Accounts by platform");
+    const p = panel("Resources by platform");
     const m = el("div", "chart");
     p.append(m); host.append(p);
     mount(m, donutOptions(labels, values, colors));
   }
 }
 
-function renderLeaders(byType, scope) {
-  const host = document.querySelector("[data-leaders]");
-  setSection("leaders", scope !== "resource");
-  if (scope === "resource") return;
-  host.replaceChildren();
-
-  // Readings by metric type (magnitude → bar, one hue).
-  const typeEntries = [...byType.entries()].map(([type, m]) => [titleCase(type), totalLatest(m)]).sort((a, b) => a[1] - b[1]);
-  if (typeEntries.length) {
-    const p = panel("Readings by metric type", "latest totals in range");
-    const m = el("div", "chart");
-    p.append(m); host.append(p);
-    mount(m, barOptions(typeEntries.map((e) => e[0]), typeEntries.map((e) => e[1])));
-  }
-
-  // Top resources by the dominant metric type.
-  const dominant = [...byType.entries()].sort((a, b) => totalLatest(b[1]) - totalLatest(a[1]))[0];
-  if (dominant) {
-    const [type, metrics] = dominant;
-    const latest = latestByResource(metrics);
-    const rows = [...latest.entries()]
-      .map(([rid, x]) => [state.resourceNames.get(rid) ?? "?", x.v])
-      .sort((a, b) => a[1] - b[1]).slice(-8);
-    const p = panel(`Top resources by ${type}`, "latest reading");
-    const m = el("div", "chart");
-    p.append(m); host.append(p);
-    mount(m, barOptions(rows.map((r) => r[0]), rows.map((r) => r[1])));
-  }
-}
-
-function releaseAnnotations() {
-  if (state.resourceFilter === "all") return [];
-  const min = windowStartMs();
-  return state.releases
-    .filter((r) => r.resourceID === state.resourceFilter && r.releasedAt && new Date(r.releasedAt).getTime() >= min)
-    .map((r) => ({
-      x: new Date(r.releasedAt).getTime(),
-      borderColor: css("--chart-muted"),
-      strokeDashArray: 4,
-      label: { text: r.version, orientation: "horizontal", position: "top", style: { fontSize: "10px", color: css("--chart-text"), background: css("--chart-surface"), fontFamily: "inherit" } },
-    }));
-}
-
-function renderTrends(byType, scope) {
+function renderCurrentReach(byType, scope) {
   const host = document.querySelector("[data-charts]");
   host.replaceChildren();
   document.querySelector("[data-charts-title]").textContent =
-    scope === "resource" ? "Metrics over time" : scope === "account" ? "Metrics over time · this account" : "Metrics over time · all resources";
+    scope === "resource" ? "Current metrics" : scope === "platform" ? "Current reach · this platform" : "Current reach · all resources";
 
   if (byType.size === 0) {
-    host.append(el("div", "empty", "No metrics in this range. Reseed the dev database with `just migrate`."));
+    host.append(el("div", "empty", "No metrics are available for this selection."));
     return;
   }
 
-  const annotations = releaseAnnotations();
   const ordered = [...byType.entries()].sort((a, b) => totalLatest(b[1]) - totalLatest(a[1]));
 
   for (const [type, metrics] of ordered) {
-    const { series, total } = trendSeries(metrics);
-    const colors = series.map((s) => s.color);
-    const sub = series.length > 1
-      ? (total > series.length ? `top ${series.length} of ${total} resources` : `${series.length} resources`)
-      : series[0].name;
-
-    const p = panel(`${titleCase(type)} over time`, sub);
+    const latest = latestByResource(metrics);
+    const rows = [...latest.entries()]
+      .map(([rid, x]) => ({ rid, name: state.resourceNames.get(rid) ?? "?", value: x.v }))
+      .sort((a, b) => a.value - b.value)
+      .slice(-8);
+    const total = [...latest.values()].reduce((sum, x) => sum + x.v, 0);
+    const coverage = latest.size === 1 ? "1 resource" : `${latest.size} resources`;
+    const shown = latest.size > rows.length ? ` · top ${rows.length} shown` : "";
+    const p = panel(titleCase(type), `${whole.format(total)} total · ${coverage}${shown}`);
     const m = el("div", "chart");
     p.append(m); host.append(p);
-    mount(m, trendOptions(series.map((s) => ({ name: s.name, data: s.data })), colors, annotations));
+    mount(m, barOptions(
+      rows.map((r) => r.name),
+      rows.map((r) => r.value),
+      // Rank colors within each metric so every visible leader gets a distinct hue.
+      // Rows are ascending for horizontal bars, so the largest receives palette color 0.
+      rows.map((_, i) => paletteFor(rows.length - 1 - i)),
+    ));
   }
 }
 
@@ -380,7 +307,7 @@ function renderReleases(scope) {
   if (scope === "resource") {
     list = state.releases.filter((r) => r.resourceID === state.resourceFilter);
   } else {
-    const rids = new Set(state.resources.filter((r) => r.accountID === state.accountFilter).map((r) => r.id));
+    const rids = new Set(state.resources.filter((r) => state.resourcePlatform.get(r.id) === state.platformFilter).map((r) => r.id));
     list = state.releases.filter((r) => rids.has(r.resourceID));
   }
   list = list.filter((r) => r.releasedAt).sort((a, b) => new Date(b.releasedAt) - new Date(a.releasedAt));
@@ -391,7 +318,7 @@ function renderReleases(scope) {
     const row = el("div", "release-row");
     const left = el("div");
     left.append(el("span", "rv", r.version));
-    if (scope === "account") left.append(el("span", "rd", `  ·  ${state.resourceNames.get(r.resourceID) ?? ""}`));
+    if (scope === "platform") left.append(el("span", "rd", `  ·  ${state.resourceNames.get(r.resourceID) ?? ""}`));
     row.append(left, el("span", "rd", dateFmt.format(new Date(r.releasedAt))));
     host.append(row);
   }
@@ -406,8 +333,7 @@ function render() {
   renderContext(scope);
   renderKPIs(byType, scope === "resource");
   renderDistributions(scope);
-  renderLeaders(byType, scope);
-  renderTrends(byType, scope);
+  renderCurrentReach(byType, scope);
   renderReleases(scope);
 
   // Belt-and-suspenders: nudge ApexCharts to remeasure once layout settles.
@@ -418,16 +344,16 @@ function render() {
 
 function buildIndex() {
   state.resourceNames = new Map(state.resources.map((r) => [r.id, r.name]));
-  state.resourceAccount = new Map(state.resources.map((r) => [r.id, r.accountID]));
+  const accountPlatform = new Map(state.accounts.map((a) => [a.id, a.platform]));
+  state.resourcePlatform = new Map(state.resources.map((r) => [r.id, accountPlatform.get(r.accountID)]));
 
-  // Global popularity (total readings per resource) → stable color rank; top 8 get hues.
-  const totals = new Map();
-  for (const m of state.metrics) totals.set(m.resourceID, (totals.get(m.resourceID) ?? 0) + m.reading);
-  const rank = new Map();
-  [...state.resources]
-    .sort((a, b) => (totals.get(b.id) ?? 0) - (totals.get(a.id) ?? 0))
-    .forEach((r, i) => rank.set(r.id, i));
-  state.resourceRank = rank;
+  // Platforms that actually have an account, in the canonical order, with any unknown ones last.
+  const present = new Set(state.accounts.map((a) => a.platform).filter(Boolean));
+  state.platforms = [
+    ...PLATFORM_ORDER.filter((p) => present.has(p)),
+    ...[...present].filter((p) => !PLATFORM_ORDER.includes(p)).sort(),
+  ];
+
 }
 
 function optionEl(value, label) {
@@ -437,15 +363,16 @@ function optionEl(value, label) {
 }
 
 function syncFilters() {
-  const accountSel = document.querySelector("[data-account]");
-  accountSel.replaceChildren(optionEl("all", "All accounts"));
-  [...state.accounts].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")).forEach((a) => accountSel.append(optionEl(a.id, a.name)));
-  accountSel.value = state.accountFilter;
+  const platformSel = document.querySelector("[data-platform]");
+  platformSel.replaceChildren(optionEl("all", "All platforms"));
+  state.platforms.forEach((p) => platformSel.append(optionEl(p, platformLabel(p))));
+  if (state.platformFilter !== "all" && !state.platforms.includes(state.platformFilter)) state.platformFilter = "all";
+  platformSel.value = state.platformFilter;
 
   const resourceSel = document.querySelector("[data-resource]");
   resourceSel.replaceChildren(optionEl("all", "All resources"));
   const list = state.resources
-    .filter((r) => state.accountFilter === "all" || r.accountID === state.accountFilter)
+    .filter((r) => state.platformFilter === "all" || state.resourcePlatform.get(r.id) === state.platformFilter)
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
   list.forEach((r) => resourceSel.append(optionEl(r.id, r.name)));
   if (state.resourceFilter !== "all" && !list.some((r) => r.id === state.resourceFilter)) state.resourceFilter = "all";
@@ -453,22 +380,20 @@ function syncFilters() {
 }
 
 function renderMasthead() {
-  const accounts = new Set(state.resources.map((r) => r.accountID)).size;
+  const platforms = new Set(state.resources.map((r) => state.resourcePlatform.get(r.id)).filter(Boolean)).size;
   document.querySelector("[data-summary]").textContent =
-    `${accounts} accounts · ${state.resources.length} resources · ${state.metrics.length.toLocaleString()} readings · ${state.releases.length} releases`;
+    `${platforms} platforms · ${state.resources.length} resources · ${state.metrics.length.toLocaleString()} readings · ${state.releases.length} releases`;
+  const latest = state.metrics.reduce((max, m) => {
+    const time = new Date(m.recordedAt).getTime();
+    return Number.isFinite(time) && time > max ? time : max;
+  }, -Infinity);
+  document.querySelector("[data-snapshot-date]").textContent =
+    Number.isFinite(latest) ? `Snapshot · ${dateFmt.format(new Date(latest))}` : "Current snapshot";
 }
 
 function wireControls() {
-  document.querySelectorAll("[data-range]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.rangeDays = btn.getAttribute("data-range") === "all" ? "all" : Number(btn.getAttribute("data-range"));
-      document.querySelectorAll("[data-range]").forEach((b) => b.classList.toggle("seg-active", b === btn));
-      render();
-    });
-  });
-
-  document.querySelector("[data-account]").addEventListener("change", (e) => {
-    state.accountFilter = e.target.value;
+  document.querySelector("[data-platform]").addEventListener("change", (e) => {
+    state.platformFilter = e.target.value;
     state.resourceFilter = "all";
     syncFilters();
     render();

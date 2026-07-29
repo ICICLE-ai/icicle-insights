@@ -13,9 +13,9 @@ extension Account {
 
         static let example = Create(name: "octocat", platform: .github)
 
-        func toModel() -> Account {
+        func toModel() throws -> Account {
             let model = Account()
-            model.name = name
+            model.name = try requireNonBlank(name, "name").lowercased()
             model.platform = platform
             model.followers = 0
             return model
