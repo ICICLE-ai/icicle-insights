@@ -11,33 +11,48 @@ extension Vault {
         enum CodingKeys: String, CodingKey {
             case day, month, year
         }
+
+        /// A token that has already expired is never usable, so the date must be in the future.
+        func toDate() throws -> Date {
+            try requireFuture(
+                requireCalendarDate(
+                    year: requireInRange(year, supportedYears, "year"),
+                    month: requireInRange(month, 1 ... 12, "month"),
+                    day: requireInRange(day, 1 ... 31, "day"),
+                    "expires",
+                ),
+                "expires",
+            )
+        }
     }
 
     struct Create: Content, WithExample {
+        var name: String
         var token: String
         var accountID: Account.IDValue
         var expires: Expires
 
         enum CodingKeys: String, CodingKey {
-            case token, accountID, expires
+            case name, token, accountID, expires
         }
 
         static let example = Create(
+            name: "github-token",
             token: "ghp_exampleToken",
             accountID: UUID(uuidString: "0ba5c0de-0000-0000-0000-000000000000")!,
-            expires: Expires(day: 31, month: 12, year: 2026),
+            expires: Expires(day: 31, month: 12, year: 2030),
         )
 
-        func toModel() -> Vault {
+        func toModel() throws -> Vault {
             let model = Vault()
+            model.name = try requireNonBlank(name, "name").lowercased()
             model.$account.id = accountID
 
-            var expirationDate = DateComponents()
-            expirationDate.day = expires.day
-            expirationDate.month = expires.month
-            expirationDate.year = expires.year
+            // Validated here even though the token is not persisted yet — see the TODO in
+            // VaultController.create.
+            _ = try requireNonBlank(token, "token")
 
-            model.expiresAt = Calendar(identifier: .gregorian).date(from: expirationDate)
+            model.expiresAt = try expires.toDate()
             return model
         }
     }
@@ -52,7 +67,7 @@ extension Vault {
 
         static let example = Update(
             token: "ghp_exampleToken",
-            expires: Expires(day: 31, month: 12, year: 2026),
+            expires: Expires(day: 31, month: 12, year: 2030),
         )
     }
 

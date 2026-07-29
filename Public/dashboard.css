@@ -6,45 +6,49 @@
 
 :root,
 :root[data-theme="light"] {
-  --plane:      #f5f6f8;
-  --surface:    #ffffff;
-  --surface-2:  #f2f3f5;
-  --border:     #e6e8eb;
-  --text:       #1b2430;
-  --muted:      #6b7480;
-  --accent:     #2a78d6;
-  --accent-2:   #1baf7a;
-  --good:       #16a34a;
-  --bad:        #dc2626;
-  --shadow:     0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(16, 24, 40, 0.06);
-  --shadow-sm:  0 1px 2px rgba(16, 24, 40, 0.06);
+  color-scheme: light;
+  /* Catppuccin Latte */
+  --plane:      #eff1f5;
+  --surface:    #e6e9ef;
+  --surface-2:  #dce0e8;
+  --border:     #ccd0da;
+  --text:       #4c4f69;
+  --muted:      #6c6f85;
+  --accent:     #1e66f5;
+  --accent-2:   #179299;
+  --good:       #40a02b;
+  --bad:        #d20f39;
+  --shadow:     0 1px 2px rgba(76, 79, 105, 0.06), 0 8px 24px rgba(76, 79, 105, 0.09);
+  --shadow-sm:  0 1px 2px rgba(76, 79, 105, 0.09);
 
-  --chart-surface:  #ffffff;
-  --chart-text:     #1b2430;
-  --chart-muted:    #6b7480;
-  --chart-grid:     #eceef1;
-  --chart-baseline: #dfe2e6;
+  --chart-surface:  #e6e9ef;
+  --chart-text:     #4c4f69;
+  --chart-muted:    #6c6f85;
+  --chart-grid:     #dce0e8;
+  --chart-baseline: #ccd0da;
 }
 
 :root[data-theme="dark"] {
-  --plane:      #101418;
-  --surface:    #1a1f26;
-  --surface-2:  #151a20;
-  --border:     #2a323c;
-  --text:       #c7ced8;
-  --muted:      #7c8794;
-  --accent:     #3987e5;
-  --accent-2:   #199e70;
-  --good:       #4ade80;
-  --bad:        #f87171;
-  --shadow:     0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 28px rgba(0, 0, 0, 0.35);
-  --shadow-sm:  0 1px 2px rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
+  /* Catppuccin Mocha */
+  --plane:      #1e1e2e;
+  --surface:    #181825;
+  --surface-2:  #313244;
+  --border:     #45475a;
+  --text:       #cdd6f4;
+  --muted:      #a6adc8;
+  --accent:     #89b4fa;
+  --accent-2:   #94e2d5;
+  --good:       #a6e3a1;
+  --bad:        #f38ba8;
+  --shadow:     0 1px 2px rgba(17, 17, 27, 0.35), 0 8px 28px rgba(17, 17, 27, 0.45);
+  --shadow-sm:  0 1px 2px rgba(17, 17, 27, 0.4);
 
-  --chart-surface:  #1a1f26;
-  --chart-text:     #c7ced8;
-  --chart-muted:    #7c8794;
-  --chart-grid:     #262d36;
-  --chart-baseline: #2a323c;
+  --chart-surface:  #181825;
+  --chart-text:     #cdd6f4;
+  --chart-muted:    #a6adc8;
+  --chart-grid:     #313244;
+  --chart-baseline: #45475a;
 }
 
 * { box-sizing: border-box; }
@@ -84,6 +88,16 @@ body {
 }
 .filterbar .flabel { font-size: 12px; color: var(--muted); margin: 0 2px 0 6px; text-transform: uppercase; letter-spacing: 0.04em; }
 .filterbar .spacer { flex: 1; }
+.filterbar .select {
+  color: var(--text); background-color: var(--surface-2); border-color: var(--border);
+}
+.btn.btn-ghost { color: var(--text); }
+.btn.btn-ghost:hover { background-color: var(--surface-2); }
+.snapshot-badge {
+  font-size: 12px; font-weight: 620; padding: 5px 10px; border-radius: 999px;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+}
 
 /* Sections */
 .section { margin-bottom: 22px; }
@@ -111,11 +125,7 @@ body {
 .kpi { position: relative; overflow: hidden; }
 .kpi .k-label { font-size: 12.5px; color: var(--muted); text-transform: capitalize; }
 .kpi .k-value { font-size: 30px; font-weight: 680; letter-spacing: -0.02em; margin-top: 4px; }
-.kpi .k-delta { font-size: 12.5px; font-weight: 560; margin-top: 2px; }
-.kpi .k-delta.up { color: var(--good); }
-.kpi .k-delta.down { color: var(--bad); }
-.kpi .k-delta.flat { color: var(--muted); }
-.kpi .k-spark { margin: 8px -18px -16px; }
+.kpi .k-context { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 
 /* Chart mounts */
 .chart { width: 100%; }
@@ -141,9 +151,6 @@ body {
 
 /* Empty state */
 .empty { text-align: center; color: var(--muted); padding: 48px 0; font-size: 14px; }
-
-/* Segmented range control (daisyUI join gives the shape; we accent the active one) */
-.seg-active { background: color-mix(in srgb, var(--accent) 16%, transparent) !important; border-color: color-mix(in srgb, var(--accent) 45%, transparent) !important; color: var(--text) !important; font-weight: 620; }
 
 /* ApexCharts tooltip → match surface */
 .apexcharts-tooltip,

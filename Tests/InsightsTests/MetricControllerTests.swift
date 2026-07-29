@@ -28,6 +28,26 @@ struct MetricControllerTests {
     }
 
     @Test
+    func `Create rejects a negative reading`() async throws {
+        try await withApp { app in
+            let account = try await makeAccount(on: app.db)
+            let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+            let payload = Metric.Create(reading: -1, type: .stars, resourceID: try resource.requireID())
+
+            try await app.testing().test(
+                .POST,
+                "metrics",
+                beforeRequest: { req in try req.content.encode(payload) },
+                afterResponse: { res async throws in
+                    #expect(res.status == .badRequest)
+                    let count = try await Metric.query(on: app.db).count()
+                    #expect(count == 0)
+                },
+            )
+        }
+    }
+
+    @Test
     func `Create with missing resource is a bad request`() async throws {
         try await withApp { app in
             let payload = Metric.Create(reading: 1, type: .stars, resourceID: UUID())
@@ -133,6 +153,22 @@ struct MetricControllerTests {
                     // Most recent 3 (4,5 newest) returned oldest→newest.
                     let readings = try res.content.decode([Metric.Public].self).compactMap(\.reading)
                     #expect(readings == [3, 4, 5])
+                },
+            )
+        }
+    }
+
+    // The `-> Void` is load-bearing: VaporTesting exports a generic `withApp<T>` that skips
+    // `configure`, and a single-expression closure returns the tester, which would select that
+    // overload and leave the app with no routes.
+    @Test(arguments: ["-1", "0", "1001"])
+    func `Index rejects an out of range limit`(limit: String) async throws {
+        try await withApp { app -> Void in
+            try await app.testing().test(
+                .GET,
+                "metrics?limit=\(limit)",
+                afterResponse: { res async throws in
+                    #expect(res.status == .badRequest)
                 },
             )
         }

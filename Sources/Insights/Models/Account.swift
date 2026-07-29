@@ -3,7 +3,7 @@ import struct Foundation.Date
 import struct Foundation.UUID
 
 enum Platform: String, Codable, CaseIterable {
-    case github, huggingface, npm, pypi
+    case github, ghcr, huggingface, npm, pypi
 }
 
 final class Account: Model, @unchecked Sendable {

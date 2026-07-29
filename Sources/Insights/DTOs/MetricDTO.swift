@@ -18,9 +18,9 @@ extension Metric {
             resourceID: UUID(uuidString: "0ba5c0de-0000-0000-0000-000000000000")!,
         )
 
-        func toModel() -> Metric {
+        func toModel() throws -> Metric {
             let model = Metric()
-            model.reading = reading
+            model.reading = try requireNonNegative(reading, "reading")
             model.type = type
             model.$resource.id = resourceID
             return model
