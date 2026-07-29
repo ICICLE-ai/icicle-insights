@@ -1,4 +1,5 @@
 import Fluent
+import Foundation
 @testable import Insights
 import Testing
 import Vapor
@@ -22,6 +23,15 @@ func withApp(_ test: (Application) async throws -> Void) async throws {
 }
 
 // MARK: - Fixtures
+
+/// An expiration a year out. The vault endpoints reject dates in the past, so payloads must not
+/// hard-code a year that will eventually go stale.
+func futureExpires() -> Vault.Expires {
+    let calendar = Calendar(identifier: .gregorian)
+    let date = calendar.date(byAdding: .year, value: 1, to: Date()) ?? Date()
+    let components = calendar.dateComponents([.year, .month, .day], from: date)
+    return Vault.Expires(day: components.day ?? 1, month: components.month ?? 1, year: components.year ?? 2100)
+}
 
 @discardableResult
 func makeAccount(

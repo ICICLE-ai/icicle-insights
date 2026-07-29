@@ -35,11 +35,15 @@ func configure(_ app: Application) async throws {
 
     app.migrations.add(JobModelMigration())
     app.migrations.add(FirstMigration())
+    app.migrations.add(AddGHCRPlatform())
+    app.migrations.add(AddContainerResourceType())
 
-    // Development-only sample data so the dashboard has something to render. Only ever
+    // Development-only seed data so the dashboard has something to render. Only ever
     // registered in `.development`, so it targets `dev` and never the `test` database.
+    // Real ICICLE figures only: the snapshot is a single point in time, so trend series
+    // have one point each until a second sweep is recorded.
     if app.environment == .development {
-        app.migrations.add(SeedData())
+        app.migrations.add(ICICLESnapshotJuly2026())
     }
 
     app.views.use(.leaf)

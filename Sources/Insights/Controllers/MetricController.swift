@@ -3,6 +3,10 @@ import Vapor
 import VaporToOpenAPI
 
 struct MetricController: RouteCollection {
+    /// Ceiling for `?limit=`. Postgres rejects a negative `LIMIT` outright, and an unbounded one
+    /// would hand back the whole series.
+    private let maxLimit = 1000
+
     func boot(routes: any RoutesBuilder) throws {
         let metrics = routes.grouped("metrics")
 
@@ -13,6 +17,8 @@ struct MetricController: RouteCollection {
                 query: .type(Filters.self),
                 response: .type([Metric.Public].self)
             )
+        // Mutating routes stay disabled until auth middleware protects them. The handlers
+        // below are kept intact so re-enabling is just uncommenting the registrations.
         // metrics.post(use: create)
         //     .openAPI(
         //         tags: "Metrics",
@@ -59,7 +65,7 @@ struct MetricController: RouteCollection {
             query = query.filter(\.$type == type)
         }
         if let limit = filters.limit {
-            query = query.limit(limit)
+            query = try query.limit(requireInRange(limit, 1 ... maxLimit, "limit"))
         }
 
         // Most recent `limit` rows, returned oldest→newest for the chart's x-axis.

@@ -12,3 +12,4 @@ db.sqlite
 default.profraw
 
 .memsearch
+data/

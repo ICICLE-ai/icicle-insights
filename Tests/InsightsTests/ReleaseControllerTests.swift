@@ -31,6 +31,66 @@ struct ReleaseControllerTests {
     }
 
     @Test
+    func `Create rejects a blank version`() async throws {
+        try await withApp { app in
+            let account = try await makeAccount(on: app.db)
+            let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+            let payload = Release.Create(version: "  ", month: 7, year: 2026, resourceID: try resource.requireID())
+
+            try await app.testing().test(
+                .POST,
+                "releases",
+                beforeRequest: { req in try req.content.encode(payload) },
+                afterResponse: { res async throws in
+                    #expect(res.status == .badRequest)
+                    let count = try await Release.query(on: app.db).count()
+                    #expect(count == 0)
+                },
+            )
+        }
+    }
+
+    @Test
+    func `Create rejects an out of range month`() async throws {
+        try await withApp { app in
+            let account = try await makeAccount(on: app.db)
+            let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+            let payload = Release.Create(version: "1.0.0", month: 99, year: 2026, resourceID: try resource.requireID())
+
+            try await app.testing().test(
+                .POST,
+                "releases",
+                beforeRequest: { req in try req.content.encode(payload) },
+                afterResponse: { res async throws in
+                    #expect(res.status == .badRequest)
+                    let count = try await Release.query(on: app.db).count()
+                    #expect(count == 0)
+                },
+            )
+        }
+    }
+
+    @Test
+    func `Create rejects an out of range year`() async throws {
+        try await withApp { app in
+            let account = try await makeAccount(on: app.db)
+            let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+            let payload = Release.Create(version: "1.0.0", month: 7, year: 0, resourceID: try resource.requireID())
+
+            try await app.testing().test(
+                .POST,
+                "releases",
+                beforeRequest: { req in try req.content.encode(payload) },
+                afterResponse: { res async throws in
+                    #expect(res.status == .badRequest)
+                    let count = try await Release.query(on: app.db).count()
+                    #expect(count == 0)
+                },
+            )
+        }
+    }
+
+    @Test
     func `Create with missing resource is a bad request`() async throws {
         try await withApp { app in
             let payload = Release.Create(version: "1.0.0", month: 7, year: 2026, resourceID: UUID())

@@ -43,7 +43,7 @@ Highlights:
 - 🚢 **Container-native** — multi-stage Docker build, Compose stack, and a GitHub Actions pipeline that ships to GHCR.
 
 <div align="center">
-  <!-- Screenshot #1: GET /dashboard, "All accounts" overview -->
+  <!-- Screenshot #1: GET /dashboard, "All platforms" overview -->
   <img src="assets/screenshots/dashboard-overview.png" alt="ICICLE Insights dashboard" width="900"/>
 </div>
 
@@ -89,7 +89,7 @@ LOG_LEVEL=info                   # trace | debug | info | notice | warning | err
 **3. Run the migrations, then the server.**
 
 ```bash
-just migrate   # create the schema (and, in development, seed ~5 months of demo data)
+just migrate   # create the schema (and, in development, load the July 2026 ICICLE snapshot)
 just run       # start the server — http://127.0.0.1:8080
 ```
 
@@ -113,18 +113,18 @@ erDiagram
     ACCOUNT {
         uuid   id
         string name
-        enum   platform "github | huggingface | npm | pypi"
+        enum   platform "github | ghcr | huggingface | npm | pypi"
         int    followers
     }
     RESOURCE {
         uuid   id
         string name
-        enum   type "dataset | image | model | package | service"
+        enum   type "container | dataset | image | model | package | repository | service"
     }
     METRIC {
         uuid   id
         double reading
-        enum   type "clones | downloads | forks | likes | pulls | stars | subscribers | views"
+        enum   type "authentications | clones | downloads | forks | likes | pulls | stars | subscribers | views"
         date   recorded_at
     }
     RELEASE {
@@ -224,13 +224,13 @@ curl -X POST http://127.0.0.1:8080/metrics \
 
 ## Dashboard
 
-`GET /dashboard` serves a single Leaf shell; everything else renders client-side from the JSON API. A single filter bar — **range · account · resource** — scopes three progressively deeper views:
+`GET /dashboard` serves a single Leaf shell; everything else renders client-side from the JSON API. A single filter bar — **range · platform · resource** — scopes three progressively deeper views:
 
-**All accounts → Account → Resource**
+**All platforms → Platform → Resource**
 
 Chart form follows the data: totals, distributions, and time series each pick the shape that reads best. Series colours are drawn from a validated CVD-safe categorical palette and adapt to light/dark theme automatically. There is **no build step and no chart library dependency** — just `Public/dashboard.js` and `Public/dashboard.css`.
 
-In development, `just migrate` seeds ~5 months of realistic daily data across every platform, resource type, and metric type, so the dashboard has something rich to show immediately.
+In development, `just migrate` loads `ICICLESnapshotJuly2026` — the real ICICLE GitHub, GHCR, npm, and Hugging Face figures captured in July 2026 — so the dashboard has something true to show immediately. No synthetic data is seeded anywhere. It is a point-in-time snapshot, so each series holds a single reading until a later sweep is recorded.
 
 <div align="center">
   <img src="assets/screenshots/dashboard-metrics.png" alt="Per-metric time-series charts" width="900"/>
@@ -295,7 +295,7 @@ just test        # → swift test --no-parallel
 │   ├── Models/         # Fluent models: Account, Resource, Metric, Release, Vault
 │   ├── DTOs/           # Create/Update/Public request & response shapes (+ OpenAPI examples)
 │   ├── Controllers/    # RouteCollections for each resource + the dashboard
-│   ├── Migrations/     # Schema (FirstMigration) and development seed data (SeedData)
+│   ├── Migrations/     # Schema (FirstMigration, AddGHCRPlatform, AddContainerResourceType) + real dev data (ICICLESnapshotJuly2026)
 │   ├── Jobs/           # Vapor Queues jobs (GitHub sync)
 │   ├── configure.swift # App bootstrap: DB, migrations, Leaf, queues, JSON coding
 │   ├── routes.swift    # Route registration

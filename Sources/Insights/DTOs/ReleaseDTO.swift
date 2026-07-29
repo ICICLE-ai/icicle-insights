@@ -20,16 +20,16 @@ extension Release {
             resourceID: UUID(uuidString: "0ba5c0de-0000-0000-0000-000000000000")!,
         )
 
-        func toModel() -> Release {
+        func toModel() throws -> Release {
             let model = Release()
-            model.version = version
+            model.version = try requireNonBlank(version, "version")
             model.$resource.id = resourceID
 
-            var releaseDate = DateComponents()
-            releaseDate.month = month
-            releaseDate.year = year
-
-            model.releasedAt = Calendar(identifier: .gregorian).date(from: releaseDate)
+            model.releasedAt = try requireCalendarDate(
+                year: requireInRange(year, supportedYears, "year"),
+                month: requireInRange(month, 1 ... 12, "month"),
+                "releasedAt",
+            )
             return model
         }
     }

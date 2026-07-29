@@ -10,35 +10,37 @@ struct VaultController: RouteCollection {
             .openAPI(
                 tags: "Vaults",
                 summary: "List vaults",
-                response: .type([Vault.Public].self),
+                response: .type([Vault.Public].self)
             )
+        // Mutating routes stay disabled until auth middleware protects them. The handlers
+        // below are kept intact so re-enabling is just uncommenting the registrations.
         // vaults.post(use: create)
         //     .openAPI(
         //         tags: "Vaults",
         //         summary: "Create vault",
         //         body: .type(Vault.Create.self),
         //         response: .type(Vault.Public.self),
-        //         statusCode: 201,
+        //         statusCode: 201
         //     )
         vaults.group(":vaultID") { vault in
             vault.get(use: show)
                 .openAPI(
                     tags: "Vaults",
                     summary: "Get vault by ID",
-                    response: .type(Vault.Public.self),
+                    response: .type(Vault.Public.self)
                 )
             // vault.patch(use: update)
             //     .openAPI(
             //         tags: "Vaults",
             //         summary: "Update token in vault",
             //         body: .type(Vault.Update.self),
-            //         response: .type(Vault.Public.self),
+            //         response: .type(Vault.Public.self)
             //     )
             // vault.delete(use: delete)
             //     .openAPI(
             //         tags: "Vaults",
             //         summary: "Delete vault",
-            //         statusCode: 204,
+            //         statusCode: 204
             //     )
         }
     }
@@ -51,14 +53,18 @@ struct VaultController: RouteCollection {
     @Sendable
     func create(req: Request) async throws -> Response {
         let payload = try req.content.decode(Vault.Create.self)
-        let vault = payload.toModel()
-        vault.name = vault.name.lowercased()
+        let vault = try payload.toModel()
 
         guard let account = try await Account.find(vault.$account.id, on: req.db)
         else {
             throw Abort(.badRequest, reason: "Account with ID: \(vault.$account.id), not found.")
         }
-        try await account.$vault.create(vault, on: req.db)
+
+        try await conflictOnConstraintFailure(
+            "A vault named '\(vault.name)' already exists for this account.",
+        ) {
+            try await account.$vault.create(vault, on: req.db)
+        }
 
         // TODO: Save token in vault
 
@@ -84,13 +90,10 @@ struct VaultController: RouteCollection {
 
         let newValues = try req.content.decode(Vault.Update.self)
 
-        // Convert expiration date to Date
-        var expirationDate = DateComponents()
-        expirationDate.day = newValues.expires.day
-        expirationDate.month = newValues.expires.month
-        expirationDate.year = newValues.expires.year
+        // Validated here even though the token is not persisted yet — see the TODO below.
+        _ = try requireNonBlank(newValues.token, "token")
 
-        vault.expiresAt = Calendar(identifier: .gregorian).date(from: expirationDate)
+        vault.expiresAt = try newValues.expires.toDate()
 
         try await vault.save(on: req.db)
 

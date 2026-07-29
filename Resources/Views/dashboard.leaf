@@ -6,7 +6,7 @@
   <title>ICICLE Insights — Dashboard</title>
   <link rel="icon" href="/favicon.ico">
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css" rel="stylesheet" type="text/css">
-  <link rel="stylesheet" href="/dashboard.css">
+  <link rel="stylesheet" href="/dashboard.css?v=15">
   <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 </head>
 
@@ -25,14 +25,9 @@
     </div>
 
     <div class="filterbar">
-      <span class="flabel">Range</span>
-      <div class="join">
-        <button class="btn btn-sm join-item" type="button" data-range="30">30d</button>
-        <button class="btn btn-sm join-item seg-active" type="button" data-range="90">90d</button>
-        <button class="btn btn-sm join-item" type="button" data-range="all">All</button>
-      </div>
-      <span class="flabel">Account</span>
-      <select class="select select-sm select-bordered" data-account aria-label="Account"></select>
+      <span class="snapshot-badge" data-snapshot-date>Current snapshot</span>
+      <span class="flabel">Platform</span>
+      <select class="select select-sm select-bordered" data-platform aria-label="Platform"></select>
       <span class="flabel">Resource</span>
       <select class="select select-sm select-bordered" data-resource aria-label="Resource"></select>
       <span class="spacer"></span>
@@ -52,13 +47,8 @@
       <div class="mini-grid" data-distributions></div>
     </section>
 
-    <section class="section" data-section="leaders" hidden>
-      <div class="section-head"><h2>Leaders</h2><span class="hint">top resources by metric</span></div>
-      <div class="mini-grid" data-leaders></div>
-    </section>
-
     <section class="section" data-section="charts">
-      <div class="section-head"><h2 data-charts-title>Metrics over time</h2><span class="hint">one chart per metric type</span></div>
+      <div class="section-head"><h2 data-charts-title>Current reach</h2><span class="hint">latest reading for each resource</span></div>
       <div class="chart-grid" data-charts></div>
     </section>
 
@@ -69,6 +59,6 @@
 
   </div>
 
-  <script src="/dashboard.js"></script>
+  <script src="/dashboard.js?v=15"></script>
 </body>
 </html>

@@ -12,6 +12,8 @@ struct ResourceController: RouteCollection {
                 summary: "List resources",
                 response: .type([Resource.Public].self),
             )
+        // Mutating routes stay disabled until auth middleware protects them. The handlers
+        // below are kept intact so re-enabling is just uncommenting the registrations.
         // resources.post(use: create)
         //     .openAPI(
         //         tags: "Resources",
@@ -44,13 +46,17 @@ struct ResourceController: RouteCollection {
     @Sendable
     func create(req: Request) async throws -> Response {
         let resource = try req.content.decode(Resource.Create.self).toModel()
-        resource.name = resource.name.lowercased()
 
         guard let account = try await Account.find(resource.$account.id, on: req.db)
         else {
             throw Abort(.badRequest, reason: "Account with ID: \(resource.$account.id), not found.")
         }
-        try await account.$resources.create(resource, on: req.db)
+
+        try await conflictOnConstraintFailure(
+            "A \(resource.type.rawValue) named '\(resource.name)' already exists for this account.",
+        ) {
+            try await account.$resources.create(resource, on: req.db)
+        }
 
         return try await resource.toPublic().encodeResponse(status: .created, for: req)
     }
