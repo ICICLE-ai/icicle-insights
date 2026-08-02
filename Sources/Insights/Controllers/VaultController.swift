@@ -63,10 +63,15 @@ struct VaultController: RouteCollection {
         try await conflictOnConstraintFailure(
             "A vault named '\(vault.name)' already exists for this account.",
         ) {
-            try await account.$vault.create(vault, on: req.db)
+            // Row and secret must land together: a committed row whose secret failed to write is
+            // metadata pointing at nothing.
+            try await req.db.transaction { db in
+                try await account.$vault.create(vault, on: db)
+                try await req.application.tapis.vaults.writeSecret(
+                    named: vault.name, secret: payload.token,
+                )
+            }
         }
-
-        // TODO: Save token in vault
 
         return try await vault.toPublic().encodeResponse(status: .created, for: req)
     }
@@ -95,9 +100,12 @@ struct VaultController: RouteCollection {
 
         vault.expiresAt = try newValues.expires.toDate()
 
-        try await vault.save(on: req.db)
-
-        // TODO: Send token to vault
+        // Rotate the token and record the new expiry together, so a failure on either side
+        // never leaves the two disagreeing.
+        try await req.db.transaction { db in
+            try await vault.save(on: db)
+            try await req.application.tapis.vaults.writeSecret(named: vault.name, secret: newValues.token)
+        }
 
         return vault.toPublic()
     }
@@ -109,7 +117,13 @@ struct VaultController: RouteCollection {
             throw Abort(.notFound)
         }
 
-        try await vault.delete(on: req.db)
+        // Soft delete our metadata and destroy the token on the Vault platform together: a
+        // failed destroy must not leave the row deleted with the secret still live.
+        try await req.db.transaction { db in
+            try await vault.delete(on: db)
+            try await req.application.tapis.vaults.destroySecret(named: vault.name)
+        }
+
         return .noContent
     }
 }

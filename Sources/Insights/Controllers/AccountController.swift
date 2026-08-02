@@ -29,19 +29,19 @@ struct AccountController: RouteCollection {
                     summary: "Get account by ID",
                     response: .type(Account.Public.self),
                 )
-            // account.patch(use: update)
-            //     .openAPI(
-            //         tags: "Accounts",
-            //         summary: "Update account followers",
-            //         body: .type(Account.Update.self),
-            //         response: .type(Account.Public.self),
-            //     )
-            // account.delete(use: delete)
-            //     .openAPI(
-            //         tags: "Accounts",
-            //         summary: "Delete account",
-            //         statusCode: 204,
-            //     )
+            account.patch(use: update)
+                .openAPI(
+                    tags: "Accounts",
+                    summary: "Update account followers",
+                    body: .type(Account.Update.self),
+                    response: .type(Account.Public.self),
+                )
+            account.delete(use: delete)
+                .openAPI(
+                    tags: "Accounts",
+                    summary: "Delete account",
+                    statusCode: 204,
+                )
         }
     }
 

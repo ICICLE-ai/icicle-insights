@@ -22,6 +22,31 @@ func withApp(_ test: (Application) async throws -> Void) async throws {
     try await app.asyncShutdown()
 }
 
+// MARK: - Tapis stub
+
+/// Answers every request with a fixed status and an empty body, so tests can drive the
+/// `TapisClientError` paths without touching the network.
+struct StubClient: Client {
+    let eventLoop: any EventLoop
+    let status: HTTPResponseStatus
+
+    func delegating(to eventLoop: any EventLoop) -> any Client {
+        StubClient(eventLoop: eventLoop, status: status)
+    }
+
+    func send(_ request: ClientRequest) -> EventLoopFuture<ClientResponse> {
+        eventLoop.makeSucceededFuture(ClientResponse(status: status, headers: [:], body: nil))
+    }
+}
+
+/// Repoint `app.tapis` at an always-failing stub, reusing the env-derived config.
+func stubTapis(on app: Application, status: HTTPResponseStatus) {
+    app.tapis = TapisClient(
+        client: StubClient(eventLoop: app.eventLoopGroup.any(), status: status),
+        config: app.tapis.config,
+    )
+}
+
 // MARK: - Fixtures
 
 /// An expiration a year out. The vault endpoints reject dates in the past, so payloads must not
