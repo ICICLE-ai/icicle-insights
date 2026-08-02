@@ -85,48 +85,48 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
     /// Zero-valued readings are intentionally omitted while their resources are retained.
     private static let additionalAccounts: [AccountSpec] = [
         AccountSpec(platform: .ghcr, followers: 0, resources: [
-            ResourceSpec("fass-back", type: .container, metrics: [.init(.pulls, 346)]),
-            ResourceSpec("fass-front", type: .container, metrics: [.init(.pulls, 344)]),
-            ResourceSpec("store-closure-back", type: .container, metrics: [.init(.pulls, 261)]),
-            ResourceSpec("insights", type: .container, metrics: [.init(.pulls, 243)]),
-            ResourceSpec("store-closure-front", type: .container, metrics: [.init(.pulls, 224)]),
-            ResourceSpec("catalogfrontend", type: .container, metrics: [.init(.pulls, 192)]),
-            ResourceSpec("food-security-sandbox-frontend", type: .container, metrics: [.init(.pulls, 185)]),
-            ResourceSpec("foodshed-conv-ai", type: .container, metrics: [.init(.pulls, 179)]),
-            ResourceSpec("megadetector-server", type: .container, metrics: [.init(.pulls, 164)]),
-            ResourceSpec("smart-compiler", type: .container, metrics: [.init(.pulls, 164)]),
-            ResourceSpec("harp-framework-ci", type: .container, metrics: [.init(.pulls, 143)]),
-            ResourceSpec("harp-app-eulernumber-ci", type: .container, metrics: [.init(.pulls, 140)]),
-            ResourceSpec("gnnfoodflow-portal", type: .container, metrics: [.init(.pulls, 136)]),
-            ResourceSpec("harp-framework-local", type: .container, metrics: [.init(.pulls, 131)]),
-            ResourceSpec("harp-app-eulernumber-local", type: .container, metrics: [.init(.pulls, 130)]),
-            ResourceSpec("array-morph", type: .container, metrics: [.init(.pulls, 130)]),
-            ResourceSpec("food-security-sandbox-backend", type: .container, metrics: [.init(.pulls, 124)]),
-            ResourceSpec("catalogbackend", type: .container, metrics: [.init(.pulls, 124)]),
-            ResourceSpec("plug-n-play-megadetector-v6b", type: .container, metrics: [.init(.pulls, 113)]),
-            ResourceSpec("umami", type: .container, metrics: [.init(.pulls, 99)]),
-            ResourceSpec("food-security-sandbox-sandbox", type: .container, metrics: [.init(.pulls, 97)]),
-            ResourceSpec("food-security-sandbox-param", type: .container, metrics: [.init(.pulls, 96)]),
-            ResourceSpec("icicle-ai-vector-service", type: .container, metrics: [.init(.pulls, 92)]),
-            ResourceSpec("icicle-ai-embed-service", type: .container, metrics: [.init(.pulls, 83)]),
-            ResourceSpec("harvest-preprocessing", type: .container, metrics: [.init(.pulls, 78)]),
-            ResourceSpec("store-closure-abm", type: .container, metrics: [.init(.pulls, 68)]),
-            ResourceSpec("smart-labeler-frontend", type: .container, metrics: [.init(.pulls, 60)]),
-            ResourceSpec("playgrounds-demo", type: .container, metrics: [.init(.pulls, 47)]),
-            ResourceSpec("icicle-playgrounds", type: .container, metrics: [.init(.pulls, 43)]),
-            ResourceSpec("opencv-image-playground", type: .container, metrics: [.init(.pulls, 38)]),
-            ResourceSpec("mlhub-mcp", type: .container, metrics: [.init(.pulls, 31)]),
-            ResourceSpec("bioclip-api", type: .container, metrics: [.init(.pulls, 31)]),
-            ResourceSpec("sam3-inference-service", type: .container, metrics: [.init(.pulls, 30)]),
-            ResourceSpec("harvest-inference", type: .container, metrics: [.init(.pulls, 28)]),
-            ResourceSpec("icicle-chatbook", type: .container, metrics: [.init(.pulls, 27)]),
-            ResourceSpec("smart-labeler-backend", type: .container, metrics: [.init(.pulls, 23)]),
-            ResourceSpec("hpc-mcp-server", type: .container, metrics: [.init(.pulls, 23)]),
-            ResourceSpec("opencv-image-playground-bridge", type: .container, metrics: [.init(.pulls, 13)]),
-            ResourceSpec("hpc-mcp-server-cpu", type: .container, metrics: [.init(.pulls, 8)]),
-            ResourceSpec("rag-chatbot-harvest-websocket-service", type: .container, metrics: [.init(.pulls, 6)]),
-            ResourceSpec("rag-chatbot-harvest-api-service", type: .container, metrics: [.init(.pulls, 6)]),
-            ResourceSpec("rag-chatbot-harvest-model-service", type: .container, metrics: [.init(.pulls, 6)]),
+            ResourceSpec("fass-back", type: .container, metrics: [.init(.pullsAllTime, 346)]),
+            ResourceSpec("fass-front", type: .container, metrics: [.init(.pullsAllTime, 344)]),
+            ResourceSpec("store-closure-back", type: .container, metrics: [.init(.pullsAllTime, 261)]),
+            ResourceSpec("insights", type: .container, metrics: [.init(.pullsAllTime, 243)]),
+            ResourceSpec("store-closure-front", type: .container, metrics: [.init(.pullsAllTime, 224)]),
+            ResourceSpec("catalogfrontend", type: .container, metrics: [.init(.pullsAllTime, 192)]),
+            ResourceSpec("food-security-sandbox-frontend", type: .container, metrics: [.init(.pullsAllTime, 185)]),
+            ResourceSpec("foodshed-conv-ai", type: .container, metrics: [.init(.pullsAllTime, 179)]),
+            ResourceSpec("megadetector-server", type: .container, metrics: [.init(.pullsAllTime, 164)]),
+            ResourceSpec("smart-compiler", type: .container, metrics: [.init(.pullsAllTime, 164)]),
+            ResourceSpec("harp-framework-ci", type: .container, metrics: [.init(.pullsAllTime, 143)]),
+            ResourceSpec("harp-app-eulernumber-ci", type: .container, metrics: [.init(.pullsAllTime, 140)]),
+            ResourceSpec("gnnfoodflow-portal", type: .container, metrics: [.init(.pullsAllTime, 136)]),
+            ResourceSpec("harp-framework-local", type: .container, metrics: [.init(.pullsAllTime, 131)]),
+            ResourceSpec("harp-app-eulernumber-local", type: .container, metrics: [.init(.pullsAllTime, 130)]),
+            ResourceSpec("array-morph", type: .container, metrics: [.init(.pullsAllTime, 130)]),
+            ResourceSpec("food-security-sandbox-backend", type: .container, metrics: [.init(.pullsAllTime, 124)]),
+            ResourceSpec("catalogbackend", type: .container, metrics: [.init(.pullsAllTime, 124)]),
+            ResourceSpec("plug-n-play-megadetector-v6b", type: .container, metrics: [.init(.pullsAllTime, 113)]),
+            ResourceSpec("umami", type: .container, metrics: [.init(.pullsAllTime, 99)]),
+            ResourceSpec("food-security-sandbox-sandbox", type: .container, metrics: [.init(.pullsAllTime, 97)]),
+            ResourceSpec("food-security-sandbox-param", type: .container, metrics: [.init(.pullsAllTime, 96)]),
+            ResourceSpec("icicle-ai-vector-service", type: .container, metrics: [.init(.pullsAllTime, 92)]),
+            ResourceSpec("icicle-ai-embed-service", type: .container, metrics: [.init(.pullsAllTime, 83)]),
+            ResourceSpec("harvest-preprocessing", type: .container, metrics: [.init(.pullsAllTime, 78)]),
+            ResourceSpec("store-closure-abm", type: .container, metrics: [.init(.pullsAllTime, 68)]),
+            ResourceSpec("smart-labeler-frontend", type: .container, metrics: [.init(.pullsAllTime, 60)]),
+            ResourceSpec("playgrounds-demo", type: .container, metrics: [.init(.pullsAllTime, 47)]),
+            ResourceSpec("icicle-playgrounds", type: .container, metrics: [.init(.pullsAllTime, 43)]),
+            ResourceSpec("opencv-image-playground", type: .container, metrics: [.init(.pullsAllTime, 38)]),
+            ResourceSpec("mlhub-mcp", type: .container, metrics: [.init(.pullsAllTime, 31)]),
+            ResourceSpec("bioclip-api", type: .container, metrics: [.init(.pullsAllTime, 31)]),
+            ResourceSpec("sam3-inference-service", type: .container, metrics: [.init(.pullsAllTime, 30)]),
+            ResourceSpec("harvest-inference", type: .container, metrics: [.init(.pullsAllTime, 28)]),
+            ResourceSpec("icicle-chatbook", type: .container, metrics: [.init(.pullsAllTime, 27)]),
+            ResourceSpec("smart-labeler-backend", type: .container, metrics: [.init(.pullsAllTime, 23)]),
+            ResourceSpec("hpc-mcp-server", type: .container, metrics: [.init(.pullsAllTime, 23)]),
+            ResourceSpec("opencv-image-playground-bridge", type: .container, metrics: [.init(.pullsAllTime, 13)]),
+            ResourceSpec("hpc-mcp-server-cpu", type: .container, metrics: [.init(.pullsAllTime, 8)]),
+            ResourceSpec("rag-chatbot-harvest-websocket-service", type: .container, metrics: [.init(.pullsAllTime, 6)]),
+            ResourceSpec("rag-chatbot-harvest-api-service", type: .container, metrics: [.init(.pullsAllTime, 6)]),
+            ResourceSpec("rag-chatbot-harvest-model-service", type: .container, metrics: [.init(.pullsAllTime, 6)]),
             ResourceSpec("gnnfoodflowportal", type: .container, metrics: []),
             ResourceSpec("fass-api", type: .container, metrics: []),
             ResourceSpec("isawfrontend", type: .container, metrics: []),
@@ -140,12 +140,14 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
             ResourceSpec("tapis-file-explorer", type: .package, metrics: []),
             ResourceSpec("patra-model-selector", type: .package, metrics: []),
         ]),
+        // These came from Hugging Face's `downloadsAllTime` field, so they are cumulative
+        // totals rather than the sliding 30-day `downloads` figure, and are typed accordingly.
         AccountSpec(platform: .huggingface, followers: 20, resources: [
             ResourceSpec("foodflow_gnn_model", type: .model, metrics: []),
-            ResourceSpec("yolov9-animals-ae-data", type: .model, metrics: [.init(.downloads, 151)]),
-            ResourceSpec("can_benchmark", type: .dataset, metrics: [.init(.downloads, 202)]),
-            ResourceSpec("organization-sic-code_smart-foodsheds", type: .dataset, metrics: [.init(.downloads, 209)]),
-            ResourceSpec("resourceestimation_hlogencnn", type: .dataset, metrics: [.init(.downloads, 507)]),
+            ResourceSpec("yolov9-animals-ae-data", type: .model, metrics: [.init(.downloadsAllTime, 151)]),
+            ResourceSpec("can_benchmark", type: .dataset, metrics: [.init(.downloadsAllTime, 202)]),
+            ResourceSpec("organization-sic-code_smart-foodsheds", type: .dataset, metrics: [.init(.downloadsAllTime, 209)]),
+            ResourceSpec("resourceestimation_hlogencnn", type: .dataset, metrics: [.init(.downloadsAllTime, 507)]),
         ]),
         // Named for the PyPI project, not the ICICLE-Playgrounds repository that builds it:
         // the registry is authoritative for its own artifact. Its 0.1.5.5 release is already
@@ -160,22 +162,22 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
         RepositorySpec(
             name: "adae_model",
             releases: [.init("1.0.0", month: 12, year: 2024)],
-            metrics: [.init(.clones, 14)]
+            metrics: [.init(.clonesAllTime, 14)]
         ),
         RepositorySpec(
             name: "ag_routing_data_generator",
             releases: [.init("0.1.0", month: 7, year: 2025)],
-            metrics: [.init(.clones, 32), .init(.stars, 1), .init(.views, 31)]
+            metrics: [.init(.clonesAllTime, 32), .init(.starsAllTime, 1), .init(.viewsAllTime, 31)]
         ),
         RepositorySpec(
             name: "ArrayMorph",
             releases: [.init("1.0", month: 9, year: 2024), .init("1.1", month: 5, year: 2025), .init("1.2", month: 7, year: 2025)],
-            metrics: [.init(.clones, 1108), .init(.forks, 1), .init(.subscribers, 1), .init(.views, 479)]
+            metrics: [.init(.clonesAllTime, 1108), .init(.forksAllTime, 1), .init(.subscribersAllTime, 1), .init(.viewsAllTime, 479)]
         ),
         RepositorySpec(
             name: "AUTOLYCUS",
             releases: [.init("1.0", month: 9, year: 2024)],
-            metrics: [.init(.clones, 21), .init(.subscribers, 1)]
+            metrics: [.init(.clonesAllTime, 21), .init(.subscribersAllTime, 1)]
         ),
         RepositorySpec(
             name: "AutoSDT",
@@ -185,12 +187,12 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
         RepositorySpec(
             name: "Camera_Trap",
             releases: [.init("1.0.0", month: 10, year: 2025)],
-            metrics: [.init(.clones, 31), .init(.forks, 1), .init(.stars, 5), .init(.subscribers, 1), .init(.views, 3)]
+            metrics: [.init(.clonesAllTime, 31), .init(.forksAllTime, 1), .init(.starsAllTime, 5), .init(.subscribersAllTime, 1), .init(.viewsAllTime, 3)]
         ),
         RepositorySpec(
             name: "CAN-Benchmark",
             releases: [.init("1.0.0", month: 10, year: 2025)],
-            metrics: [.init(.clones, 25), .init(.stars, 1), .init(.views, 8)]
+            metrics: [.init(.clonesAllTime, 25), .init(.starsAllTime, 1), .init(.viewsAllTime, 8)]
         ),
         RepositorySpec(
             name: "catalog_mcp",
@@ -200,32 +202,32 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
         RepositorySpec(
             name: "CI-Components-Catalog",
             releases: [.init("0.1.0", month: 4, year: 2023), .init("0.2.0", month: 7, year: 2025)],
-            metrics: [.init(.clones, 89), .init(.forks, 3), .init(.stars, 1), .init(.subscribers, 4), .init(.views, 58)]
+            metrics: [.init(.clonesAllTime, 89), .init(.forksAllTime, 3), .init(.starsAllTime, 1), .init(.subscribersAllTime, 4), .init(.viewsAllTime, 58)]
         ),
         RepositorySpec(
             name: "ct-controller",
             releases: [.init("0.1", month: 9, year: 2024), .init("0.2", month: 5, year: 2025), .init("0.3", month: 10, year: 2025)],
-            metrics: [.init(.clones, 203), .init(.subscribers, 2), .init(.views, 325)]
+            metrics: [.init(.clonesAllTime, 203), .init(.subscribersAllTime, 2), .init(.viewsAllTime, 325)]
         ),
         RepositorySpec(
             name: "cyberinfrastructure-knowledge-network",
             releases: [.init("0.1.0", month: 12, year: 2024), .init("0.2.0", month: 7, year: 2025)],
-            metrics: [.init(.clones, 10), .init(.views, 3)]
+            metrics: [.init(.clonesAllTime, 10), .init(.viewsAllTime, 3)]
         ),
         RepositorySpec(
             name: "distributed_training_estimator_of_LLM",
             releases: [.init("0.0.1", month: 7, year: 2025)],
-            metrics: [.init(.clones, 101), .init(.forks, 3), .init(.stars, 1), .init(.views, 123)]
+            metrics: [.init(.clonesAllTime, 101), .init(.forksAllTime, 3), .init(.starsAllTime, 1), .init(.viewsAllTime, 123)]
         ),
         RepositorySpec(
             name: "faf-api-icicle",
             releases: [.init("0.1.0", month: 7, year: 2025)],
-            metrics: [.init(.clones, 14), .init(.views, 3)]
+            metrics: [.init(.clonesAllTime, 14), .init(.viewsAllTime, 3)]
         ),
         RepositorySpec(
             name: "faf-frontend-icicle",
             releases: [.init("0.1.0", month: 7, year: 2025)],
-            metrics: [.init(.clones, 18), .init(.views, 1)]
+            metrics: [.init(.clonesAllTime, 18), .init(.viewsAllTime, 1)]
         ),
         RepositorySpec(
             name: "FASS-Frontend",
@@ -235,52 +237,52 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
         RepositorySpec(
             name: "fastkg-icicle",
             releases: [.init("0.1.0", month: 4, year: 2024)],
-            metrics: [.init(.clones, 9), .init(.views, 7)]
+            metrics: [.init(.clonesAllTime, 9), .init(.viewsAllTime, 7)]
         ),
         RepositorySpec(
             name: "flaskauthn",
             releases: [.init("1.0", month: 10, year: 2023)],
-            metrics: [.init(.clones, 20), .init(.subscribers, 3), .init(.views, 1)]
+            metrics: [.init(.clonesAllTime, 20), .init(.subscribersAllTime, 3), .init(.viewsAllTime, 1)]
         ),
         RepositorySpec(
             name: "Food-Access-Model",
             releases: [.init("0.1", month: 12, year: 2024), .init("0.2", month: 8, year: 2025), .init("0.3", month: 10, year: 2025), .init("0.4", month: 12, year: 2025)],
-            metrics: [.init(.clones, 1696), .init(.forks, 2), .init(.stars, 3), .init(.subscribers, 3), .init(.views, 3741)]
+            metrics: [.init(.clonesAllTime, 1696), .init(.forksAllTime, 2), .init(.starsAllTime, 3), .init(.subscribersAllTime, 3), .init(.viewsAllTime, 3741)]
         ),
         RepositorySpec(
             name: "food-security-sandbox",
             releases: [.init("1.0.0", month: 8, year: 2025)],
-            metrics: [.init(.clones, 314), .init(.forks, 1), .init(.subscribers, 1), .init(.views, 24)]
+            metrics: [.init(.clonesAllTime, 314), .init(.forksAllTime, 1), .init(.subscribersAllTime, 1), .init(.viewsAllTime, 24)]
         ),
         RepositorySpec(
             name: "FoodWasteWhiz",
             releases: [.init("0.1", month: 7, year: 2025)],
-            metrics: [.init(.clones, 30)]
+            metrics: [.init(.clonesAllTime, 30)]
         ),
         RepositorySpec(
             name: "forte-api",
             releases: [.init("0.1.0", month: 5, year: 2025)],
-            metrics: [.init(.clones, 14), .init(.views, 22)]
+            metrics: [.init(.clonesAllTime, 14), .init(.viewsAllTime, 22)]
         ),
         RepositorySpec(
             name: "GNNFoodFlowPortal",
             releases: [.init("1.0.0", month: 8, year: 2025), .init("1.1.0", month: 10, year: 2025), .init("1.2.0", month: 5, year: 2026)],
-            metrics: [.init(.clones, 110), .init(.views, 38)]
+            metrics: [.init(.clonesAllTime, 110), .init(.viewsAllTime, 38)]
         ),
         RepositorySpec(
             name: "harp",
             releases: [.init("1.0.0", month: 4, year: 2023), .init("2.0.0", month: 10, year: 2023)],
-            metrics: [.init(.clones, 26), .init(.views, 127)]
+            metrics: [.init(.clonesAllTime, 26), .init(.viewsAllTime, 127)]
         ),
         RepositorySpec(
             name: "harvest",
             releases: [.init("0.9", month: 9, year: 2024), .init("1.0", month: 7, year: 2025), .init("1.1", month: 8, year: 2025), .init("1.2", month: 8, year: 2025), .init("1.3", month: 12, year: 2025), .init("1.4", month: 3, year: 2026)],
-            metrics: [.init(.clones, 380), .init(.views, 98)]
+            metrics: [.init(.clonesAllTime, 380), .init(.viewsAllTime, 98)]
         ),
         RepositorySpec(
             name: "hello_icicle_auth_clients",
             releases: [.init("0.0.1", month: 4, year: 2023), .init("0.0.10", month: 6, year: 2023), .init("0.1.4", month: 6, year: 2023), .init("1.0.11", month: 10, year: 2023), .init("0.8.0", month: 10, year: 2023)],
-            metrics: [.init(.clones, 12), .init(.stars, 1)]
+            metrics: [.init(.clonesAllTime, 12), .init(.starsAllTime, 1)]
         ),
         RepositorySpec(
             name: "icicle-ai-embed-service",
@@ -300,12 +302,12 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
         RepositorySpec(
             name: "ICICLE-Playgrounds",
             releases: [.init("0.1.5.5", month: 8, year: 2025)],
-            metrics: [.init(.clones, 29), .init(.views, 38)]
+            metrics: [.init(.clonesAllTime, 29), .init(.viewsAllTime, 38)]
         ),
         RepositorySpec(
             name: "ICICLE_Foodshed_Parser",
             releases: [.init("0.1", month: 6, year: 2023)],
-            metrics: [.init(.clones, 26), .init(.views, 3)]
+            metrics: [.init(.clonesAllTime, 26), .init(.viewsAllTime, 3)]
         ),
         RepositorySpec(
             name: "intelligent-edge-management-service",
@@ -315,12 +317,12 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
         RepositorySpec(
             name: "isplib",
             releases: [.init("1.0", month: 4, year: 2023)],
-            metrics: [.init(.clones, 24), .init(.views, 27)]
+            metrics: [.init(.clonesAllTime, 24), .init(.viewsAllTime, 27)]
         ),
         RepositorySpec(
             name: "mlfieldplanner",
             releases: [.init("0.1.0", month: 12, year: 2025)],
-            metrics: [.init(.clones, 32), .init(.views, 9)]
+            metrics: [.init(.clonesAllTime, 32), .init(.viewsAllTime, 9)]
         ),
         RepositorySpec(
             name: "opencv-image-playground",
@@ -330,37 +332,37 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
         RepositorySpec(
             name: "OpenPass",
             releases: [.init("1.0.0", month: 9, year: 2024), .init("2.0.0", month: 8, year: 2025)],
-            metrics: [.init(.clones, 47), .init(.forks, 1), .init(.views, 109)]
+            metrics: [.init(.clonesAllTime, 47), .init(.forksAllTime, 1), .init(.viewsAllTime, 109)]
         ),
         RepositorySpec(
             name: "organization-sic-classifier-for-smart-foodsheds",
             releases: [.init("0.0.1", month: 7, year: 2025)],
-            metrics: [.init(.clones, 24), .init(.views, 75)]
+            metrics: [.init(.clonesAllTime, 24), .init(.viewsAllTime, 75)]
         ),
         RepositorySpec(
             name: "PEFT_Vision",
             releases: [.init("0.1", month: 5, year: 2025)],
-            metrics: [.init(.clones, 28), .init(.subscribers, 2), .init(.views, 11)]
+            metrics: [.init(.clonesAllTime, 28), .init(.subscribersAllTime, 2), .init(.viewsAllTime, 11)]
         ),
         RepositorySpec(
             name: "ppod_ca",
             releases: [.init("23.06", month: 6, year: 2023)],
-            metrics: [.init(.clones, 13)]
+            metrics: [.init(.clonesAllTime, 13)]
         ),
         RepositorySpec(
             name: "ppod_core",
             releases: [.init("0.5.0", month: 6, year: 2024)],
-            metrics: [.init(.clones, 17)]
+            metrics: [.init(.clonesAllTime, 17)]
         ),
         RepositorySpec(
             name: "ProfilingCompiler",
             releases: [.init("1.0", month: 9, year: 2024)],
-            metrics: [.init(.clones, 23), .init(.subscribers, 1), .init(.views, 3)]
+            metrics: [.init(.clonesAllTime, 23), .init(.subscribersAllTime, 1), .init(.viewsAllTime, 3)]
         ),
         RepositorySpec(
             name: "Region2vec",
             releases: [.init("1.0", month: 6, year: 2023)],
-            metrics: [.init(.clones, 16), .init(.stars, 1)]
+            metrics: [.init(.clonesAllTime, 16), .init(.starsAllTime, 1)]
         ),
         RepositorySpec(
             name: "ScienceAgent",
@@ -370,52 +372,52 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
         RepositorySpec(
             name: "ScienceAgentInterface",
             releases: [.init("1.0", month: 12, year: 2024), .init("2.0", month: 7, year: 2025), .init("2.1", month: 10, year: 2025)],
-            metrics: [.init(.clones, 24), .init(.views, 13)]
+            metrics: [.init(.clonesAllTime, 24), .init(.viewsAllTime, 13)]
         ),
         RepositorySpec(
             name: "SMART-COMPILER",
             releases: [.init("1.0", month: 5, year: 2025), .init("2.0", month: 8, year: 2025)],
-            metrics: [.init(.clones, 38), .init(.forks, 1), .init(.subscribers, 3), .init(.views, 20)]
+            metrics: [.init(.clonesAllTime, 38), .init(.forksAllTime, 1), .init(.subscribersAllTime, 3), .init(.viewsAllTime, 20)]
         ),
         RepositorySpec(
             name: "Smartfield-Backpack",
             releases: [.init("1.0.0", month: 12, year: 2025)],
-            metrics: [.init(.clones, 157), .init(.views, 39)]
+            metrics: [.init(.clonesAllTime, 157), .init(.viewsAllTime, 39)]
         ),
         RepositorySpec(
             name: "softwarepilot",
             releases: [.init("1.2.5", month: 4, year: 2023)],
-            metrics: [.init(.clones, 14)]
+            metrics: [.init(.clonesAllTime, 14)]
         ),
         RepositorySpec(
             name: "species-classification-multimodal-context",
             releases: [.init("0.1.0", month: 6, year: 2023)],
-            metrics: [.init(.clones, 16), .init(.stars, 1)]
+            metrics: [.init(.clonesAllTime, 16), .init(.starsAllTime, 1)]
         ),
         RepositorySpec(
             name: "speech-server",
             releases: [.init("0.1", month: 9, year: 2024), .init("0.2", month: 12, year: 2024)],
-            metrics: [.init(.clones, 27), .init(.subscribers, 2), .init(.views, 1)]
+            metrics: [.init(.clonesAllTime, 27), .init(.subscribersAllTime, 2), .init(.viewsAllTime, 1)]
         ),
         RepositorySpec(
             name: "Store_Closure_Website",
             releases: [.init("0.1", month: 6, year: 2023)],
-            metrics: [.init(.clones, 27), .init(.stars, 1)]
+            metrics: [.init(.clonesAllTime, 27), .init(.starsAllTime, 1)]
         ),
         RepositorySpec(
             name: "tapisui-extension-icicle",
             releases: [.init("0.1.0", month: 5, year: 2025)],
-            metrics: [.init(.clones, 30), .init(.subscribers, 1), .init(.views, 9)]
+            metrics: [.init(.clonesAllTime, 30), .init(.subscribersAllTime, 1), .init(.viewsAllTime, 9)]
         ),
         RepositorySpec(
             name: "uas-orchestration-engine",
             releases: [.init("0.1", month: 12, year: 2025)],
-            metrics: [.init(.clones, 43), .init(.views, 100)]
+            metrics: [.init(.clonesAllTime, 43), .init(.viewsAllTime, 100)]
         ),
         RepositorySpec(
             name: "VA_Dashboard_V3",
             releases: [.init("0.1", month: 4, year: 2023), .init("0.2", month: 6, year: 2023), .init("0.3", month: 10, year: 2023), .init("0.4", month: 9, year: 2024)],
-            metrics: [.init(.clones, 25), .init(.stars, 1), .init(.subscribers, 3), .init(.views, 11)]
+            metrics: [.init(.clonesAllTime, 25), .init(.starsAllTime, 1), .init(.subscribersAllTime, 3), .init(.viewsAllTime, 11)]
         ),
     ]
 
