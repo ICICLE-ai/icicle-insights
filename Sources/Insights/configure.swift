@@ -39,8 +39,6 @@ func configure(_ app: Application) async throws {
 
   app.migrations.add(JobModelMigration())
   app.migrations.add(FirstMigration())
-  app.migrations.add(AddGHCRPlatform())
-  app.migrations.add(AddContainerResourceType())
 
   // Development-only seed data so the dashboard has something to render. Only ever
   // registered in `.development`, so it targets `dev` and never the `test` database.

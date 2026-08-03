@@ -11,6 +11,11 @@ const CATEGORICAL = {
   dark: ["#89b4fa", "#fab387", "#a6e3a1", "#cba6f7", "#f9e2af", "#f5c2e7", "#94e2d5", "#f38ba8"],
 };
 const PLATFORM_LABEL = { github: "GitHub", ghcr: "GHCR", huggingface: "Hugging Face", npm: "npm", pypi: "PyPI" };
+// Only metrics whose bare name misstates their window need an entry here — Hugging Face
+// reports `downloads` over a trailing 30 days, which reads as a lifetime total otherwise.
+// The `AllTime` twins are derived by suffix in `metricLabel`, so they never need one.
+const METRIC_LABEL = { downloads: "Downloads · 30 days" };
+const ALL_TIME_SUFFIX = "AllTime";
 const PLATFORM_ORDER = ["github", "ghcr", "huggingface", "npm", "pypi"];
 const RESOURCE_ORDER = ["container", "dataset", "image", "model", "package", "repository", "service"];
 
@@ -40,6 +45,11 @@ const paletteFor = (i) => (i < ramp().length ? ramp()[i] : (isDark() ? "#6c7086"
 
 const titleCase = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const platformLabel = (p) => PLATFORM_LABEL[p] ?? p;
+const metricLabel = (t) =>
+  METRIC_LABEL[t]
+  ?? (t.endsWith(ALL_TIME_SUFFIX)
+    ? `${titleCase(t.slice(0, -ALL_TIME_SUFFIX.length))} · all time`
+    : titleCase(t));
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -221,7 +231,7 @@ function renderKPIs(byType, showAll) {
     const resourceLabel = latest.size === 1 ? "resource" : "resources";
     const card = el("div", "panel kpi");
     card.append(
-      el("div", "k-label", titleCase(type)),
+      el("div", "k-label", metricLabel(type)),
       el("div", "k-value", compact.format(total)),
       el("div", "k-context", `Current total across ${latest.size} ${resourceLabel}`),
     );
@@ -284,7 +294,7 @@ function renderCurrentReach(byType, scope) {
     const total = [...latest.values()].reduce((sum, x) => sum + x.v, 0);
     const coverage = latest.size === 1 ? "1 resource" : `${latest.size} resources`;
     const shown = latest.size > rows.length ? ` · top ${rows.length} shown` : "";
-    const p = panel(titleCase(type), `${whole.format(total)} total · ${coverage}${shown}`);
+    const p = panel(metricLabel(type), `${whole.format(total)} total · ${coverage}${shown}`);
     const m = el("div", "chart");
     p.append(m); host.append(p);
     mount(m, barOptions(

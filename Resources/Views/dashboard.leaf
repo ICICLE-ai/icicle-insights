@@ -6,7 +6,7 @@
   <title>ICICLE Insights — Dashboard</title>
   <link rel="icon" href="/favicon.ico">
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css" rel="stylesheet" type="text/css">
-  <link rel="stylesheet" href="/dashboard.css?v=15">
+  <link rel="stylesheet" href="/dashboard.css?v=17">
   <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 </head>
 
@@ -59,6 +59,6 @@
 
   </div>
 
-  <script src="/dashboard.js?v=15"></script>
+  <script src="/dashboard.js?v=17"></script>
 </body>
 </html>

@@ -5,6 +5,10 @@ import struct Foundation.UUID
 
 enum MetricType: String, Codable, CaseIterable {
   case authentications, clones, downloads, forks, likes, pulls, stars, subscribers, views
+
+  // All Time / Totals
+  case authenticationsAllTime, clonesAllTime, downloadsAllTime, forksAllTime, likesAllTime,
+    pullsAllTime, starsAllTime, subscribersAllTime, viewsAllTime
 }
 
 final class Metric: Model, @unchecked Sendable {

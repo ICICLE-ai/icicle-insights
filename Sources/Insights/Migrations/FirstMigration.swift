@@ -6,6 +6,7 @@ struct FirstMigration: AsyncMigration {
   func prepare(on database: any Database) async throws {
     // Create Enums
     _ = try await database.enum("platform")
+      .case("ghcr")
       .case("github")
       .case("huggingface")
       .case("npm")
@@ -13,8 +14,8 @@ struct FirstMigration: AsyncMigration {
       .create()
 
     _ = try await database.enum("resource_type")
+      .case("container")
       .case("dataset")
-      .case("image")
       .case("model")
       .case("package")
       .case("repository")
@@ -31,6 +32,17 @@ struct FirstMigration: AsyncMigration {
       .case("stars")
       .case("subscribers")
       .case("views")
+
+      // All time
+      .case("authenticationsAllTime")
+      .case("clonesAllTime")
+      .case("downloadsAllTime")
+      .case("forksAllTime")
+      .case("likesAllTime")
+      .case("pullsAllTime")
+      .case("starsAllTime")
+      .case("subscribersAllTime")
+      .case("viewsAllTime")
       .create()
 
     // Read enums from database to use in creating tables
