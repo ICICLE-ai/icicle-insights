@@ -9,6 +9,7 @@ db.sqlite
 .env
 .env.*
 !.env.example
+!.env.container
 default.profraw
 
 .memsearch
@@ -16,3 +17,6 @@ data/
 
 # Postgres data bind-mounted by the `just db` container recipe.
 .container/
+
+# Personal design notes and presentation drafts.
+personal-notes/

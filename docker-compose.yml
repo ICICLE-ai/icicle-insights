@@ -17,6 +17,7 @@
 
 volumes:
   db_data:
+  valkey_data:
 
 x-shared_environment: &shared_environment
   LOG_LEVEL: ${LOG_LEVEL:-debug}
@@ -24,8 +25,15 @@ x-shared_environment: &shared_environment
   DATABASE_NAME: &db_name vapor_database
   DATABASE_USERNAME: &db_username vapor_username
   DATABASE_PASSWORD: &db_password vapor_password
+  DATABASE_TLS: disable
+  # Queue storage. The local server runs without auth, so REDIS_PASSWORD is left unset;
+  # deployments set it to the cache's generated password.
+  REDIS_HOST: valkey
+  REDIS_PORT: '6379'
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
   # Sync jobs resolve their platform tokens from Tapis Vault, and `configure` fails fast when
   # any of these is missing — every service here aborts at boot without them, workers included.
+  SECRET_PROVIDER: ${SECRET_PROVIDER:-tapis}
   TAPIS_BASE_URL: ${TAPIS_BASE_URL}
   TAPIS_TOKEN: ${TAPIS_TOKEN}
   TAPIS_USER: ${TAPIS_USER}
@@ -41,6 +49,7 @@ services:
       <<: *shared_environment
     depends_on:
       - db
+      - valkey
     ports:
       - '8080:8080'
     # user: '0' # uncomment to run as root for testing purposes even though Dockerfile defines 'vapor' user.
@@ -55,6 +64,7 @@ services:
       <<: *shared_environment
     depends_on:
       - db
+      - valkey
     command: ["queues", "--queue", "metrics"]
   # Runs the scheduled sweeps, which only enqueue work onto the queue above. Separate from
   # `queues` so a long sync cannot hold up the next sweep, and single-replica because two
@@ -67,6 +77,7 @@ services:
       <<: *shared_environment
     depends_on:
       - db
+      - valkey
     command: ["queues", "--scheduled"]
   migrate:
     image: insights:latest
@@ -90,6 +101,15 @@ services:
     command: ["migrate", "--revert", "--yes"]
     deploy:
       replicas: 0
+  # Job storage for the two workers above — Valkey, speaking the same protocol the Redis driver
+  # expects. Append-only so a restart does not drop whatever the scheduler had already enqueued.
+  valkey:
+    image: valkey/valkey:9-alpine
+    command: ["valkey-server", "--appendonly", "yes"]
+    volumes:
+      - valkey_data:/data
+    ports:
+      - '6379:6379'
   db:
     image: postgres:18-alpine
     volumes:
