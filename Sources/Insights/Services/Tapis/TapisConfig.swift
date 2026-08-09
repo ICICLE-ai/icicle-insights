@@ -1,5 +1,6 @@
 import Vapor
 
+/// Credentials used to authenticate service-level Tapis requests.
 struct TapisAdmin: Sendable {
   let name: Secret
   let token: Secret
@@ -10,6 +11,7 @@ struct TapisAdmin: Sendable {
   }
 }
 
+/// Tenant-specific endpoints and credentials required by the Tapis client.
 struct TapisConfig: Sendable {
   let baseURL: String
   let admin: TapisAdmin
@@ -24,6 +26,7 @@ struct TapisConfig: Sendable {
     self.admin = admin
   }
 
+  /// Base endpoint for user-scoped Tapis Vault secret operations.
   var vaultBaseURL: String {
     "\(baseURL)/security/vault/secret"
   }
@@ -33,6 +36,8 @@ struct TapisConfig: Sendable {
   //     "\(baseURL)/auth-placeholder"
   // }
 
+  /// Loads required Tapis settings from the process environment.
+  /// - Throws: ``ConfigError`` when any required value is absent.
   static func fromEnvironment() throws -> TapisConfig {
     guard let baseURL = Environment.get("TAPIS_BASE_URL") else {
       throw ConfigError.missing("TAPIS_BASE_URL")

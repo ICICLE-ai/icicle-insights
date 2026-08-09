@@ -1,7 +1,8 @@
 import Vapor
 
 extension TapisClient {
-  struct Vaults: Sendable {
+  /// Tenant-bound operations for reading, writing, and destroying user Vault secrets.
+  struct Vaults: SecretProvider, Sendable {
     let client: any Client
     let config: TapisConfig
 
@@ -41,6 +42,7 @@ extension TapisClient {
       return Secret(secretValue)
     }
 
+    /// Creates a new secret version under the authenticated tenant user.
     func writeSecret(named name: String, secret: String) async throws {
       let uri = URI(string: "\(config.vaultBaseURL)/user/\(name)")
       let response = try await client.post(uri) { req in
@@ -66,7 +68,8 @@ extension TapisClient {
       }
     }
 
-    func destroySecret(named name: String, versions: [Int] = []) async throws {
+    /// Destroys every active version of a named Tapis Vault secret.
+    func destroySecret(named name: String) async throws {
       let uri = URI(string: "\(config.vaultBaseURL)/destroy/user/\(name)")
 
       let response = try await client.post(uri) { req in
@@ -79,7 +82,7 @@ extension TapisClient {
           TapisDestroySecretBody(
             tenant: config.tenant,
             user: config.admin.name.getSecretValue(),
-            versions: versions
+            versions: []
           ))
       }
 
@@ -94,7 +97,9 @@ extension TapisClient {
   }
 }
 
+/// Envelope returned by the Tapis Vault read endpoint.
 struct TapisSecretResponse: Content {
+  /// The response result containing redacted-until-wrapped secret values by name.
   struct Result: Content {
     let secretMap: [String: String]
   }
@@ -102,12 +107,14 @@ struct TapisSecretResponse: Content {
   let result: Result
 }
 
+/// Request payload for creating or replacing a user-scoped Vault secret.
 struct TapisWriteSecretBody: Content {
   let tenant: String
   let user: String
   let data: [String: String]
 }
 
+/// Request payload for destroying selected versions of a Vault secret.
 struct TapisDestroySecretBody: Content {
   let tenant: String
   let user: String
