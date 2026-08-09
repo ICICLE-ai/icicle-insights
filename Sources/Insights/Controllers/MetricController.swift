@@ -64,9 +64,9 @@ struct MetricController: RouteCollection {
     if let type = filters.type {
       query = query.filter(\.$type == type)
     }
-    if let limit = filters.limit {
-      query = try query.limit(requireInRange(limit, 1...maxLimit, "limit"))
-    }
+    // Defaulted, not left open: readings accumulate every sweep. Rows are newest-first and
+    // reversed below, so a capped response is the most recent window, not a bad truncation.
+    query = try query.limit(requireInRange(filters.limit ?? maxLimit, 1...maxLimit, "limit"))
 
     // Most recent `limit` rows, returned oldest→newest for the chart's x-axis.
     return try await query.all().reversed().map { $0.toPublic() }

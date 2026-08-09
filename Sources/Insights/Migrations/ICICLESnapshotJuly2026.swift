@@ -198,7 +198,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
     RepositorySpec(
       name: "ag_routing_data_generator",
       releases: [.init("0.1.0", month: 7, year: 2025)],
-      metrics: [.init(.clonesAllTime, 32), .init(.starsAllTime, 1), .init(.viewsAllTime, 31)]
+      metrics: [.init(.clonesAllTime, 32), .init(.stars, 1), .init(.viewsAllTime, 31)]
     ),
     RepositorySpec(
       name: "ArrayMorph",
@@ -207,14 +207,14 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
         .init("1.2", month: 7, year: 2025),
       ],
       metrics: [
-        .init(.clonesAllTime, 1108), .init(.forksAllTime, 1), .init(.subscribersAllTime, 1),
+        .init(.clonesAllTime, 1108), .init(.forks, 1), .init(.subscribers, 1),
         .init(.viewsAllTime, 479),
       ]
     ),
     RepositorySpec(
       name: "AUTOLYCUS",
       releases: [.init("1.0", month: 9, year: 2024)],
-      metrics: [.init(.clonesAllTime, 21), .init(.subscribersAllTime, 1)]
+      metrics: [.init(.clonesAllTime, 21), .init(.subscribers, 1)]
     ),
     RepositorySpec(
       name: "AutoSDT",
@@ -225,14 +225,14 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       name: "Camera_Trap",
       releases: [.init("1.0.0", month: 10, year: 2025)],
       metrics: [
-        .init(.clonesAllTime, 31), .init(.forksAllTime, 1), .init(.starsAllTime, 5),
-        .init(.subscribersAllTime, 1), .init(.viewsAllTime, 3),
+        .init(.clonesAllTime, 31), .init(.forks, 1), .init(.stars, 5),
+        .init(.subscribers, 1), .init(.viewsAllTime, 3),
       ]
     ),
     RepositorySpec(
       name: "CAN-Benchmark",
       releases: [.init("1.0.0", month: 10, year: 2025)],
-      metrics: [.init(.clonesAllTime, 25), .init(.starsAllTime, 1), .init(.viewsAllTime, 8)]
+      metrics: [.init(.clonesAllTime, 25), .init(.stars, 1), .init(.viewsAllTime, 8)]
     ),
     RepositorySpec(
       name: "catalog_mcp",
@@ -243,8 +243,8 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       name: "CI-Components-Catalog",
       releases: [.init("0.1.0", month: 4, year: 2023), .init("0.2.0", month: 7, year: 2025)],
       metrics: [
-        .init(.clonesAllTime, 89), .init(.forksAllTime, 3), .init(.starsAllTime, 1),
-        .init(.subscribersAllTime, 4), .init(.viewsAllTime, 58),
+        .init(.clonesAllTime, 89), .init(.forks, 3), .init(.stars, 1),
+        .init(.subscribers, 4), .init(.viewsAllTime, 58),
       ]
     ),
     RepositorySpec(
@@ -254,7 +254,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
         .init("0.3", month: 10, year: 2025),
       ],
       metrics: [
-        .init(.clonesAllTime, 203), .init(.subscribersAllTime, 2), .init(.viewsAllTime, 325),
+        .init(.clonesAllTime, 203), .init(.subscribers, 2), .init(.viewsAllTime, 325),
       ]
     ),
     RepositorySpec(
@@ -266,7 +266,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       name: "distributed_training_estimator_of_LLM",
       releases: [.init("0.0.1", month: 7, year: 2025)],
       metrics: [
-        .init(.clonesAllTime, 101), .init(.forksAllTime, 3), .init(.starsAllTime, 1),
+        .init(.clonesAllTime, 101), .init(.forks, 3), .init(.stars, 1),
         .init(.viewsAllTime, 123),
       ]
     ),
@@ -296,7 +296,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
     RepositorySpec(
       name: "flaskauthn",
       releases: [.init("1.0", month: 10, year: 2023)],
-      metrics: [.init(.clonesAllTime, 20), .init(.subscribersAllTime, 3), .init(.viewsAllTime, 1)]
+      metrics: [.init(.clonesAllTime, 20), .init(.subscribers, 3), .init(.viewsAllTime, 1)]
     ),
     RepositorySpec(
       name: "Food-Access-Model",
@@ -305,15 +305,15 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
         .init("0.3", month: 10, year: 2025), .init("0.4", month: 12, year: 2025),
       ],
       metrics: [
-        .init(.clonesAllTime, 1696), .init(.forksAllTime, 2), .init(.starsAllTime, 3),
-        .init(.subscribersAllTime, 3), .init(.viewsAllTime, 3741),
+        .init(.clonesAllTime, 1696), .init(.forks, 2), .init(.stars, 3),
+        .init(.subscribers, 3), .init(.viewsAllTime, 3741),
       ]
     ),
     RepositorySpec(
       name: "food-security-sandbox",
       releases: [.init("1.0.0", month: 8, year: 2025)],
       metrics: [
-        .init(.clonesAllTime, 314), .init(.forksAllTime, 1), .init(.subscribersAllTime, 1),
+        .init(.clonesAllTime, 314), .init(.forks, 1), .init(.subscribers, 1),
         .init(.viewsAllTime, 24),
       ]
     ),
@@ -356,7 +356,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
         .init("0.1.4", month: 6, year: 2023), .init("1.0.11", month: 10, year: 2023),
         .init("0.8.0", month: 10, year: 2023),
       ],
-      metrics: [.init(.clonesAllTime, 12), .init(.starsAllTime, 1)]
+      metrics: [.init(.clonesAllTime, 12), .init(.stars, 1)]
     ),
     RepositorySpec(
       name: "icicle-ai-embed-service",
@@ -406,7 +406,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
     RepositorySpec(
       name: "OpenPass",
       releases: [.init("1.0.0", month: 9, year: 2024), .init("2.0.0", month: 8, year: 2025)],
-      metrics: [.init(.clonesAllTime, 47), .init(.forksAllTime, 1), .init(.viewsAllTime, 109)]
+      metrics: [.init(.clonesAllTime, 47), .init(.forks, 1), .init(.viewsAllTime, 109)]
     ),
     RepositorySpec(
       name: "organization-sic-classifier-for-smart-foodsheds",
@@ -416,7 +416,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
     RepositorySpec(
       name: "PEFT_Vision",
       releases: [.init("0.1", month: 5, year: 2025)],
-      metrics: [.init(.clonesAllTime, 28), .init(.subscribersAllTime, 2), .init(.viewsAllTime, 11)]
+      metrics: [.init(.clonesAllTime, 28), .init(.subscribers, 2), .init(.viewsAllTime, 11)]
     ),
     RepositorySpec(
       name: "ppod_ca",
@@ -431,12 +431,12 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
     RepositorySpec(
       name: "ProfilingCompiler",
       releases: [.init("1.0", month: 9, year: 2024)],
-      metrics: [.init(.clonesAllTime, 23), .init(.subscribersAllTime, 1), .init(.viewsAllTime, 3)]
+      metrics: [.init(.clonesAllTime, 23), .init(.subscribers, 1), .init(.viewsAllTime, 3)]
     ),
     RepositorySpec(
       name: "Region2vec",
       releases: [.init("1.0", month: 6, year: 2023)],
-      metrics: [.init(.clonesAllTime, 16), .init(.starsAllTime, 1)]
+      metrics: [.init(.clonesAllTime, 16), .init(.stars, 1)]
     ),
     RepositorySpec(
       name: "ScienceAgent",
@@ -455,7 +455,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       name: "SMART-COMPILER",
       releases: [.init("1.0", month: 5, year: 2025), .init("2.0", month: 8, year: 2025)],
       metrics: [
-        .init(.clonesAllTime, 38), .init(.forksAllTime, 1), .init(.subscribersAllTime, 3),
+        .init(.clonesAllTime, 38), .init(.forks, 1), .init(.subscribers, 3),
         .init(.viewsAllTime, 20),
       ]
     ),
@@ -472,22 +472,22 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
     RepositorySpec(
       name: "species-classification-multimodal-context",
       releases: [.init("0.1.0", month: 6, year: 2023)],
-      metrics: [.init(.clonesAllTime, 16), .init(.starsAllTime, 1)]
+      metrics: [.init(.clonesAllTime, 16), .init(.stars, 1)]
     ),
     RepositorySpec(
       name: "speech-server",
       releases: [.init("0.1", month: 9, year: 2024), .init("0.2", month: 12, year: 2024)],
-      metrics: [.init(.clonesAllTime, 27), .init(.subscribersAllTime, 2), .init(.viewsAllTime, 1)]
+      metrics: [.init(.clonesAllTime, 27), .init(.subscribers, 2), .init(.viewsAllTime, 1)]
     ),
     RepositorySpec(
       name: "Store_Closure_Website",
       releases: [.init("0.1", month: 6, year: 2023)],
-      metrics: [.init(.clonesAllTime, 27), .init(.starsAllTime, 1)]
+      metrics: [.init(.clonesAllTime, 27), .init(.stars, 1)]
     ),
     RepositorySpec(
       name: "tapisui-extension-icicle",
       releases: [.init("0.1.0", month: 5, year: 2025)],
-      metrics: [.init(.clonesAllTime, 30), .init(.subscribersAllTime, 1), .init(.viewsAllTime, 9)]
+      metrics: [.init(.clonesAllTime, 30), .init(.subscribers, 1), .init(.viewsAllTime, 9)]
     ),
     RepositorySpec(
       name: "uas-orchestration-engine",
@@ -501,7 +501,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
         .init("0.3", month: 10, year: 2023), .init("0.4", month: 9, year: 2024),
       ],
       metrics: [
-        .init(.clonesAllTime, 25), .init(.starsAllTime, 1), .init(.subscribersAllTime, 3),
+        .init(.clonesAllTime, 25), .init(.stars, 1), .init(.subscribers, 3),
         .init(.viewsAllTime, 11),
       ]
     ),

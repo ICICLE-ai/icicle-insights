@@ -7,8 +7,21 @@ enum MetricType: String, Codable, CaseIterable {
   case authentications, clones, downloads, forks, likes, pulls, stars, subscribers, views
 
   // All Time / Totals
-  case authenticationsAllTime, clonesAllTime, downloadsAllTime, forksAllTime, likesAllTime,
-    pullsAllTime, starsAllTime, subscribersAllTime, viewsAllTime
+  case authenticationsAllTime, clonesAllTime, downloadsAllTime, pullsAllTime, viewsAllTime
+
+  /// All-time counterpart, for metrics the API reports as a rolling window. Nil when a
+  /// reading is already a lifetime total, since the series itself is the total and keeping
+  /// it lets the figure fall as well as rise.
+  var allTime: MetricType? {
+    switch self {
+    case .authentications, .authenticationsAllTime: .authenticationsAllTime
+    case .clones, .clonesAllTime: .clonesAllTime
+    case .downloads, .downloadsAllTime: .downloadsAllTime
+    case .pulls, .pullsAllTime: .pullsAllTime
+    case .views, .viewsAllTime: .viewsAllTime
+    case .forks, .likes, .stars, .subscribers: nil
+    }
+  }
 }
 
 final class Metric: Model, @unchecked Sendable {

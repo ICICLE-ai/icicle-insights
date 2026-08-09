@@ -1,4 +1,5 @@
 import Fluent
+import Queues
 import Vapor
 import VaporToOpenAPI
 
@@ -52,11 +53,27 @@ struct ResourceController: RouteCollection {
       throw Abort(.badRequest, reason: "Account with ID: \(resource.$account.id), not found.")
     }
 
+    // Bounded by the platform's retention window; beyond it, gap days age out unrecoverably.
+    resource.collectionIntervalDays = try requireInRange(
+      resource.collectionIntervalDays,
+      1...account.platform.maxCollectionIntervalDays,
+      "collectionIntervalDays",
+    )
+
     try await conflictOnConstraintFailure(
       "A \(resource.type.rawValue) named '\(resource.name)' already exists for this account.",
     ) {
       try await account.$resources.create(resource, on: req.db)
     }
+
+    // Collect now rather than waiting on the sweep, which could be up to an hour away.
+    try await req.queues(.metrics).dispatchSync(
+      for: resource,
+      platform: account.platform,
+      logger: req.logger,
+    )
+    resource.scheduleNextCollection()
+    try await resource.save(on: req.db)
 
     return try await resource.toPublic().encodeResponse(status: .created, for: req)
   }

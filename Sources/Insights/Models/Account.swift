@@ -5,6 +5,16 @@ import struct Foundation.UUID
 
 enum Platform: String, Codable, CaseIterable {
   case github, ghcr, huggingface, npm, pypi
+
+  /// Longest interval that still loses no days: GitHub's traffic endpoints retain 14, the Hub
+  /// reports downloads over a trailing 30. Sweep slower and the gap days age out unrecoverably.
+  var maxCollectionIntervalDays: Int {
+    switch self {
+    case .github: 14
+    case .huggingface: 30
+    case .ghcr, .npm, .pypi: 30
+    }
+  }
 }
 
 final class Account: Model, @unchecked Sendable {

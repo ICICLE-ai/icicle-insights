@@ -12,9 +12,14 @@ const CATEGORICAL = {
 };
 const PLATFORM_LABEL = { github: "GitHub", ghcr: "GHCR", huggingface: "Hugging Face", npm: "npm", pypi: "PyPI" };
 // Only metrics whose bare name misstates their window need an entry here — Hugging Face
-// reports `downloads` over a trailing 30 days, which reads as a lifetime total otherwise.
-// The `AllTime` twins are derived by suffix in `metricLabel`, so they never need one.
-const METRIC_LABEL = { downloads: "Downloads · 30 days" };
+// reports `downloads` over a trailing 30 days, and GitHub reports clones and views over a
+// rolling 14, all of which read as lifetime totals otherwise. The `AllTime` twins are derived
+// by suffix in `metricLabel`, so they never need one.
+const METRIC_LABEL = {
+  downloads: "Downloads · 30 days",
+  clones: "Clones · 14 days",
+  views: "Views · 14 days",
+};
 const ALL_TIME_SUFFIX = "AllTime";
 const PLATFORM_ORDER = ["github", "ghcr", "huggingface", "npm", "pypi"];
 const RESOURCE_ORDER = ["container", "dataset", "image", "model", "package", "repository", "service"];
@@ -167,6 +172,24 @@ function barOptions(categories, values, colors) {
   };
 }
 
+function lineOptions(name, series, colors) {
+  return {
+    chart: { type: "line", height: 250, fontFamily: "inherit", foreColor: css("--chart-text"), background: "transparent", toolbar: { show: false }, zoom: { enabled: false } },
+    series: [{ name, data: series }], colors,
+    stroke: { width: 2, curve: "straight" },
+    // An unmarked two-point series reads as an empty panel; markers drop away once dense.
+    markers: { size: series.length > 24 ? 0 : 4, strokeWidth: 0 },
+    dataLabels: { enabled: false },
+    xaxis: { type: "datetime", labels: { style: { colors: css("--chart-muted") } }, axisBorder: { show: false }, axisTicks: { show: false } },
+    // Baseline floats, unlike the bars: a trend encodes change, and pinning to zero would
+    // flatten the movement this chart exists to show.
+    yaxis: { labels: { style: { colors: css("--chart-muted") }, formatter: axisValue } },
+    grid: { borderColor: css("--chart-grid"), xaxis: { lines: { show: false } }, yaxis: { lines: { show: true } } },
+    legend: { show: false },
+    tooltip: { theme: isDark() ? "dark" : "light", x: { format: "dd MMM yyyy" }, y: { formatter: (v) => whole.format(v) } },
+  };
+}
+
 function mount(host, options) {
   const chart = new ApexCharts(host, options);
   chart.render();
@@ -307,6 +330,30 @@ function renderCurrentReach(byType, scope) {
   }
 }
 
+// How each metric has moved, rather than where it stands. Gauges keep no all-time row
+// precisely because this series is their record — the line is free to fall as well as rise.
+function renderTrend(byType) {
+  const host = document.querySelector("[data-trends]");
+  host.replaceChildren();
+
+  // One reading is a point, not a trend; series wait for a second sweep.
+  const ordered = [...byType.entries()]
+    .map(([type, metrics]) => [type, totalSeries(metrics)])
+    .filter(([, series]) => series.length > 1)
+    .sort((a, b) => b[1].length - a[1].length);
+
+  setSection("trends", ordered.length > 0);
+  if (ordered.length === 0) return;
+
+  ordered.forEach(([type, series], i) => {
+    const label = metricLabel(type);
+    const p = panel(label, `${whole.format(series.length)} readings`);
+    const m = el("div", "chart");
+    p.append(m); host.append(p);
+    mount(m, lineOptions(label, series, [paletteFor(i)]));
+  });
+}
+
 function renderReleases(scope) {
   const host = document.querySelector("[data-releases]");
   setSection("releases", scope !== "all");
@@ -344,6 +391,7 @@ function render() {
   renderKPIs(byType, scope === "resource");
   renderDistributions(scope);
   renderCurrentReach(byType, scope);
+  renderTrend(byType);
   renderReleases(scope);
 
   // Belt-and-suspenders: nudge ApexCharts to remeasure once layout settles.

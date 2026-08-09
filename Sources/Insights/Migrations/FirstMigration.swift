@@ -33,15 +33,12 @@ struct FirstMigration: AsyncMigration {
       .case("subscribers")
       .case("views")
 
-      // All time
+      // All time. Only for metrics reported as a rolling window; the rest already arrive
+      // as lifetime totals.
       .case("authenticationsAllTime")
       .case("clonesAllTime")
       .case("downloadsAllTime")
-      .case("forksAllTime")
-      .case("likesAllTime")
       .case("pullsAllTime")
-      .case("starsAllTime")
-      .case("subscribersAllTime")
       .case("viewsAllTime")
       .create()
 

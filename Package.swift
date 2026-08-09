@@ -16,12 +16,16 @@ let package = Package(
     // 🐘 Vapor Queues Fluent driver for Postgres
     .package(
       url: "https://github.com/vapor-community/vapor-queues-fluent-driver.git", from: "3.0.0"),
+    // 📮 The queuing system itself. Direct, not just transitive, for XCTQueues' test driver.
+    .package(url: "https://github.com/vapor/queues.git", from: "1.18.0"),
     // 🍃 An expressive, performant, and extensible templating language built for Swift.
     .package(url: "https://github.com/vapor/leaf.git", from: "4.5.1"),
     // 🔵 Non-blocking, event-driven networking for Swift. Used for custom executors
     .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.0"),
     // 📖 Code-first OpenAPI generation from Vapor routes.
     .package(url: "https://github.com/dankinsoid/VaporToOpenAPI.git", from: "4.8.1"),
+    // 🍜 HTML Parsing for web scraping
+    .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.6.0"),
 
   ],
   targets: [
@@ -36,6 +40,7 @@ let package = Package(
         .product(name: "NIOCore", package: "swift-nio"),
         .product(name: "NIOPosix", package: "swift-nio"),
         .product(name: "VaporToOpenAPI", package: "VaporToOpenAPI"),
+        .product(name: "SwiftSoup", package: "SwiftSoup"),
       ],
       swiftSettings: swiftSettings,
     ),
@@ -44,6 +49,9 @@ let package = Package(
       dependencies: [
         .target(name: "Insights"),
         .product(name: "VaporTesting", package: "vapor"),
+        .product(name: "Queues", package: "queues"),
+        .product(name: "XCTQueues", package: "queues"),
+        .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
       ],
       swiftSettings: swiftSettings,
     ),

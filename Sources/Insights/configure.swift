@@ -39,6 +39,7 @@ func configure(_ app: Application) async throws {
 
   app.migrations.add(JobModelMigration())
   app.migrations.add(FirstMigration())
+  app.migrations.add(RecurringCollection())
 
   // Development-only seed data so the dashboard has something to render. Only ever
   // registered in `.development`, so it targets `dev` and never the `test` database.
@@ -66,4 +67,18 @@ func configure(_ app: Application) async throws {
 
   // register routes
   try routes(app)
+
+  // Queue Jobs
+  let syncGitHubRepoStatsJob = SyncGitHubRepoStats()
+  let syncGitHubOrgStatsJob = SyncGitHubOrgStats()
+  let syncHuggingFaceHubStats = SyncHuggingFaceHubStats()
+
+  app.queues.add(syncGitHubRepoStatsJob)
+  app.queues.add(syncGitHubOrgStatsJob)
+  app.queues.add(syncHuggingFaceHubStats)
+
+  // Run by the `--scheduled` worker. These only enqueue; the jobs run on the `metrics` queue,
+  // so a slow sync never delays the next sweep.
+  app.queues.schedule(CollectDueResources()).hourly().at(0)
+  app.queues.schedule(CollectAccountStats()).daily().at(3, 0)
 }

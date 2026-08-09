@@ -12,6 +12,9 @@ enum ResourceType: String, Codable, CaseIterable {
 final class Resource: Model, @unchecked Sendable {
   static let schema = "resources"
 
+  /// Under every platform's retention window with margin, so a missed sweep loses nothing.
+  static let defaultCollectionIntervalDays = 7
+
   @ID(key: .id)
   var id: UUID?
 
@@ -23,6 +26,14 @@ final class Resource: Model, @unchecked Sendable {
 
   @Parent(key: "account_id")
   var account: Account
+
+  /// When the next sweep should collect this. Nil is skipped by the sweep's `<= now` filter.
+  @OptionalField(key: "next_collection_at")
+  var nextCollectionAt: Date?
+
+  /// Days between sweeps, capped by `Platform.maxCollectionIntervalDays`.
+  @Field(key: "collection_interval_days")
+  var collectionIntervalDays: Int
 
   @Children(for: \.$resource)
   var metrics: [Metric]
@@ -46,6 +57,8 @@ final class Resource: Model, @unchecked Sendable {
     name: String,
     type: ResourceType,
     accountID: Account.IDValue,
+    nextCollectionAt: Date? = nil,
+    collectionIntervalDays: Int = Resource.defaultCollectionIntervalDays,
     createdAt: Date? = nil,
     updatedAt: Date? = nil,
     deletedAt: Date? = nil,
@@ -54,8 +67,16 @@ final class Resource: Model, @unchecked Sendable {
     self.name = name
     self.type = type
     $account.id = accountID
+    self.nextCollectionAt = nextCollectionAt
+    self.collectionIntervalDays = collectionIntervalDays
     self.createdAt = createdAt
     self.updatedAt = updatedAt
     self.deletedAt = deletedAt
+  }
+
+  /// From `now`, not the previous due date: after downtime a stale date would leave the
+  /// resource due again immediately, dispatching once per missed interval.
+  func scheduleNextCollection(from now: Date = Date()) {
+    nextCollectionAt = now.addingTimeInterval(Double(collectionIntervalDays) * 86_400)
   }
 }

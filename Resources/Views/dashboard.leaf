@@ -52,6 +52,11 @@
       <div class="chart-grid" data-charts></div>
     </section>
 
+    <section class="section" data-section="trends" hidden>
+      <div class="section-head"><h2>Trend</h2><span class="hint">how each metric has moved over time</span></div>
+      <div class="chart-grid" data-trends></div>
+    </section>
+
     <section class="section" data-section="releases" hidden>
       <div class="section-head"><h2>Releases</h2></div>
       <div class="panel"><div class="releases" data-releases></div></div>
@@ -59,6 +64,6 @@
 
   </div>
 
-  <script src="/dashboard.js?v=17"></script>
+  <script src="/dashboard.js?v=18"></script>
 </body>
 </html>
