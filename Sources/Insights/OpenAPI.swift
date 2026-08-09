@@ -2,6 +2,10 @@ import Vapor
 import VaporToOpenAPI
 
 /// Serves the generated OpenAPI document and a Scalar-based reference UI.
+/// Generates the OpenAPI document and registers its JSON and Scalar UI endpoints.
+///
+/// - Parameter app: The application whose annotated routes describe the API document.
+/// - Throws: An error when the document or documentation routes cannot be registered.
 func registerOpenAPI(_ app: Application) throws {
   // Machine-readable spec, reflected from the annotated routes.
   app.get("openapi.json") { req in

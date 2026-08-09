@@ -2,7 +2,9 @@ import Fluent
 import Vapor
 import VaporToOpenAPI
 
+/// Serves account catalog endpoints and account-level mutations that are currently enabled.
 struct AccountController: RouteCollection {
+  /// Mounts account routes under `/accounts`.
   func boot(routes: any RoutesBuilder) throws {
     let accounts = routes.grouped("accounts")
 
@@ -46,11 +48,13 @@ struct AccountController: RouteCollection {
   }
 
   @Sendable
+  /// Lists every account visible to the application.
   func index(req: Request) async throws -> [Account.Public] {
     try await Account.query(on: req.db).all().map { $0.toPublic() }
   }
 
   @Sendable
+  /// Creates an account after validating uniqueness and request fields.
   func create(req: Request) async throws -> Response {
     let account = try req.content.decode(Account.Create.self).toModel()
 
@@ -64,6 +68,7 @@ struct AccountController: RouteCollection {
   }
 
   @Sendable
+  /// Returns one account with its resources and Vault metadata loaded.
   func show(req: Request) async throws -> Account.Public {
     guard let account = try await Account.find(req.parameters.get("accountID"), on: req.db)
     else {
@@ -76,6 +81,7 @@ struct AccountController: RouteCollection {
   }
 
   @Sendable
+  /// Updates mutable account statistics supplied by the client.
   func update(req: Request) async throws -> Account.Public {
     guard let account = try await Account.find(req.parameters.get("accountID"), on: req.db)
     else {
@@ -93,6 +99,7 @@ struct AccountController: RouteCollection {
   }
 
   @Sendable
+  /// Soft-deletes an account and returns an empty success response.
   func delete(req: Request) async throws -> HTTPStatus {
     guard let account = try await Account.find(req.parameters.get("accountID"), on: req.db)
     else {

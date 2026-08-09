@@ -1,11 +1,13 @@
 import Foundation
 
+/// Domain failures surfaced by platform synchronization jobs.
 enum JobError: Error {
   case entryNotFound(id: UUID)
   case apiRequestFailed(url: String, statusCode: Int)
   case missingToken(id: UUID)
   case decodingFailed(url: String, underlying: any Error)
 
+  /// A log-oriented explanation of the failed collection operation.
   var description: String {
     switch self {
     case .entryNotFound(let id):

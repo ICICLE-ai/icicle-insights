@@ -3,10 +3,17 @@ import FluentPostgresDriver
 import Leaf
 import NIOSSL
 import Queues
-import QueuesFluentDriver
+import QueuesRedisDriver
 import Vapor
 
-/// configures your application
+/// Configures infrastructure, services, routes, queue handlers, and command-line commands.
+///
+/// This is the application's composition root. It selects the environment-specific database,
+/// connects Valkey-backed queues, initializes Tapis Vault access, and registers both scheduled
+/// and one-shot collection entry points.
+///
+/// - Parameter app: The Vapor application being prepared for execution.
+/// - Throws: A configuration, migration registration, service, route, or queue setup error.
 func configure(_ app: Application) async throws {
   // Serve static assets (dashboard CSS/JS) from the /Public folder.
   app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
@@ -34,10 +41,11 @@ func configure(_ app: Application) async throws {
         username: Environment.get("DATABASE_USERNAME") ?? "vapor_username",
         password: Environment.get("DATABASE_PASSWORD") ?? "vapor_password",
         database: databaseName,
-        tls: .require(.init(configuration: tlsConfiguration)),
+        tls: Environment.get("DATABASE_TLS") == "disable"
+          ? .disable
+          : .require(.init(configuration: tlsConfiguration)),
       )), as: .psql)
 
-  app.migrations.add(JobModelMigration())
   app.migrations.add(FirstMigration())
   app.migrations.add(RecurringCollection())
 
@@ -50,12 +58,30 @@ func configure(_ app: Application) async throws {
   }
 
   app.views.use(.leaf)
-  app.queues.use(.fluent())
 
-  //services
-  // Shared Tapis client for resolving Vault secrets in sync jobs. Fail-fast: a missing
-  // TAPIS_BASE_URL / TAPIS_TOKEN aborts boot rather than failing on the first Vault call.
-  app.tapis = try TapisClient(client: app.client, config: .fromEnvironment())
+  // Jobs live in Redis rather than Postgres: the worker's poll is a blocking pop instead of a
+  // table scan on every tick. Assembled from parts rather than a `redis://` URL so a generated
+  // password never has to survive percent-encoding, and defaulting to a local unauthenticated
+  // server so `swift run` needs no extra configuration.
+  try app.queues.use(
+    .redis(
+      RedisConfiguration(
+        hostname: Environment.get("REDIS_HOST") ?? "localhost",
+        port: Environment.get("REDIS_PORT").flatMap(Int.init(_:)) ?? 6379,
+        // An empty value means "no auth"; passing it through would fail the AUTH handshake.
+        password: Environment.get("REDIS_PASSWORD").flatMap { $0.isEmpty ? nil : $0 },
+      )))
+
+  // Credential backend selected once for the entire application. Jobs and controllers depend
+  // only on SecretProvider, so another implementation adds one case here, not changes to every
+  // consumer. Tapis Vault is the current adapter and fails fast on missing Tapis configuration.
+  let secretProviderName = Environment.get("SECRET_PROVIDER")?.lowercased() ?? "tapis"
+  switch secretProviderName {
+  case "tapis":
+    app.secrets = try TapisClient(client: app.client, config: .fromEnvironment()).vaults
+  default:
+    throw ConfigError.unsupported(name: "SECRET_PROVIDER", value: secretProviderName)
+  }
 
   // Encode/decode JSON dates as ISO8601 so clients (e.g. the dashboard chart) can parse them.
   let jsonEncoder = JSONEncoder()
@@ -80,5 +106,10 @@ func configure(_ app: Application) async throws {
   // Run by the `--scheduled` worker. These only enqueue; the jobs run on the `metrics` queue,
   // so a slow sync never delays the next sweep.
   app.queues.schedule(CollectDueResources()).hourly().at(0)
-  app.queues.schedule(CollectAccountStats()).daily().at(3, 0)
+  app.queues.schedule(CollectAccountStats()).monthly().on(.first).at(3, 0)
+
+  // One-shot equivalents for local testing and operator-initiated backfills. They invoke the
+  // same scheduled job types without changing or waiting for the production clocks above.
+  app.asyncCommands.use(CollectResourcesNowCommand(), as: "collect-resources")
+  app.asyncCommands.use(CollectAccountsNowCommand(), as: "collect-accounts")
 }

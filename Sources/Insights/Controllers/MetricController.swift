@@ -2,11 +2,13 @@ import Fluent
 import Vapor
 import VaporToOpenAPI
 
+/// Provides filtered metric-series reads and internal metric mutation handlers.
 struct MetricController: RouteCollection {
   /// Ceiling for `?limit=`. Postgres rejects a negative `LIMIT` outright, and an unbounded one
   /// would hand back the whole series.
   private let maxLimit = 1000
 
+  /// Mounts metric routes under `/metrics`.
   func boot(routes: any RoutesBuilder) throws {
     let metrics = routes.grouped("metrics")
 
@@ -43,9 +45,13 @@ struct MetricController: RouteCollection {
     }
   }
 
+  /// Optional query parameters for narrowing a metric-series response.
   struct Filters: Content {
+    /// Restricts readings to one resource identifier.
     var resourceID: Resource.IDValue?
+    /// Restricts readings to one metric type.
     var type: MetricType?
+    /// Maximum number of newest readings to return.
     var limit: Int?
 
     enum CodingKeys: String, CodingKey {
@@ -54,6 +60,7 @@ struct MetricController: RouteCollection {
   }
 
   @Sendable
+  /// Lists newest-first metrics using optional resource, type, and limit filters.
   func index(req: Request) async throws -> [Metric.Public] {
     let filters = try req.query.decode(Filters.self)
 
@@ -73,6 +80,7 @@ struct MetricController: RouteCollection {
   }
 
   @Sendable
+  /// Records a validated metric reading for an existing resource.
   func create(req: Request) async throws -> Response {
     let metric = try req.content.decode(Metric.Create.self).toModel()
 
@@ -86,6 +94,7 @@ struct MetricController: RouteCollection {
   }
 
   @Sendable
+  /// Returns one metric reading by identifier.
   func show(req: Request) async throws -> Metric.Public {
     guard let metric = try await Metric.find(req.parameters.get("metricID"), on: req.db)
     else {
@@ -96,6 +105,7 @@ struct MetricController: RouteCollection {
   }
 
   @Sendable
+  /// Permanently deletes one metric reading.
   func delete(req: Request) async throws -> HTTPStatus {
     guard let metric = try await Metric.find(req.parameters.get("metricID"), on: req.db)
     else {

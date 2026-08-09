@@ -10,6 +10,7 @@ import SQLKit
 /// charts render one point per series until a later sweep is recorded. This is the only seed
 /// data in the project — every figure here is real, and nothing synthetic is seeded anywhere.
 struct ICICLESnapshotJuly2026: AsyncMigration {
+  /// Indicates that this PostgreSQL-specific seed migration received another database driver.
   struct UnsupportedDatabase: Error {}
 
   private static let accountName = "icicle-ai"
@@ -201,7 +202,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       metrics: [.init(.clonesAllTime, 32), .init(.stars, 1), .init(.viewsAllTime, 31)]
     ),
     RepositorySpec(
-      name: "ArrayMorph",
+      name: "arraymorph",
       releases: [
         .init("1.0", month: 9, year: 2024), .init("1.1", month: 5, year: 2025),
         .init("1.2", month: 7, year: 2025),
@@ -212,17 +213,17 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       ]
     ),
     RepositorySpec(
-      name: "AUTOLYCUS",
+      name: "autolycus",
       releases: [.init("1.0", month: 9, year: 2024)],
       metrics: [.init(.clonesAllTime, 21), .init(.subscribers, 1)]
     ),
     RepositorySpec(
-      name: "AutoSDT",
+      name: "autosdt",
       releases: [.init("1.0.0", month: 3, year: 2026)],
       metrics: []
     ),
     RepositorySpec(
-      name: "Camera_Trap",
+      name: "camera_trap",
       releases: [.init("1.0.0", month: 10, year: 2025)],
       metrics: [
         .init(.clonesAllTime, 31), .init(.forks, 1), .init(.stars, 5),
@@ -230,7 +231,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       ]
     ),
     RepositorySpec(
-      name: "CAN-Benchmark",
+      name: "can-benchmark",
       releases: [.init("1.0.0", month: 10, year: 2025)],
       metrics: [.init(.clonesAllTime, 25), .init(.stars, 1), .init(.viewsAllTime, 8)]
     ),
@@ -240,7 +241,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       metrics: []
     ),
     RepositorySpec(
-      name: "CI-Components-Catalog",
+      name: "ci-components-catalog",
       releases: [.init("0.1.0", month: 4, year: 2023), .init("0.2.0", month: 7, year: 2025)],
       metrics: [
         .init(.clonesAllTime, 89), .init(.forks, 3), .init(.stars, 1),
@@ -263,7 +264,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       metrics: [.init(.clonesAllTime, 10), .init(.viewsAllTime, 3)]
     ),
     RepositorySpec(
-      name: "distributed_training_estimator_of_LLM",
+      name: "distributed_training_estimator_of_llm",
       releases: [.init("0.0.1", month: 7, year: 2025)],
       metrics: [
         .init(.clonesAllTime, 101), .init(.forks, 3), .init(.stars, 1),
@@ -281,7 +282,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       metrics: [.init(.clonesAllTime, 18), .init(.viewsAllTime, 1)]
     ),
     RepositorySpec(
-      name: "FASS-Frontend",
+      name: "fass-frontend",
       releases: [
         .init("0.2", month: 8, year: 2025), .init("0.3", month: 10, year: 2025),
         .init("0.4", month: 12, year: 2025),
@@ -299,7 +300,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       metrics: [.init(.clonesAllTime, 20), .init(.subscribers, 3), .init(.viewsAllTime, 1)]
     ),
     RepositorySpec(
-      name: "Food-Access-Model",
+      name: "food-access-model",
       releases: [
         .init("0.1", month: 12, year: 2024), .init("0.2", month: 8, year: 2025),
         .init("0.3", month: 10, year: 2025), .init("0.4", month: 12, year: 2025),
@@ -318,7 +319,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       ]
     ),
     RepositorySpec(
-      name: "FoodWasteWhiz",
+      name: "foodwastewhiz",
       releases: [.init("0.1", month: 7, year: 2025)],
       metrics: [.init(.clonesAllTime, 30)]
     ),
@@ -328,7 +329,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       metrics: [.init(.clonesAllTime, 14), .init(.viewsAllTime, 22)]
     ),
     RepositorySpec(
-      name: "GNNFoodFlowPortal",
+      name: "gnnfoodflowportal",
       releases: [
         .init("1.0.0", month: 8, year: 2025), .init("1.1.0", month: 10, year: 2025),
         .init("1.2.0", month: 5, year: 2026),
@@ -374,12 +375,12 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       metrics: []
     ),
     RepositorySpec(
-      name: "ICICLE-Playgrounds",
+      name: "icicle-playgrounds",
       releases: [.init("0.1.5.5", month: 8, year: 2025)],
       metrics: [.init(.clonesAllTime, 29), .init(.viewsAllTime, 38)]
     ),
     RepositorySpec(
-      name: "ICICLE_Foodshed_Parser",
+      name: "icicle_foodshed_parser",
       releases: [.init("0.1", month: 6, year: 2023)],
       metrics: [.init(.clonesAllTime, 26), .init(.viewsAllTime, 3)]
     ),
@@ -404,7 +405,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       metrics: []
     ),
     RepositorySpec(
-      name: "OpenPass",
+      name: "openpass",
       releases: [.init("1.0.0", month: 9, year: 2024), .init("2.0.0", month: 8, year: 2025)],
       metrics: [.init(.clonesAllTime, 47), .init(.forks, 1), .init(.viewsAllTime, 109)]
     ),
@@ -414,7 +415,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       metrics: [.init(.clonesAllTime, 24), .init(.viewsAllTime, 75)]
     ),
     RepositorySpec(
-      name: "PEFT_Vision",
+      name: "peft_vision",
       releases: [.init("0.1", month: 5, year: 2025)],
       metrics: [.init(.clonesAllTime, 28), .init(.subscribers, 2), .init(.viewsAllTime, 11)]
     ),
@@ -429,22 +430,22 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       metrics: [.init(.clonesAllTime, 17)]
     ),
     RepositorySpec(
-      name: "ProfilingCompiler",
+      name: "profilingcompiler",
       releases: [.init("1.0", month: 9, year: 2024)],
       metrics: [.init(.clonesAllTime, 23), .init(.subscribers, 1), .init(.viewsAllTime, 3)]
     ),
     RepositorySpec(
-      name: "Region2vec",
+      name: "region2vec",
       releases: [.init("1.0", month: 6, year: 2023)],
       metrics: [.init(.clonesAllTime, 16), .init(.stars, 1)]
     ),
     RepositorySpec(
-      name: "ScienceAgent",
+      name: "scienceagent",
       releases: [.init("1.0", month: 12, year: 2024)],
       metrics: []
     ),
     RepositorySpec(
-      name: "ScienceAgentInterface",
+      name: "scienceagentinterface",
       releases: [
         .init("1.0", month: 12, year: 2024), .init("2.0", month: 7, year: 2025),
         .init("2.1", month: 10, year: 2025),
@@ -452,7 +453,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       metrics: [.init(.clonesAllTime, 24), .init(.viewsAllTime, 13)]
     ),
     RepositorySpec(
-      name: "SMART-COMPILER",
+      name: "smart-compiler",
       releases: [.init("1.0", month: 5, year: 2025), .init("2.0", month: 8, year: 2025)],
       metrics: [
         .init(.clonesAllTime, 38), .init(.forks, 1), .init(.subscribers, 3),
@@ -460,7 +461,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       ]
     ),
     RepositorySpec(
-      name: "Smartfield-Backpack",
+      name: "smartfield-backpack",
       releases: [.init("1.0.0", month: 12, year: 2025)],
       metrics: [.init(.clonesAllTime, 157), .init(.viewsAllTime, 39)]
     ),
@@ -480,7 +481,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       metrics: [.init(.clonesAllTime, 27), .init(.subscribers, 2), .init(.viewsAllTime, 1)]
     ),
     RepositorySpec(
-      name: "Store_Closure_Website",
+      name: "store_closure_website",
       releases: [.init("0.1", month: 6, year: 2023)],
       metrics: [.init(.clonesAllTime, 27), .init(.stars, 1)]
     ),
@@ -495,7 +496,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       metrics: [.init(.clonesAllTime, 43), .init(.viewsAllTime, 100)]
     ),
     RepositorySpec(
-      name: "VA_Dashboard_V3",
+      name: "va_dashboard_v3",
       releases: [
         .init("0.1", month: 4, year: 2023), .init("0.2", month: 6, year: 2023),
         .init("0.3", month: 10, year: 2023), .init("0.4", month: 9, year: 2024),
@@ -509,6 +510,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
 
   // MARK: Migration
 
+  /// Inserts the curated account, resource, release, Vault metadata, and metric snapshot.
   func prepare(on database: any Database) async throws {
     guard let sql = database as? any SQLDatabase else {
       throw UnsupportedDatabase()  // Postgres only; never reached in practice.
@@ -562,6 +564,7 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
     try await insertMetrics(on: sql, readings: readings)
   }
 
+  /// Removes only records introduced by this snapshot.
   func revert(on database: any Database) async throws {
     // Force-delete every account owned by this snapshot; DB-level ON DELETE CASCADE removes
     // their resources and, through those resources, their metrics and releases.

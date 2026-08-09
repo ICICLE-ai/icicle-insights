@@ -3,10 +3,15 @@ import Vapor
 import VaporToOpenAPI
 
 extension Release {
+  /// Request body for recording a resource release.
   struct Create: Content, WithExample {
+    /// Human-readable release or version identifier.
     var version: String
+    /// One-based release month.
     var month: Int
+    /// Four-digit release year supported by the API.
     var year: Int
+    /// Resource that published the release.
     var resourceID: Resource.IDValue
 
     enum CodingKeys: String, CodingKey {
@@ -20,6 +25,7 @@ extension Release {
       resourceID: UUID(uuidString: "0ba5c0de-0000-0000-0000-000000000000")!,
     )
 
+    /// Validates and converts the request into an unsaved Fluent model.
     func toModel() throws -> Release {
       let model = Release()
       model.version = try requireNonBlank(version, "version")
@@ -34,10 +40,14 @@ extension Release {
     }
   }
 
+  /// Public release representation returned by the API.
   struct Public: Content {
     var id: UUID?
+    /// Resource that published the release.
     var resourceID: Resource.IDValue?
+    /// Human-readable release or version identifier.
     var version: String?
+    /// Normalized release date at midnight UTC.
     var releasedAt: Date?
 
     enum CodingKeys: String, CodingKey {
@@ -45,6 +55,7 @@ extension Release {
     }
   }
 
+  /// Projects loaded model fields into the public API shape.
   func toPublic() -> Public {
     .init(
       id: id,

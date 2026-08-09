@@ -3,7 +3,9 @@ import Queues
 import Vapor
 import VaporToOpenAPI
 
+/// Serves resource catalog endpoints and dispatches collection when a resource is created.
 struct ResourceController: RouteCollection {
+  /// Mounts resource routes under `/resources`.
   func boot(routes: any RoutesBuilder) throws {
     let resources = routes.grouped("resources")
 
@@ -40,11 +42,13 @@ struct ResourceController: RouteCollection {
   }
 
   @Sendable
+  /// Lists all active resources.
   func index(req: Request) async throws -> [Resource.Public] {
     try await Resource.query(on: req.db).all().map { $0.toPublic() }
   }
 
   @Sendable
+  /// Creates, immediately collects, and schedules a resource under an existing account.
   func create(req: Request) async throws -> Response {
     let resource = try req.content.decode(Resource.Create.self).toModel()
 
@@ -79,6 +83,7 @@ struct ResourceController: RouteCollection {
   }
 
   @Sendable
+  /// Returns one resource by identifier.
   func show(req: Request) async throws -> Resource.Public {
     guard let resource = try await Resource.find(req.parameters.get("resourceID"), on: req.db)
     else {
@@ -89,6 +94,7 @@ struct ResourceController: RouteCollection {
   }
 
   @Sendable
+  /// Soft-deletes a resource and its future collection eligibility.
   func delete(req: Request) async throws -> HTTPStatus {
     guard let resource = try await Resource.find(req.parameters.get("resourceID"), on: req.db)
     else {

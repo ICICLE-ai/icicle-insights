@@ -1,6 +1,10 @@
 import Fluent
 import Vapor
 
+/// Registers the application's public HTTP, dashboard, and OpenAPI routes.
+///
+/// - Parameter app: The configured Vapor application whose router receives the endpoints.
+/// - Throws: Any error raised while a route collection or OpenAPI document is registered.
 func routes(_ app: Application) throws {
   app.get { req async throws in
     try await req.view.render("index", ["title": "Hello Vapor!"])

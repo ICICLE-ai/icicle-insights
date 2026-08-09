@@ -8,6 +8,7 @@ import Vapor
 /// Hourly is the schedule's resolution, not the cadence: each resource carries its own
 /// interval, so resources on different cadences need no separate schedules.
 struct CollectDueResources: AsyncScheduledJob {
+  /// Dispatches every currently due resource and advances successfully queued due dates.
   func run(context: QueueContext) async throws {
     let now = Date()
     let due = try await Resource.query(on: context.application.db)

@@ -2,7 +2,9 @@ import Fluent
 import Vapor
 import VaporToOpenAPI
 
+/// Provides release history reads and internal release mutation handlers.
 struct ReleaseController: RouteCollection {
+  /// Mounts release routes under `/releases`.
   func boot(routes: any RoutesBuilder) throws {
     let releases = routes.grouped("releases")
 
@@ -39,11 +41,13 @@ struct ReleaseController: RouteCollection {
   }
 
   @Sendable
+  /// Lists all recorded releases.
   func index(req: Request) async throws -> [Release.Public] {
     try await Release.query(on: req.db).all().map { $0.toPublic() }
   }
 
   @Sendable
+  /// Creates a validated release for an existing resource.
   func create(req: Request) async throws -> Response {
     let release = try req.content.decode(Release.Create.self).toModel()
 
@@ -57,6 +61,7 @@ struct ReleaseController: RouteCollection {
   }
 
   @Sendable
+  /// Returns one release by identifier.
   func show(req: Request) async throws -> Release.Public {
     guard let release = try await Release.find(req.parameters.get("releaseID"), on: req.db)
     else {
@@ -67,6 +72,7 @@ struct ReleaseController: RouteCollection {
   }
 
   @Sendable
+  /// Permanently deletes one release record.
   func delete(req: Request) async throws -> HTTPStatus {
     guard let release = try await Release.find(req.parameters.get("releaseID"), on: req.db)
     else {

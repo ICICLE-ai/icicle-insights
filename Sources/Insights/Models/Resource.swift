@@ -3,12 +3,14 @@ import Fluent
 import struct Foundation.Date
 import struct Foundation.UUID
 
-// CaseIterable is what makes SwiftOpenAPI emit the allowed values as an enum in the
-// generated schema rather than a bare string.
+/// A catalog classification for an account-owned artifact or service.
+///
+/// `CaseIterable` makes SwiftOpenAPI emit the allowed values instead of a bare string.
 enum ResourceType: String, Codable, CaseIterable {
   case container, dataset, model, package, repository, service
 }
 
+/// A collectable artifact owned by a platform account.
 final class Resource: Model, @unchecked Sendable {
   static let schema = "resources"
 
@@ -19,12 +21,15 @@ final class Resource: Model, @unchecked Sendable {
   var id: UUID?
 
   @Field(key: "name")
+  /// Normalized provider-specific resource name or path.
   var name: String
 
   @Enum(key: "type")
+  /// Catalog classification independent from the hosting platform.
   var type: ResourceType
 
   @Parent(key: "account_id")
+  /// Platform account that owns the resource.
   var account: Account
 
   /// When the next sweep should collect this. Nil is skipped by the sweep's `<= now` filter.
@@ -36,9 +41,11 @@ final class Resource: Model, @unchecked Sendable {
   var collectionIntervalDays: Int
 
   @Children(for: \.$resource)
+  /// Time-series and materialized total readings for this resource.
   var metrics: [Metric]
 
   @Children(for: \.$resource)
+  /// Published versions associated with this resource.
   var releases: [Release]
 
   @Timestamp(key: "created_at", on: .create)
@@ -52,6 +59,7 @@ final class Resource: Model, @unchecked Sendable {
 
   init() {}
 
+  /// Creates a resource with an optional due date and configurable collection cadence.
   init(
     id: UUID? = nil,
     name: String,
@@ -76,6 +84,7 @@ final class Resource: Model, @unchecked Sendable {
 
   /// From `now`, not the previous due date: after downtime a stale date would leave the
   /// resource due again immediately, dispatching once per missed interval.
+  /// - Parameter now: The successful dispatch time from which the next interval begins.
   func scheduleNextCollection(from now: Date = Date()) {
     nextCollectionAt = now.addingTimeInterval(Double(collectionIntervalDays) * 86_400)
   }

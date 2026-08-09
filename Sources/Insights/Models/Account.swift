@@ -3,6 +3,7 @@ import Fluent
 import struct Foundation.Date
 import struct Foundation.UUID
 
+/// A hosting provider that owns accounts and determines resource collection routing.
 enum Platform: String, Codable, CaseIterable {
   case github, ghcr, huggingface, npm, pypi
 
@@ -17,6 +18,7 @@ enum Platform: String, Codable, CaseIterable {
   }
 }
 
+/// A platform identity that owns resources and optionally references a Tapis Vault secret.
 final class Account: Model, @unchecked Sendable {
   static let schema = "accounts"
 
@@ -24,18 +26,23 @@ final class Account: Model, @unchecked Sendable {
   var id: UUID?
 
   @Field(key: "name")
+  /// Normalized provider account or organization name.
   var name: String
 
   @Enum(key: "platform")
+  /// Provider used to route this account's resources to sync jobs.
   var platform: Platform
 
   @Field(key: "followers")
+  /// Latest collected account follower snapshot.
   var followers: Int
 
   @Children(for: \.$account)
+  /// Resources published by this account.
   var resources: [Resource]
 
   @OptionalChild(for: \.$account)
+  /// Metadata referencing the account's platform token in Tapis Vault.
   var vault: Vault?
 
   @Timestamp(key: "created_at", on: .create)
@@ -49,6 +56,7 @@ final class Account: Model, @unchecked Sendable {
 
   init() {}
 
+  /// Creates an account model with its current follower snapshot.
   init(
     id: UUID? = nil,
     name: String,

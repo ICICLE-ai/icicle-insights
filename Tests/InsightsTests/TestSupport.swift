@@ -70,12 +70,21 @@ struct StubClient: Client {
   }
 }
 
-/// Repoint `app.tapis` at an always-failing stub, reusing the env-derived config.
+/// Returns the Tapis adapter configuration installed by `configure`.
+private func tapisConfig(on app: Application) -> TapisConfig {
+  guard let provider = app.secrets as? TapisClient.Vaults else {
+    fatalError("Tests expected configure.swift to install the Tapis secret provider")
+  }
+  return provider.config
+}
+
+/// Repoint `app.secrets` at an always-failing Tapis adapter, reusing its configuration.
 func stubTapis(on app: Application, status: HTTPResponseStatus) {
-  app.tapis = TapisClient(
-    client: StubClient(eventLoop: app.eventLoopGroup.any(), status: status),
-    config: app.tapis.config,
-  )
+  app.secrets =
+    TapisClient(
+      client: StubClient(eventLoop: app.eventLoopGroup.any(), status: status),
+      config: tapisConfig(on: app),
+    ).vaults
 }
 
 // MARK: - Platform API stub
@@ -133,7 +142,7 @@ private func jsonResponse(_ status: HTTPResponseStatus, _ body: String) -> Clien
 /// Stub every outbound HTTP call the sync jobs make, returning the recording of what they asked
 /// for.
 ///
-/// Both `app.client` and `app.tapis` are replaced: `configure` builds the Tapis client from
+/// Both `app.client` and `app.secrets` are replaced: `configure` builds the Tapis adapter from
 /// `app.client` at boot, so swapping the client factory alone leaves it holding the real one.
 ///
 /// Vault reads are answered automatically from the secret name in the URL, since that is the
@@ -164,7 +173,7 @@ func stubAPI(
   }
 
   app.clients.use { _ in stub }
-  app.tapis = TapisClient(client: stub, config: app.tapis.config)
+  app.secrets = TapisClient(client: stub, config: tapisConfig(on: app)).vaults
   return requests
 }
 

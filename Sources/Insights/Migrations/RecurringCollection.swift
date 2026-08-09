@@ -5,7 +5,9 @@ import SQLKit
 /// Adds per-resource collection scheduling and the watermarks that keep windowed metrics from
 /// being counted twice. Separate from `FirstMigration` because that one is already applied to
 /// deployed databases; this is purely additive on top of it.
+/// Adds resource scheduling state and per-metric counted-through watermarks.
 struct RecurringCollection: AsyncMigration {
+  /// Adds cadence fields, initializes due dates, and creates watermark storage.
   func prepare(on database: any Database) async throws {
     try await database.schema("resources")
       .field("next_collection_at", .datetime)
@@ -44,6 +46,7 @@ struct RecurringCollection: AsyncMigration {
       .create()
   }
 
+  /// Removes watermark storage and recurring collection fields.
   func revert(on database: any Database) async throws {
     try await database.schema("metric_watermarks").delete()
 
