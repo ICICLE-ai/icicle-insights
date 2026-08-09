@@ -1,0 +1,173 @@
+import Fluent
+import Foundation
+import Queues
+import Vapor
+
+struct GitHubResource: Codable {
+  let id: UUID
+}
+
+struct GitHubRepoStatsResponse: Content {
+  let stargazers_count: Int
+  let forks_count: Int
+  let subscribers_count: Int
+}
+
+/// One completed day of traffic. GitHub stamps these at UTC midnight.
+struct TrafficDay: Decodable, Sendable {
+  let timestamp: Date
+  let count: Int
+  let uniques: Int
+}
+
+/// Decode-only, unlike the other response types here: the custom initializer below leaves
+/// `days` with no key of its own, so `Encodable` cannot be synthesised. Nothing encodes it.
+struct GitHubRepoTrafficResponse: Decodable, Sendable {
+  /// Rolling 14-day total, not a delta. Kept as the `clones`/`views` reading, but folding it
+  /// into an all-time total would re-add every day two sweeps share; `days` feeds that.
+  let count: Int
+  let uniques: Int
+  let days: [TrafficDay]
+
+  private enum CodingKeys: String, CodingKey {
+    case count, uniques, clones, views
+  }
+
+  init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    count = try container.decode(Int.self, forKey: .count)
+    uniques = try container.decode(Int.self, forKey: .uniques)
+    // The endpoints differ only in the array's name: `clones` on one, `views` on the other.
+    days =
+      try container.decodeIfPresent([TrafficDay].self, forKey: .clones)
+      ?? container.decodeIfPresent([TrafficDay].self, forKey: .views)
+      ?? []
+  }
+}
+
+enum TrafficEndpoint: String {
+  case clones, views
+
+  /// The metric each endpoint feeds, so the caller cannot pair a response with the wrong
+  /// watermark.
+  var metric: MetricType {
+    switch self {
+    case .clones: .clones
+    case .views: .views
+    }
+  }
+}
+
+struct SyncGitHubRepoStats: AsyncJob {
+  let baseUrl = "https://api.github.com/repos"
+  typealias Payload = GitHubResource
+
+  func dequeue(_ context: QueueContext, _ payload: GitHubResource) async throws {
+    guard
+      let resource = try await Resource.query(on: context.application.db)
+        .filter(\.$id == payload.id)
+        .with(\.$account)
+        .first()
+    else {
+      throw JobError.entryNotFound(id: payload.id)
+    }
+
+    guard
+      let vault = try await Vault.query(on: context.application.db)
+        .filter(\.$account.$id == resource.$account.id)
+        .first()
+    else {
+      throw JobError.missingToken(id: resource.$account.id)
+    }
+
+    let token = try await context.application.tapis.vaults.readSecret(named: vault.name)
+    let owner = resource.account.name
+    let headers = HTTPHeaders([
+      ("Accept", "application/vnd.github+json"),
+      ("Authorization", "Bearer \(token.getSecretValue())"),
+      ("X-GitHub-Api-Version", "2026-03-10"),
+    ])
+    let repoStats = try await fetchRepoStats(
+      context, owner: owner, name: resource.name, headers: headers)
+    let clones = try await fetchTrafficStats(
+      context, owner: owner, name: resource.name, headers: headers, endpoint: .clones
+    )
+    let views = try await fetchTrafficStats(
+      context, owner: owner, name: resource.name, headers: headers, endpoint: .views
+    )
+
+    let resourceID = try resource.requireID()
+    let metrics = [
+      Metric(resourceID: resourceID, reading: Double(repoStats.stargazers_count), type: .stars),
+      Metric(resourceID: resourceID, reading: Double(repoStats.forks_count), type: .forks),
+      Metric(
+        resourceID: resourceID, reading: Double(repoStats.subscribers_count), type: .subscribers),
+      Metric(resourceID: resourceID, reading: Double(clones.count), type: .clones),
+      Metric(resourceID: resourceID, reading: Double(views.count), type: .views),
+    ]
+
+    try await metrics.create(on: context.application.db)
+
+    // Stars, forks, and subscribers are gauges — reported in full each time, so the series is
+    // the record and `MetricType.allTime` is nil for them. Only the rolling windows accumulate.
+    for (traffic, endpoint) in [(clones, TrafficEndpoint.clones), (views, .views)] {
+      try await Metric.foldDailyIntoAllTime(
+        on: context.application.db,
+        resourceID: resourceID,
+        type: endpoint.metric,
+        days: traffic.days
+      )
+    }
+  }
+
+  func fetchRepoStats(
+    _ context: QueueContext,
+    owner: String,
+    name: String,
+    headers: HTTPHeaders
+  ) async throws -> GitHubRepoStatsResponse {
+    let url = URI(string: "\(baseUrl)/\(owner)/\(name)")
+    let response = try await context.application.client.get(url) { req in
+      req.headers.add(contentsOf: headers)
+    }
+
+    guard response.status == .ok else {
+      throw JobError.apiRequestFailed(
+        url: url.string,
+        statusCode: Int(response.status.code)
+      )
+    }
+
+    do {
+      return try response.content.decode(GitHubRepoStatsResponse.self)
+    } catch {
+      throw JobError.decodingFailed(url: url.string, underlying: error)
+    }
+  }
+
+  func fetchTrafficStats(
+    _ context: QueueContext,
+    owner: String,
+    name: String,
+    headers: HTTPHeaders,
+    endpoint: TrafficEndpoint
+  ) async throws -> GitHubRepoTrafficResponse {
+    let url = URI(string: "\(baseUrl)/\(owner)/\(name)/traffic/\(endpoint.rawValue)")
+    let response = try await context.application.client.get(url) { req in
+      req.headers.add(contentsOf: headers)
+    }
+
+    guard response.status == .ok else {
+      throw JobError.apiRequestFailed(
+        url: url.string,
+        statusCode: Int(response.status.code)
+      )
+    }
+
+    do {
+      return try response.content.decode(GitHubRepoTrafficResponse.self)
+    } catch {
+      throw JobError.decodingFailed(url: url.string, underlying: error)
+    }
+  }
+}

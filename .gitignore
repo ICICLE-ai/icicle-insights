@@ -13,3 +13,6 @@ default.profraw
 
 .memsearch
 data/
+
+# Postgres data bind-mounted by the `just db` container recipe.
+.container/

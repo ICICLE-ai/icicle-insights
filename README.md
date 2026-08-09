@@ -51,10 +51,9 @@ Highlights:
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| [Swift](https://www.swift.org/install/) | 6.3+ | Ships with SwiftPM |
+| [Swift](https://www.swift.org/install/) | 6.3+ | Ships with SwiftPM and `swift-format` |
 | [PostgreSQL](https://www.postgresql.org/) | 14+ | Local instance or the bundled Compose service |
 | [just](https://just.systems/) | any | Task runner for the commands below |
-| [SwiftFormat](https://github.com/nicklockwood/SwiftFormat) | any | Only needed for `just fmt` |
 | [Docker](https://www.docker.com/) | any | Optional — for the containerised workflow |
 
 ## Quick Start
@@ -273,7 +272,7 @@ just run        # swift run — start the server
 just migrate    # apply database migrations
 just revert     # roll back the last migration batch
 just test       # run the test suite (serial — see below)
-just fmt        # format Sources, Tests, and Package.swift with SwiftFormat
+just fmt        # format Sources, Tests, and Package.swift with swift-format
 just fmt-check  # lint formatting without writing changes
 ```
 
