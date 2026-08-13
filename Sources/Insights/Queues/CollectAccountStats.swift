@@ -21,8 +21,7 @@ struct CollectAccountStats: AsyncScheduledJob {
     for account in accounts {
       let id = try account.requireID()
       do {
-        try await queue.dispatch(
-          SyncGitHubOrgStats.self, .init(id: id), maxRetryCount: syncJobMaxRetryCount)
+        try await queue.dispatch(SyncGitHubOrgStats.self, .init(id: id))
       } catch {
         context.logger.report(error: error)
       }

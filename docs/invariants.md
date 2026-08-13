@@ -10,12 +10,6 @@ design and tests.
 - Queue execution is at-least-once, not exactly-once. Jobs must tolerate retries.
 - Every named queue has a running worker; `serve` handles HTTP traffic independently.
 - Scheduled jobs dispatch work to workers, keeping remote synchronization off the scheduler.
-- Sync jobs are dispatched with a retry budget and back off between attempts; an immediate requeue
-  is never a retry strategy against a remote API.
-- Alert delivery is never load-bearing. `FailureNotifier.notify` cannot throw: the worker clears a
-  job only after `error(_:_:_:)` returns, so a failing alert channel would strand the job.
-- A credential failure re-books its resource inside the sweep interval, so a repaired token
-  resumes collection without an operator forcing a backfill.
 
 ## Metrics
 

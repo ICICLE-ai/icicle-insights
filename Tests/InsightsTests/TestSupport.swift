@@ -177,32 +177,6 @@ func stubAPI(
   return requests
 }
 
-// MARK: - Alert channel stub
-
-/// Captures alerts instead of sending them, so a test can assert on what an operator would have
-/// been told without a webhook.
-///
-/// A struct sharing a box, matching `StubHTTPClient`: `app.notifier` stores an existential the
-/// application copies freely, and recordings have to survive that.
-struct RecordingNotifier: FailureNotifier {
-  let alerts = NIOLockedValueBox<[FailureAlert]>([])
-
-  func notify(_ alert: FailureAlert) async {
-    alerts.withLockedValue { $0.append(alert) }
-  }
-
-  var recorded: [FailureAlert] {
-    alerts.withLockedValue { $0 }
-  }
-}
-
-/// Installs a recording notifier and hands it back for assertions.
-func stubNotifier(on app: Application) -> RecordingNotifier {
-  let notifier = RecordingNotifier()
-  app.notifier = notifier
-  return notifier
-}
-
 // MARK: - Failing queue
 
 /// A driver whose first `set` throws, so `CollectDueResources`' per-resource error path can be

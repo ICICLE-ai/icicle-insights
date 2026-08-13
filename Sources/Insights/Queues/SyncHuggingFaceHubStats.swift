@@ -19,16 +19,9 @@ struct HuggingFaceRepoStatsResponse: Content {
 }
 
 /// Synchronizes rolling and lifetime Hub statistics for one resource.
-struct SyncHuggingFaceHubStats: AsyncJob, BackoffRetrying {
+struct SyncHuggingFaceHubStats: AsyncJob {
   let baseUrl = "https://huggingface.co/api"
   typealias Payload = HuggingFaceResource
-
-  /// Called once the retry budget is spent, never before.
-  func error(_ context: QueueContext, _ error: any Error, _ payload: HuggingFaceResource)
-    async throws
-  {
-    await context.reportResourceSyncFailure(error, job: Self.name, resourceID: payload.id)
-  }
 
   /// Resolves credentials, fetches Hub statistics, and persists a coherent snapshot.
   func dequeue(_ context: QueueContext, _ payload: HuggingFaceResource) async throws {
@@ -97,7 +90,10 @@ struct SyncHuggingFaceHubStats: AsyncJob, BackoffRetrying {
     }
 
     guard response.status == .ok else {
-      throw JobError.apiRequestFailed(url: url, response: response)
+      throw JobError.apiRequestFailed(
+        url: url.string,
+        statusCode: Int(response.status.code)
+      )
     }
 
     do {
