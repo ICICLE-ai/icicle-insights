@@ -8,11 +8,13 @@
 #
 # Learn more: https://docs.docker.com/compose/reference/
 #
-#   Build images: docker compose build
-#      Start app: docker compose up app
-# Start database: docker compose up db
-# Run migrations: docker compose run migrate
-#       Stop all: docker compose down (add -v to wipe db)
+#     Build images: docker compose build
+#        Start app: docker compose up app
+#   Start database: docker compose up db
+#   Run migrations: docker compose run migrate
+#    Start workers: docker compose up queues scheduled
+#    Sweep due now: docker compose run collect-now
+#         Stop all: docker compose down (add -v to wipe db)
 #
 
 volumes:
@@ -38,6 +40,12 @@ x-shared_environment: &shared_environment
   TAPIS_TOKEN: ${TAPIS_TOKEN}
   TAPIS_USER: ${TAPIS_USER}
   TAPIS_TENANT: ${TAPIS_TENANT}
+  # Slack incoming webhook for collections that have exhausted their retries. Unset, failures
+  # go to the log alone, which is the right setting for local work. The optional warnings
+  # webhook splits the recoverable failures off so the primary channel carries only the
+  # credential ones.
+  SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+  SLACK_WEBHOOK_URL_WARNINGS: ${SLACK_WEBHOOK_URL_WARNINGS:-}
 
 
 services:
@@ -99,6 +107,47 @@ services:
     depends_on:
       - db
     command: ["migrate", "--revert", "--yes"]
+    deploy:
+      replicas: 0
+  # The sweeps the `scheduled` service runs on a timer, available on demand. Each only enqueues
+  # onto `metrics`, so `queues` has to be up for anything to actually collect. replicas: 0 keeps
+  # them out of `docker compose up`; reach them with `docker compose run <name>`.
+  collect-now:
+    image: insights:latest
+    build:
+      context: .
+    environment:
+      <<: *shared_environment
+    depends_on:
+      - db
+      - valkey
+    command: ["collect-resources"]
+    deploy:
+      replicas: 0
+  # Ignores the schedule and dispatches every active resource. Dispatched resources still book
+  # their next collection, so this shifts the cadence forward rather than replaying it.
+  collect-all-now:
+    image: insights:latest
+    build:
+      context: .
+    environment:
+      <<: *shared_environment
+    depends_on:
+      - db
+      - valkey
+    command: ["collect-resources", "--force"]
+    deploy:
+      replicas: 0
+  collect-accounts-now:
+    image: insights:latest
+    build:
+      context: .
+    environment:
+      <<: *shared_environment
+    depends_on:
+      - db
+      - valkey
+    command: ["collect-accounts"]
     deploy:
       replicas: 0
   # Job storage for the two workers above — Valkey, speaking the same protocol the Redis driver

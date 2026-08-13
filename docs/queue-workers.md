@@ -170,22 +170,23 @@ container and queue distinct names:
 
 ```just
 exports: build
-    container stop insights-exports >/dev/null 2>&1 || true
-    container delete insights-exports >/dev/null 2>&1 || true
-    container run --detach --name insights-exports \
+    container stop exports >/dev/null 2>&1 || true
+    container delete exports >/dev/null 2>&1 || true
+    container run --detach --name exports \
         --network '{{container_network}}' \
-        --env-file .env \
-        --env-file .env.container \
-        --env DATABASE_HOST="$(container inspect insights-db | jq -r '.[0].status.networks[0].ipv4Address | split("/")[0]')" \
-        --env REDIS_HOST="$(container inspect insights-valkey | jq -r '.[0].status.networks[0].ipv4Address | split("/")[0]')" \
+        {{container_app_env}} \
         '{{container_image}}' queues --queue exports
 ```
 
-Then add `exports` to the `stack` dependency list and `insights-exports` to the loop in `stop`.
-The two environment files are intentional: `.env` selects and configures the secret provider,
-while `.env.container` overrides database and Valkey settings with safe local
-values. The recipes inject the current container IPs because Apple Container 1.0.0 does not
-reliably resolve peer container names on the custom network.
+Then add `exports` to the `stack-scheduled` dependency list and to the loop in `stop`.
+
+`container_app_env` holds the environment every application container shares, layered in
+precedence order: `--env-file .env` first, `--env-file .env.container` second, then the `--env`
+flags for the in-network DNS names. Repeated `--env-file` flags **merge**, with the later file
+winning on conflicts, and an explicit `--env` outranks both regardless of position. That is what
+lets `.env` hold the credentials — it is gitignored, and the only place they belong — while the
+tracked `.env.container` overrides the deployment database values with local ones. A missing
+`--env-file` is a hard error rather than a skipped file, so `.env` must exist; copy `.env.example`.
 
 ### 3. Add a Docker Compose worker service
 

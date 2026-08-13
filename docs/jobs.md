@@ -43,9 +43,14 @@ struct GHCRResource: Codable {
   let id: UUID
 }
 
-struct SyncGHCRStats: AsyncJob {
+struct SyncGHCRStats: AsyncJob, BackoffRetrying {
   typealias Payload = GHCRResource
   let baseUrl = "https://github.com/orgs"
+
+  /// Called once the retry budget is spent, never before.
+  func error(_ context: QueueContext, _ error: any Error, _ payload: GHCRResource) async throws {
+    await context.reportResourceSyncFailure(error, job: Self.name, resourceID: payload.id)
+  }
 
   func dequeue(_ context: QueueContext, _ payload: GHCRResource) async throws {
     guard
@@ -69,9 +74,11 @@ Conventions the existing jobs follow:
   gauges stranded without the traffic rows that share their timestamp. There's a test for this.
 - **Express failures as `JobError`.** The four cases in `Sources/Insights/Errors/JobError.swift`
   (`entryNotFound`, `missingToken`, `apiRequestFailed`, `decodingFailed`) are what the tests
-  pattern-match on. A thrown error also leaves `nextCollectionAt` untouched, so the next sweep
-  retries the resource instead of skipping ahead an interval.
-- **`error(_:_:_:)` is optional.** Worker logging currently provides the failure record.
+  pattern-match on, and its `DebuggableError` conformance is what decides the log severity and
+  whether anyone is alerted. Throwing anything else still works, but it is reported as an
+  unclassified `.warning` with no suggested fix.
+- **Conform to `BackoffRetrying` and implement `error(_:_:_:)`.** Both are one line each and are
+  covered under [Failure handling](#failure-handling) below.
 - **Token, if the API needs one.** Look up the account's `Vault`, then
   `context.application.secrets.readSecret(named:)`. The selected `SecretProvider` resolves it.
   Public endpoints, such as GHCR package pages, can omit credential lookup and the associated
@@ -92,14 +99,101 @@ unknown job name.
 
 ```swift
 case .ghcr:
-  try await dispatch(SyncGHCRStats.self, .init(id: id))
+  try await dispatch(SyncGHCRStats.self, .init(id: id), maxRetryCount: syncJobMaxRetryCount)
 case .npm, .pypi:
   logger.debug("No sync job for platform; skipping resource", metadata: [...])
 ```
 
+`maxRetryCount` is not optional in practice: it defaults to `0`, and a job dispatched without it
+gives up on the first transient 503.
+
 Platforms without a job are listed in the skip branch rather than throwing: they are
 legitimately in the catalog, just not collectable. The `switch` is exhaustive over `Platform`,
 so adding a platform forces you to decide which branch it belongs in.
+
+## Failure handling
+
+A sync job fails for two unrelated reasons, and they need opposite responses: a throttled API
+wants another attempt in a minute, an expired token wants a person. The split is driven entirely
+by which `JobError` case is thrown.
+
+### The retry ladder
+
+Dispatch sites pass `maxRetryCount: syncJobMaxRetryCount` (3). Conforming to `BackoffRetrying`
+replaces `Job`'s default `nextRetryIn` — which returns `0`, requeueing *immediately*, so three
+attempts against a rate-limited API land inside the same second — with **30s, 2m, 8m**. The whole
+budget finishes inside the hourly sweep interval, so a resource is never retrying and being
+re-dispatched at the same time.
+
+Retries are error-blind: `nextRetryIn(attempt:)` receives the attempt number and nothing else, so
+a dead token spends all three attempts before anyone is told. That costs three wasted API calls
+per sweep and buys a much simpler design; revisit only if it shows up as rate-limit pressure.
+
+### Classification
+
+`JobError`'s `DebuggableError` conformance gives the log its severity, `identifier`, and
+explanation. The one question that changes the response — is a person needed? — is answered by the
+failure handler itself, in a private `Error` extension in `SyncJob+Failure.swift`.
+
+| Error | Log level | Alert | Re-books the resource |
+|---|---|---|---|
+| `JobError.missingToken`, `apiRequestFailed` 401/403 | `.critical` | 🔴 credential | yes — ~1 hour |
+| `TapisClientError.secretNotFound`, `requestFailed` 401/403 | `.critical` | 🔴 credential | yes — ~1 hour |
+| `JobError.apiRequestFailed`, other statuses | `.warning` | ⚠️ | no |
+| `JobError.entryNotFound`, `decodingFailed` | `.error` | ⚠️ | no |
+| `TapisClientError.invalidResponse`, 5xx | `.warning` | ⚠️ | no |
+| Anything else | `.warning` | ⚠️ `unknown` | no |
+
+`TapisClientError` belongs in that table as much as `JobError` does, and it is easy to miss: a
+job's token comes from the *vault*, not the platform, so an expired `TAPIS_TOKEN` or a missing
+secret breaks collection for every account at once while the platform APIs are perfectly healthy.
+Classifying only `JobError` would have given that failure an anonymous warning and left the
+resource on its weekly cadence.
+
+That classification lives in the queue, not on `TapisClientError`. What a vault failure means to a
+*job* — collection is stopped until someone acts — is the queue's concern; the Tapis adapter's
+`AbortError` conformance already says what the HTTP boundary needs, and the service type stays
+free of queue semantics. The one cost is that the failure handler names the cases explicitly, so a
+third credential source is a case to add there.
+
+Because `TapisClientError` reports `.warning` through `AbortError`, the handler logs credential
+failures at `.critical` itself rather than deferring to the error's own level.
+
+Without the `DebuggableError` conformance `Logger.report(error:)` falls to its `default` branch
+and logs `String(reflecting:)` at `.warning` — a reflected enum dump, with a dead credential at
+the same severity as a transient blip.
+
+### What `error(_:_:_:)` does
+
+It runs **once the retry budget is spent**, never before, and delegates to one shared helper in
+`Sources/Insights/Queues/SyncJob+Failure.swift`:
+
+1. Logs through `report(error:)` with filterable metadata — `job`, `subject`, `identifier`,
+   `platform`, and the resource or account id.
+2. Sends a `FailureAlert` to `app.notifier`.
+3. On a credential failure only, re-books `nextCollectionAt` about an hour out.
+
+Step 3 is the one worth understanding. `CollectDueResources` advances the due date when it
+*dispatches*, not when the job succeeds, so a job that fails afterwards would otherwise sit out a
+full `collectionIntervalDays` — a week by default. Re-booking keeps it in the hourly rotation, so
+a token repaired at any point is picked up within the hour rather than the following week.
+
+`SyncGitHubOrgStats` has no counterpart: `Account` carries no due date, since `CollectAccountStats`
+is fixed-monthly. A credential failure there alerts and then waits for that schedule, or for an
+operator to run `just collect-accounts-now`.
+
+### Alerting
+
+`app.notifier` is a `FailureNotifier`, selected in `configure.swift` the same way `app.secrets`
+is. `SLACK_WEBHOOK_URL` unset yields `NoopNotifier` and failures stay in the log — the right
+setting for tests and local runs.
+
+Set `SLACK_WEBHOOK_URL_WARNINGS` to route ⚠️ failures to a second channel; unset, everything goes
+to the one webhook tagged by severity.
+
+`FailureNotifier.notify` is `async` but deliberately **not** `throws`. `QueueWorker.runOneJob`
+awaits `job._error(...)` *before* clearing the job, so an alert channel that threw would strand
+the job and stop the worker's run loop. A channel that cannot be reached degrades to a log line.
 
 ## Choosing the all-time handling
 
@@ -198,11 +292,18 @@ for a new job:
 Add a case here when you wire a platform into `dispatchSync` — this is the suite that would have
 caught a job registered but never routed.
 
+**`JobFailureTests`** covers what happens after a job gives up: the severity each `JobError` case
+reports at, the backoff ladder, that a failing job is requeued rather than dropped, and that a
+credential failure re-books the resource while a platform failure leaves the cadence alone.
+`stubNotifier(on:)` installs a recording `FailureNotifier` so a test can assert on what an
+operator would have been told without a webhook.
+
 ## Checklist
 
 - [ ] Job file in `Sources/Insights/Queues/`, throwing `JobError`, writing after all fetches
+- [ ] `BackoffRetrying` conformance and an `error(_:_:_:)` delegating to the shared helper
 - [ ] `app.queues.add(...)` in `configure.swift`
-- [ ] Platform case in `Queue+SyncDispatch.swift`
+- [ ] Platform case in `Queue+SyncDispatch.swift`, dispatched with `maxRetryCount:`
 - [ ] All-time handling matches the API's shape (table above)
 - [ ] Migration for any new enum case, plus `maxCollectionIntervalDays` for a new platform
 - [ ] `SyncJobTests` case for the happy path and at least one failure

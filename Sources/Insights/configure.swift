@@ -83,6 +83,11 @@ func configure(_ app: Application) async throws {
     throw ConfigError.unsupported(name: "SECRET_PROVIDER", value: secretProviderName)
   }
 
+  // Where collection failures that need a human are announced. Optional by design: with no
+  // webhook configured this resolves to `NoopNotifier` and failures stay in the log, which is
+  // what every test run and local `swift run` wants.
+  app.notifier = SlackNotifier.fromEnvironment(client: app.client, logger: app.logger)
+
   // Encode/decode JSON dates as ISO8601 so clients (e.g. the dashboard chart) can parse them.
   let jsonEncoder = JSONEncoder()
   jsonEncoder.dateEncodingStrategy = .iso8601

@@ -212,7 +212,7 @@ struct SyncJobTests {
         try await SyncGitHubRepoStats().dequeue(queueContext(for: app), .init(id: id))
       }
 
-      guard case .apiRequestFailed(_, let statusCode)? = error else {
+      guard case .apiRequestFailed(_, let statusCode, _)? = error else {
         Issue.record("expected apiRequestFailed, got \(String(describing: error?.description))")
         return
       }

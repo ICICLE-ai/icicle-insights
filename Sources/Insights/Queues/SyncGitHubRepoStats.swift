@@ -65,9 +65,14 @@ enum TrafficEndpoint: String {
 }
 
 /// Synchronizes GitHub repository snapshots and traffic windows for one resource.
-struct SyncGitHubRepoStats: AsyncJob {
+struct SyncGitHubRepoStats: AsyncJob, BackoffRetrying {
   let baseUrl = "https://api.github.com/repos"
   typealias Payload = GitHubResource
+
+  /// Called once the retry budget is spent, never before.
+  func error(_ context: QueueContext, _ error: any Error, _ payload: GitHubResource) async throws {
+    await context.reportResourceSyncFailure(error, job: Self.name, resourceID: payload.id)
+  }
 
   /// Resolves credentials, fetches all repository responses, then persists one coherent sweep.
   func dequeue(_ context: QueueContext, _ payload: GitHubResource) async throws {
@@ -94,6 +99,8 @@ struct SyncGitHubRepoStats: AsyncJob {
       ("Accept", "application/vnd.github+json"),
       ("Authorization", "Bearer \(token.getSecretValue())"),
       ("X-GitHub-Api-Version", "2026-03-10"),
+      // Required by GitHub: requests without one are rejected with 403, not 400.
+      ("User-Agent", "icicle-insights"),
     ])
     let repoStats = try await fetchRepoStats(
       context, owner: owner, name: resource.name, headers: headers)
@@ -141,10 +148,7 @@ struct SyncGitHubRepoStats: AsyncJob {
     }
 
     guard response.status == .ok else {
-      throw JobError.apiRequestFailed(
-        url: url.string,
-        statusCode: Int(response.status.code)
-      )
+      throw JobError.apiRequestFailed(url: url, response: response)
     }
 
     do {
@@ -168,10 +172,7 @@ struct SyncGitHubRepoStats: AsyncJob {
     }
 
     guard response.status == .ok else {
-      throw JobError.apiRequestFailed(
-        url: url.string,
-        statusCode: Int(response.status.code)
-      )
+      throw JobError.apiRequestFailed(url: url, response: response)
     }
 
     do {
