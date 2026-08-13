@@ -15,6 +15,11 @@ Only due rows qualify. Inspect `next_collection_at` or use `just collect-all-now
 Confirm `SECRET_PROVIDER`, provider configuration, the account's secret-reference name, and that
 the same name exists in the selected backend. Switching providers does not migrate values.
 
+From a sync job this is a **credential** failure like any other: `tapis_secret_not_found` or
+`tapis_request_failed` at `.critical`, a 🔴 alert, and the resource re-booked hourly. An expired
+`TAPIS_TOKEN` breaks collection for every account at once while the platform APIs are healthy, so
+expect the alert to arrive from whichever resource happened to be swept first.
+
 ## All-time totals do not increase
 
 This is often correct: no completed day newer than `countedThrough` was returned. Inspect
@@ -24,6 +29,32 @@ This is often correct: no completed day newer than `countedThrough` was returned
 
 Inspect rate-limit headers and token permissions. More workers consume the same allowance faster;
 reduce concurrency or add provider-aware throttling rather than scaling up.
+
+Note that a 403 is classified as a **credential** failure, so it alerts at `.critical` and re-books
+the resource hourly. GitHub uses the same status for a secondary rate limit as for an expired
+token, and the body is the only way to tell them apart — which is why `apiRequestFailed` carries
+the response body and the alert quotes it.
+
+## The same credential alert fires every hour
+
+Working as intended. A credential failure re-books the resource about an hour out instead of
+letting it sit out a full `collectionIntervalDays`, so the alert repeats until the token is
+repaired. Rotate the secret in the provider; the next sweep picks it up with no backfill needed.
+
+To stop the alerts without fixing the token, clear the resource's `next_collection_at`, which the
+sweep's `<= now` filter skips.
+
+## Failures are logged but never reach Slack
+
+Check `SLACK_WEBHOOK_URL`. Unset or empty selects `NoopNotifier`, which is the intended default
+for tests and local runs — `configure` logs `SLACK_WEBHOOK_URL is unset` once at boot when that
+happens. If it is set, look for `Slack rejected the failure alert` (a revoked webhook answers
+403/404) or `Could not deliver the failure alert to Slack`. Alert delivery never fails a job, so
+its only trace is that log line.
+
+Container recipes pass `--env-file .env --env-file .env.container`, in that order, so the webhook
+belongs in `.env` — which is gitignored. Anything secret in `.env.container` is secret in the
+repository.
 
 ## Repeated `/v1/models` requests
 

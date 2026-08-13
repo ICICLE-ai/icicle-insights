@@ -14,8 +14,13 @@ struct GitHubOrgStatsResponse: Content {
 }
 
 /// Synchronizes the follower snapshot for one GitHub organization account.
-struct SyncGitHubOrgStats: AsyncJob {
+struct SyncGitHubOrgStats: AsyncJob, BackoffRetrying {
   typealias Payload = GitHubAccount
+
+  /// Called once the retry budget is spent, never before.
+  func error(_ context: QueueContext, _ error: any Error, _ payload: GitHubAccount) async throws {
+    await context.reportAccountSyncFailure(error, job: Self.name, accountID: payload.id)
+  }
 
   /// Resolves the account token, fetches followers, and updates the account snapshot.
   func dequeue(_ context: QueueContext, _ payload: GitHubAccount) async throws {
@@ -40,13 +45,12 @@ struct SyncGitHubOrgStats: AsyncJob {
       req.headers.add(name: .accept, value: "application/vnd.github+json")
       req.headers.add(name: .authorization, value: "Bearer \(token.getSecretValue())")
       req.headers.add(name: "X-GitHub-Api-Version", value: "2026-03-10")
+      // Required by GitHub: requests without one are rejected with 403, not 400.
+      req.headers.add(name: .userAgent, value: "icicle-insights")
     }
 
     guard response.status == .ok else {
-      throw JobError.apiRequestFailed(
-        url: url.string,
-        statusCode: Int(response.status.code)
-      )
+      throw JobError.apiRequestFailed(url: url, response: response)
     }
 
     let payload: GitHubOrgStatsResponse
@@ -62,8 +66,4 @@ struct SyncGitHubOrgStats: AsyncJob {
       try await account.save(on: context.application.db)
     }
   }
-
-  // func error(_ context: QueueContext, _ error: Error, _ payload: GitHubAccount) async throws {
-  // context.
-  // }
 }

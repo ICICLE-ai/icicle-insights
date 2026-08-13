@@ -21,9 +21,11 @@ extension Queue {
 
     switch platform {
     case .github:
-      try await dispatch(SyncGitHubRepoStats.self, .init(id: id))
+      try await dispatch(
+        SyncGitHubRepoStats.self, .init(id: id), maxRetryCount: syncJobMaxRetryCount)
     case .huggingface:
-      try await dispatch(SyncHuggingFaceHubStats.self, .init(id: id))
+      try await dispatch(
+        SyncHuggingFaceHubStats.self, .init(id: id), maxRetryCount: syncJobMaxRetryCount)
     case .ghcr, .npm, .pypi:
       logger.debug(
         "No sync job for platform; skipping resource",
