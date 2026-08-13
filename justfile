@@ -1,6 +1,8 @@
 set dotenv-load
 set export
 
+import 'justfiles/apple-container.just'
+
 default:
     @just --list
 
@@ -19,15 +21,7 @@ test:
     swift test --no-parallel
 
 fmt:
-    swiftformat Sources Tests Package.swift
+    swift-format format -i -r -p Sources Tests Package.swift
 
 fmt-check:
-    swiftformat Sources Tests Package.swift --lint
-
-build:
-    container  build --tag icicle-insights --file Dockerfile .
-
-start: build
-    container run --env-file .env --name icicle-insights --detach --rm icicle-insights
-stop:
-    container stop icicle-insights
+    swift-format lint -r -p Sources Tests Package.swift

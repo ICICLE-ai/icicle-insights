@@ -2,26 +2,30 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.svg">
-    <img src="assets/logo-light.svg" alt="ICICLE Insights Logo" width="700"/>
+    <img src="assets/logo-light.svg" alt="ICICLE Insights" width="680">
   </picture>
 
-  <p><strong>A Swift Vapor service that tracks the reach of open-source work across GitHub, Hugging Face, npm, and PyPI — and turns it into a live dashboard.</strong></p>
+  <p><strong>Open-source impact, measured across platforms.</strong></p>
 
   <p>
-    <a href="#overview">Overview</a> •
-    <a href="#quick-start">Quick Start</a> •
-    <a href="#data-model">Data Model</a> •
-    <a href="#api">API</a> •
-    <a href="#dashboard">Dashboard</a> •
-    <a href="#deployment">Deployment</a> •
-    <a href="#development">Development</a>
+    A Swift Vapor service that collects ecosystem signals, preserves trustworthy historical
+    totals, and publishes them through a documented API and live dashboard.
   </p>
 
   <p>
     <img alt="Swift 6.3" src="https://img.shields.io/badge/Swift-6.3-F05138?logo=swift&logoColor=white">
-    <img alt="Vapor 4" src="https://img.shields.io/badge/Vapor-4-0D0D0D?logo=vapor&logoColor=white">
-    <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-Fluent%20ORM-4169E1?logo=postgresql&logoColor=white">
-    <img alt="License GPLv3" src="https://img.shields.io/badge/License-GPLv3-blue">
+    <img alt="Vapor 4" src="https://img.shields.io/badge/Vapor-4-111111?logo=vapor&logoColor=white">
+    <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white">
+    <img alt="Valkey" src="https://img.shields.io/badge/Valkey-queue_store-8F1D1D">
+    <img alt="GPL-3.0" src="https://img.shields.io/badge/License-GPL--3.0-blue">
+  </p>
+
+  <p>
+    <a href="#quick-start">Quick start</a> ·
+    <a href="#architecture">Architecture</a> ·
+    <a href="#collection-status">Collection status</a> ·
+    <a href="#secret-provider-integration">Secret providers</a> ·
+    <a href="#documentation">Documentation</a>
   </p>
 </div>
 
@@ -29,303 +33,308 @@
 
 ## Overview
 
-**ICICLE Insights** collects popularity metrics for the [ICICLE](https://icicle.osu.edu/) research project and its wider open-source ecosystem, then serves them through a REST API and an interactive dashboard.
+**ICICLE Insights** collects popularity and usage metrics for open-source accounts and the
+resources they publish—repositories, models, datasets, packages, images, and services. It turns
+those readings into a historical REST API and interactive dashboard.
 
-It models the world as **accounts** on a platform, the **resources** they publish (datasets, models, packages, images, services), the **releases** of those resources, and a time series of **metrics** — stars, forks, clones, views, downloads, likes, pulls, subscribers.
+Built for the [ICICLE](https://icicle.osu.edu/) research ecosystem, its platform-neutral data
+model and modular collection pipeline can support any community that wants a clearer picture of
+its open-source impact.
 
-Highlights:
+### Why it exists
 
-- ⚡️ **Swift 6.3 + Vapor 4** — fully `async/await`, Sendable-checked, and statically linked for tiny production images.
-- 🐘 **Fluent ORM over PostgreSQL** — typed models, migrations, and cascading relationships.
-- 📊 **Zero-dependency dashboard** — client-rendered charts with a colour-vision-deficiency-safe palette and light/dark themes.
-- 📖 **Code-first OpenAPI** — the spec is reflected from your annotated routes and served through a [Scalar](https://scalar.com/) reference UI at `/docs`.
-- 🗓 **Queue-backed jobs** — a Fluent-driven Vapor Queues setup ready for scheduled platform syncs.
-- 🚢 **Container-native** — multi-stage Docker build, Compose stack, and a GitHub Actions pipeline that ships to GHCR.
+- **One view across platforms** — accounts, repositories, models, datasets, packages, and images
+  share a consistent metric model.
+- **Correct rolling totals** — daily watermarks prevent overlapping API windows from being
+  counted twice.
+- **Pluggable credential storage** — jobs resolve provider tokens through a small
+  `SecretProvider` contract instead of coupling collection logic to one backend.
+- **Durable asynchronous collection** — Valkey stores work while stateless workers scale
+  independently from the HTTP service and scheduler.
+- **Portable operations** — run with Docker Compose or Apple's Container CLI on macOS 26+.
 
 <div align="center">
-  <!-- Screenshot #1: GET /dashboard, "All platforms" overview -->
-  <img src="assets/screenshots/dashboard-overview.png" alt="ICICLE Insights dashboard" width="900"/>
+  <img src="assets/screenshots/dashboard-overview.png" alt="ICICLE Insights dashboard overview" width="900">
 </div>
 
-## Prerequisites
-
-| Tool | Version | Notes |
-|------|---------|-------|
-| [Swift](https://www.swift.org/install/) | 6.3+ | Ships with SwiftPM |
-| [PostgreSQL](https://www.postgresql.org/) | 14+ | Local instance or the bundled Compose service |
-| [just](https://just.systems/) | any | Task runner for the commands below |
-| [SwiftFormat](https://github.com/nicklockwood/SwiftFormat) | any | Only needed for `just fmt` |
-| [Docker](https://www.docker.com/) | any | Optional — for the containerised workflow |
-
-## Quick Start
-
-```bash
-git clone https://github.com/guzman109/icicle-insights.git
-cd icicle-insights
-```
-
-**1. Start PostgreSQL.** The fastest path is the bundled Compose database:
-
-```bash
-docker compose up db -d
-```
-
-This launches Postgres with the default credentials the app expects (`vapor_username` / `vapor_password`).
-
-**2. Configure the environment.** The app reads its database connection from environment variables (a `.env` file is auto-loaded by `just`):
-
-```bash
-# .env — all optional; sensible defaults are baked in
-DATABASE_HOST=localhost          # default: localhost
-DATABASE_PORT=5432               # default: 5432
-DATABASE_USERNAME=vapor_username # default: vapor_username
-DATABASE_PASSWORD=vapor_password # default: vapor_password
-DATABASE_NAME=dev                # default: dev (development) / vapor_database (production)
-LOG_LEVEL=info                   # trace | debug | info | notice | warning | error | critical
-```
-
-> **Database per environment.** To keep runs from clobbering each other, the app auto-selects a database by Vapor environment: `--env development` → `dev`, `--env testing` → `test`, `--env production` → `DATABASE_NAME` (default `vapor_database`).
-
-**3. Run the migrations, then the server.**
-
-```bash
-just migrate   # create the schema (and, in development, load the July 2026 ICICLE snapshot)
-just run       # start the server — http://127.0.0.1:8080
-```
-
-Then open:
-
-- **`/dashboard`** — the metrics dashboard
-- **`/docs`** — the interactive API reference
-- **`/openapi.json`** — the raw OpenAPI spec
-
-## Data Model
-
-Everything hangs off an **Account**. Accounts own **Resources**; resources accumulate **Metrics** (a time series) and **Releases**; each account optionally has a **Vault** for its platform token.
+## Architecture
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#DBEAFE","primaryTextColor":"#172554","primaryBorderColor":"#2563EB","secondaryColor":"#DCFCE7","secondaryTextColor":"#14532D","secondaryBorderColor":"#16A34A","tertiaryColor":"#F3E8FF","tertiaryTextColor":"#581C87","tertiaryBorderColor":"#9333EA","lineColor":"#64748B","noteBkgColor":"#FEF3C7","noteTextColor":"#78350F","actorBkg":"#E0E7FF","actorBorder":"#4F46E5","actorTextColor":"#1E1B4B","signalColor":"#475569","signalTextColor":"#334155"}}}%%
+flowchart LR
+    U[Dashboard and API clients] --> APP[Vapor HTTP service]
+    APP --> DB[(PostgreSQL)]
+    S[Single scheduler] --> Q[(Valkey queues)]
+    Q --> W[One or more metrics workers]
+    W --> GH[GitHub API]
+    W --> HF[Hugging Face API]
+    W --> SP[SecretProvider]
+    W --> DB
+    classDef app fill:#DBEAFE,stroke:#2563EB,color:#172554
+    classDef data fill:#DCFCE7,stroke:#16A34A,color:#14532D
+    classDef service fill:#F3E8FF,stroke:#9333EA,color:#581C87
+    classDef external fill:#FEF3C7,stroke:#D97706,color:#78350F
+    class U,APP app
+    class DB,Q data
+    class S,W,SP service
+    class GH,HF external
+```
+
+| Component | Purpose | Scaling rule |
+|---|---|---|
+| HTTP service | Dashboard, REST API, OpenAPI | Scale horizontally |
+| PostgreSQL | Accounts, resources, metric series, watermarks | One managed database or HA cluster |
+| Valkey/Redis | Durable queue storage | One shared service or managed deployment |
+| Scheduler | Evaluates every registered clock | **Exactly one replica** |
+| Queue worker | Claims and executes jobs from `metrics` | Scale horizontally |
+
+Queue workers use atomic claims, so several consumers can drain the same queue. Delivery is
+still at-least-once; jobs must remain retry-safe. The scheduler stays single-replica to prevent
+the same scheduled work from being dispatched twice.
+
+## Collection status
+
+| Platform | Current collection | Schedule | Status |
+|---|---|---|---|
+| GitHub repositories | Stars, forks, subscribers, clones, views | Per-resource interval; hourly due scan | Active |
+| GitHub accounts | Organization followers | Monthly, first day at 03:00 | Active |
+| Hugging Face | Likes, rolling downloads, lifetime downloads | Per-resource interval; hourly due scan | Active |
+| GHCR | HTML scraping prototype | Not scheduled | In development |
+| npm | — | Not scheduled | Planned |
+| PyPI | — | Not scheduled | Planned |
+
+The hourly scan does not call every platform hourly. Each resource has a
+`nextCollectionAt` value and a configurable interval, defaulting to seven days. See
+[queue workers and scheduling](docs/queue-workers.md) for the complete matrix.
+
+## Quick start
+
+### Requirements
+
+- Swift 6.3+
+- PostgreSQL
+- Valkey or Redis
+- [`just`](https://just.systems/)
+- Credentials for the selected secret provider
+
+Copy the example configuration and fill in the settings for your selected provider:
+
+```bash
+cp .env.example .env
+```
+
+```dotenv
+SECRET_PROVIDER=tapis
+TAPIS_BASE_URL=https://example.tapis.io
+TAPIS_TENANT=example
+TAPIS_USER=your-service-user
+TAPIS_TOKEN=replace-me
+```
+
+When `SECRET_PROVIDER=tapis`, `TAPIS_TOKEN` authenticates the service identity used to read
+platform credentials. Keep `.env` out of version control.
+
+### Apple Container (macOS 26+)
+
+Apple Container settings for local services live in `.env.container`; secret-provider
+credentials remain in `.env`. BuildKit is started with four CPUs and 8 GiB of memory by the
+included recipes.
+
+```bash
+just stack
+```
+
+This creates the network and persistent volumes, starts PostgreSQL and Valkey, applies
+migrations, and launches the HTTP service, metrics worker, and single scheduler.
+
+```bash
+just stop     # remove stack containers; preserve data volumes
+just clean    # also remove the project network; preserve data volumes
+```
+
+### Docker Compose
+
+```bash
+docker compose build
+docker compose up db valkey -d
+docker compose run --rm migrate
+docker compose up app queues scheduled
+```
+
+Scale only the queue drainer when more collection throughput is needed:
+
+```bash
+docker compose up --scale queues=2 app queues scheduled
+```
+
+Do not scale `scheduled` above one replica.
+
+### Native Swift development
+
+Run PostgreSQL and Valkey locally, then:
+
+```bash
+just migrate
+just run
+```
+
+Open:
+
+- Dashboard: <http://127.0.0.1:8080/dashboard>
+- API reference: <http://127.0.0.1:8080/docs>
+- OpenAPI JSON: <http://127.0.0.1:8080/openapi.json>
+
+## Configuration
+
+| Variable | Required | Description |
+|---|---:|---|
+| `SECRET_PROVIDER` | No | Credential backend; defaults to the currently supported `tapis` adapter |
+| `TAPIS_BASE_URL` | When `tapis` is selected | Tapis base URL, for example `https://example.tapis.io` |
+| `TAPIS_TENANT` | When `tapis` is selected | Tapis tenant identifier |
+| `TAPIS_USER` | When `tapis` is selected | Service username used for Vault calls |
+| `TAPIS_TOKEN` | When `tapis` is selected | Service access token; treat as a secret |
+| `DATABASE_HOST` | Deployment | PostgreSQL hostname; defaults to `localhost` natively |
+| `DATABASE_PORT` | No | Defaults to `5432` |
+| `DATABASE_NAME` | No | Production defaults to `vapor_database`; development uses `dev`; tests use `test` |
+| `DATABASE_USERNAME` | No | Defaults to `vapor_username` |
+| `DATABASE_PASSWORD` | No | Defaults to `vapor_password`; replace in deployments |
+| `DATABASE_TLS` | No | Set `disable` only for the local stock PostgreSQL container |
+| `REDIS_HOST` | Deployment | Valkey/Redis hostname; defaults to `localhost` natively |
+| `REDIS_PORT` | No | Defaults to `6379` |
+| `REDIS_PASSWORD` | No | Empty for the local unauthenticated Valkey service |
+| `LOG_LEVEL` | No | `trace`, `debug`, `info`, `notice`, `warning`, `error`, or `critical` |
+
+`configure.swift` selects and validates the secret adapter during application startup. The
+`tapis` adapter requires all four `TAPIS_*` values.
+
+## Secret-provider integration
+
+Platform credentials flow through `SecretProvider`, a focused interface for reading, writing,
+and destroying named secrets. Collection code uses this stable application service while the
+composition root selects its adapter.
+
+`TapisClient.Vaults` provides the first adapter. Additional backends—such as HashiCorp Vault,
+cloud secret managers, or Kubernetes Secrets—can implement the same interface and participate
+through the application composition root.
+
+With the current Tapis adapter:
+
+1. Configure the four `TAPIS_*` variables for a dedicated service identity with minimum Vault
+   permissions.
+2. Create provider tokens in Tapis Vault and store only their names in Insights metadata.
+3. Never log resolved `Secret` values; the wrapper redacts descriptions and reflection output.
+
+The bundled July 2026 snapshot is ICICLE-specific and only loads in development. Any deployment
+can replace it with its own account/resource onboarding flow independently of the secret backend.
+
+## Data model
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#DBEAFE","primaryTextColor":"#172554","primaryBorderColor":"#2563EB","secondaryColor":"#DCFCE7","secondaryTextColor":"#14532D","secondaryBorderColor":"#16A34A","tertiaryColor":"#F3E8FF","tertiaryTextColor":"#581C87","tertiaryBorderColor":"#9333EA","lineColor":"#64748B","noteBkgColor":"#FEF3C7","noteTextColor":"#78350F","actorBkg":"#E0E7FF","actorBorder":"#4F46E5","actorTextColor":"#1E1B4B","signalColor":"#475569","signalTextColor":"#334155"}}}%%
 erDiagram
     ACCOUNT ||--o{ RESOURCE : owns
-    ACCOUNT ||--o| VAULT : "has token in"
+    ACCOUNT ||--o| VAULT : references
     RESOURCE ||--o{ METRIC : records
-    RESOURCE ||--o{ RELEASE : ships
+    RESOURCE ||--o{ RELEASE : publishes
+    RESOURCE ||--o{ METRIC_WATERMARK : tracks
 
     ACCOUNT {
-        uuid   id
+        uuid id
         string name
-        enum   platform "github | ghcr | huggingface | npm | pypi"
-        int    followers
+        enum platform
+        int followers
     }
     RESOURCE {
-        uuid   id
+        uuid id
         string name
-        enum   type "container | dataset | image | model | package | repository | service"
+        enum type
+        datetime next_collection_at
+        int collection_interval_days
     }
     METRIC {
-        uuid   id
+        uuid id
+        enum type
         double reading
-        enum   type "authentications | clones | downloads | forks | likes | pulls | stars | subscribers | views"
-        date   recorded_at
+        datetime recorded_at
     }
-    RELEASE {
-        uuid   id
-        string version
-        date   released_at
-    }
-    VAULT {
-        uuid   id
-        string name
-        date   expires_at
+    METRIC_WATERMARK {
+        uuid resource_id
+        enum type
+        datetime counted_through
     }
 ```
 
-Relationships cascade on delete at the database level, so removing an account cleanly removes its vault, resources, metrics, and releases. Metrics carry a composite index on `(resource_id, type, recorded_at DESC)` to keep the dashboard's time-series queries fast.
+Watermarks are per resource and metric type. They record the newest completed daily value
+already folded into an all-time total, preventing overlapping rolling windows from being added
+twice. Read [Metric watermarks](docs/watermarks.md) for a visual explanation.
 
-## API
+## API and dashboard
 
-All endpoints return JSON with ISO-8601 timestamps. Every route below is documented live at **`/docs`**.
+The generated OpenAPI document at `/docs` is the source of truth for enabled routes. Current
+public functionality includes collection endpoints, account update/delete handlers, resource
+views, metric queries, the dashboard, and OpenAPI output. Several mutation routes are
+intentionally disabled until authentication and authorization are implemented.
 
-### Accounts
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET`    | `/accounts` | List all accounts |
-| `POST`   | `/accounts` | Create an account |
-| `GET`    | `/accounts/:accountID` | Get an account (with its resources and vault) |
-| `PATCH`  | `/accounts/:accountID` | Update follower count |
-| `DELETE` | `/accounts/:accountID` | Delete an account |
-
-### Resources
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET`    | `/resources` | List all resources |
-| `POST`   | `/resources` | Create a resource under an account |
-| `GET`    | `/resources/:resourceID` | Get a resource by ID |
-| `DELETE` | `/resources/:resourceID` | Delete a resource |
-
-### Metrics
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET`    | `/metrics` | List metrics — filter by `?resourceID=`, `?type=`, `?limit=` |
-| `POST`   | `/metrics` | Record a metric reading for a resource |
-| `GET`    | `/metrics/:metricID` | Get a metric by ID |
-| `DELETE` | `/metrics/:metricID` | Delete a metric |
-
-### Releases
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET`    | `/releases` | List all releases |
-| `POST`   | `/releases` | Create a release for a resource |
-| `GET`    | `/releases/:releaseID` | Get a release by ID |
-| `DELETE` | `/releases/:releaseID` | Delete a release |
-
-### Vaults
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET`    | `/vaults` | List all vaults |
-| `POST`   | `/vaults` | Create a vault for an account |
-| `GET`    | `/vaults/:vaultID` | Get a vault by ID |
-| `PATCH`  | `/vaults/:vaultID` | Update the token expiry |
-| `DELETE` | `/vaults/:vaultID` | Delete a vault |
-
-### Meta
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/dashboard` | The interactive metrics dashboard |
-| `GET` | `/docs` | Scalar API reference UI |
-| `GET` | `/openapi.json` | Generated OpenAPI 3 document |
-
-<details>
-<summary>Example: create an account, resource, and metric</summary>
-
-```bash
-# 1. Create an account
-curl -X POST http://127.0.0.1:8080/accounts \
-  -H 'Content-Type: application/json' \
-  -d '{"name": "octocat", "platform": "github"}'
-
-# 2. Create a resource under it (use the account id from step 1)
-curl -X POST http://127.0.0.1:8080/resources \
-  -H 'Content-Type: application/json' \
-  -d '{"name": "insights", "type": "service", "accountID": "<ACCOUNT_ID>"}'
-
-# 3. Record a metric reading (use the resource id from step 2)
-curl -X POST http://127.0.0.1:8080/metrics \
-  -H 'Content-Type: application/json' \
-  -d '{"resourceID": "<RESOURCE_ID>", "type": "stars", "reading": 450}'
-```
-
-</details>
-
-## Dashboard
-
-`GET /dashboard` serves a single Leaf shell; everything else renders client-side from the JSON API. A single filter bar — **range · platform · resource** — scopes three progressively deeper views:
-
-**All platforms → Platform → Resource**
-
-Chart form follows the data: totals, distributions, and time series each pick the shape that reads best. Series colours are drawn from a validated CVD-safe categorical palette and adapt to light/dark theme automatically. There is **no build step and no chart library dependency** — just `Public/dashboard.js` and `Public/dashboard.css`.
-
-In development, `just migrate` loads `ICICLESnapshotJuly2026` — the real ICICLE GitHub, GHCR, npm, and Hugging Face figures captured in July 2026 — so the dashboard has something true to show immediately. No synthetic data is seeded anywhere. It is a point-in-time snapshot, so each series holds a single reading until a later sweep is recorded.
+All JSON timestamps use ISO 8601. `/metrics` supports `resourceID`, `type`, and `limit` filters
+and returns newest readings first.
 
 <div align="center">
-  <img src="assets/screenshots/dashboard-metrics.png" alt="Per-metric time-series charts" width="900"/>
+  <img src="assets/screenshots/dashboard-metrics.png" alt="ICICLE Insights metric charts" width="900">
 </div>
-
-## Deployment
-
-The GitHub Actions pipeline (`.github/workflows/build.yaml`) builds a statically linked Alpine-free Ubuntu image with Docker Buildx and pushes it to GHCR. Tagging a release additionally extracts the binary and attaches a Linux tarball to a GitHub Release.
-
-```bash
-# Pull and run the published image
-docker pull ghcr.io/icicle-ai/insights:latest
-docker run -p 8080:8080 --env-file .env ghcr.io/icicle-ai/insights:latest
-```
-
-Cut a release by pushing a version tag:
-
-```bash
-git tag v1.0.0 && git push origin v1.0.0
-```
-
-### Local Compose stack
-
-The bundled `docker-compose.yml` wires the app to a Postgres instance and provides one-shot migrate/revert services:
-
-```bash
-docker compose build              # build the app image
-docker compose up db -d           # start PostgreSQL
-docker compose run migrate        # apply migrations
-docker compose up app             # start the server on :8080
-docker compose down               # stop everything (add -v to wipe the database)
-```
 
 ## Development
 
-### Common commands
-
 ```bash
-just run        # swift run — start the server
-just migrate    # apply database migrations
-just revert     # roll back the last migration batch
-just test       # run the test suite (serial — see below)
-just fmt        # format Sources, Tests, and Package.swift with SwiftFormat
-just fmt-check  # lint formatting without writing changes
+just test       # serial test suite against the dedicated test database
+just fmt        # format Swift sources and Package.swift
+just fmt-check  # verify formatting without writing
+just build      # build the Apple Container application image
 ```
 
-You can also drive Vapor's CLI directly, e.g. `swift run Insights serve --env production --port 8080`.
+The main implementation lives under `Sources/Insights`:
 
-### Testing
-
-Tests use Swift Testing with Vapor's `VaporTesting` helpers. Each suite boots a `.testing` application against the dedicated `test` database, migrates, runs, and reverts. Because every suite shares that database, the runner is serial:
-
-```bash
-just test        # → swift test --no-parallel
+```text
+Sources/Insights/
+├── Controllers/   HTTP and dashboard routes
+├── DTOs/          request and response types
+├── Migrations/    schema and development snapshot
+├── Models/        Fluent models
+├── Queues/        scheduled dispatchers, workers, and metric folds
+├── Services/
+│   ├── Secrets/   provider-neutral credential contract and redacted value
+│   └── Tapis/     current Tapis Vault adapter
+└── configure.swift
 ```
 
-### Project structure
+## Documentation
 
-```
-.
-├── Sources/Insights/
-│   ├── Models/         # Fluent models: Account, Resource, Metric, Release, Vault
-│   ├── DTOs/           # Create/Update/Public request & response shapes (+ OpenAPI examples)
-│   ├── Controllers/    # RouteCollections for each resource + the dashboard
-│   ├── Migrations/     # Schema (FirstMigration, AddGHCRPlatform, AddContainerResourceType) + real dev data (ICICLESnapshotJuly2026)
-│   ├── Jobs/           # Vapor Queues jobs (GitHub sync)
-│   ├── configure.swift # App bootstrap: DB, migrations, Leaf, queues, JSON coding
-│   ├── routes.swift    # Route registration
-│   ├── OpenAPI.swift   # OpenAPI document + Scalar reference UI
-│   └── Validation.swift
-├── Resources/Views/    # Leaf templates (index, dashboard)
-├── Public/             # dashboard.css, dashboard.js (served statically)
-├── Tests/InsightsTests/
-├── .github/workflows/  # build.yaml — Docker build → GHCR → release
-├── Dockerfile          # Multi-stage Swift build → slim Ubuntu runtime
-├── docker-compose.yml  # app + db + migrate/revert services
-├── Package.swift       # SwiftPM manifest
-└── justfile            # Task runner
-```
+- [Introduction](docs/introduction.md) — visual orientation and recommended learning paths
+- [Developer handbook](docs/README.md) — documentation map and recommended reading order
+- [Architecture](docs/architecture.md) — components, responsibilities, lifecycles, and layout
+- [System invariants](docs/invariants.md) — correctness rules every change must preserve
+- [Secret providers](docs/secret-providers.md) — configure, implement, test, and migrate adapters
+- [Metric collection](docs/collection.md) — snapshots, rolling windows, and retention
+- [Metric watermarks](docs/watermarks.md) — why overlapping daily windows need a bookmark
+- [Adding a job](docs/jobs.md) — registration, routing, metrics, and tests
+- [Queue workers and scheduling](docs/queue-workers.md) — schedules, scaling, containers, and
+  the current job matrix
+- [Testing collection](docs/testing-collection.md) — one-shot commands, database effects, logs,
+  and watermark behavior
+- [Troubleshooting](docs/troubleshooting.md) and [glossary](docs/glossary.md)
 
-## Tech Stack
+## Security and production readiness
 
-| Package | Purpose |
-|---------|---------|
-| [Vapor](https://vapor.codes/) | HTTP server, routing, middleware |
-| [Fluent](https://docs.vapor.codes/fluent/overview/) + [fluent-postgres-driver](https://github.com/vapor/fluent-postgres-driver) | ORM and PostgreSQL driver |
-| [Queues](https://docs.vapor.codes/advanced/queues/) + [vapor-queues-fluent-driver](https://github.com/vapor-community/vapor-queues-fluent-driver) | Background/scheduled jobs, persisted in Postgres |
-| [Leaf](https://docs.vapor.codes/leaf/overview/) | Server-side templating for the dashboard shell |
-| [VaporToOpenAPI](https://github.com/dankinsoid/VaporToOpenAPI) | Code-first OpenAPI generation |
-| [SwiftNIO](https://github.com/apple/swift-nio) | Event-driven networking foundation |
+The included Compose file and Apple Container recipes are local-development tooling. Before a
+public deployment, add authentication and authorization, rotate service tokens,
+use managed secrets, enable verified TLS, restrict network exposure, configure backups, and
+monitor scheduler, queue depth, job failures, and provider rate limits.
 
 ## License
 
-GNU General Public License v3.0 — see [LICENSE](LICENSE).
+GNU General Public License v3.0. See [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-Part of the [ICICLE (Intelligent Cyberinfrastructure with Computational Learning in the Environment)](https://icicle.osu.edu/) initiative.
+Developed as part of the
+[ICICLE (Intelligent Cyberinfrastructure with Computational Learning in the Environment)](https://icicle.osu.edu/)
+initiative.

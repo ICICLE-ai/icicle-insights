@@ -1,2 +1,45 @@
+# Swift build and package-manager state
 .build/
 .swiftpm/
+DerivedData/
+*.xcodeproj/
+*.xcworkspace/
+
+# Version control, editors, and local agent state
+.git/
+.github/
+.gitignore
+.DS_Store
+.idea/
+.vscode/
+.agents/
+.codex/
+.memsearch/
+
+# Local configuration, credentials, and container data
+.env
+.env.*
+.container/
+
+# Development-only files not used by the production image
+assets/
+data/
+docs/
+justfiles/
+docker-compose.yml
+justfile
+ghcr-sample.html
+README.md
+LICENSE
+
+# Test and coverage artifacts (test sources remain available to SwiftPM)
+.coverage/
+coverage/
+*.profdata
+*.profraw
+
+# Common temporary files
+*.log
+*.swp
+*.tmp
+*~
