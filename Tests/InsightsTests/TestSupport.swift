@@ -150,7 +150,10 @@ extension Application {
   private struct TestAdminTokenKey: StorageKey { typealias Value = String }
   private struct TestUserTokenKey: StorageKey { typealias Value = String }
 
-  /// Bearer token for a username on the admin allowlist.
+  /// Bearer token for the root admin.
+  ///
+  /// Signed for `app.rootAdmin`, so it holds access without the `admins` table being written to.
+  /// Tests covering *granted* access call ``makeAdmin(on:username:addedBy:)`` and sign their own.
   var adminToken: String {
     get { storage[TestAdminTokenKey.self] ?? "" }
     set { storage[TestAdminTokenKey.self] = newValue }
