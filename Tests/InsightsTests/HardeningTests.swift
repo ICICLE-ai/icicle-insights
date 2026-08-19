@@ -225,6 +225,82 @@ struct HardeningTests {
     }
   }
 
+  // MARK: - Bootstrap without a keyset
+
+  @Test
+  func `An absent keyset is survivable rather than fatal`() async throws {
+    // The catch-22 this guards: every command routes through `configure`, so throwing here would
+    // take down `service-token init-key` — the only thing that creates the secret. A fresh
+    // deployment could then never be bootstrapped at all.
+    try await withInsightsApp { app in
+      let registered = try await app.loadServiceTokenKeys(from: InMemorySecrets())
+
+      #expect(registered == nil)
+      #expect(app.activeSigningKid == "")
+    }
+  }
+
+  @Test
+  func `A refused keyset read still fails, rather than being mistaken for an absent one`()
+    async throws
+  {
+    // The distinction the narrow catch exists for. A 401 means the Tapis credentials are wrong,
+    // which breaks every collection job — booting anyway would hide a real misconfiguration
+    // behind a service that looks healthy.
+    try await withInsightsApp { app in
+      stubTapis(on: app, status: .unauthorized)
+
+      await #expect(throws: TapisClientError.self) {
+        try await app.loadServiceTokenKeys(from: app.secrets)
+      }
+    }
+  }
+
+  @Test
+  func `Minting without a keyset explains how to fix it`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+
+      app.installEmptyServiceTokenKeys()
+
+      // Guarded before signing, so the failure names the missing setup step instead of surfacing
+      // as a JWTKit complaint about an unregistered `kid`.
+      await #expect(throws: Abort.self) {
+        _ = try await ServiceTokenIssuer(
+          db: app.db, keys: app.serviceTokenKeys, activeKid: app.activeSigningKid
+        ).mint(resourceID: try resource.requireID(), label: "no-keyset")
+      }
+    }
+  }
+
+  @Test
+  func `Webhook tokens authenticate nobody while the keyset is empty`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resourceID = try resource.requireID()
+
+      // Minted against a real keyset, then the application restarts without one.
+      let issued = try await issueWebhookToken(on: app, resourceID: resourceID)
+      app.installEmptyServiceTokenKeys()
+
+      try await app.testing().test(
+        .POST,
+        "api/resources/\(resourceID)/metrics",
+        headers: bearer(issued.token),
+        beforeRequest: { req in
+          try req.content.encode(Metric.CreateForResource(reading: 1, type: .downloads))
+        },
+        afterResponse: { res async throws in
+          // An empty collection verifies nothing, so the caller is simply unauthenticated —
+          // never mistaken for an admin, and never let through.
+          #expect(res.status == .unauthorized)
+        },
+      )
+    }
+  }
+
   // MARK: - Signing key rotation
 
   @Test

@@ -113,22 +113,28 @@ scoping replaced grants; see `docs/decisions/006-api-authentication.md` for why 
 
 ### 7. Before this deploys
 
-Not blockers for the branch, but none of these can be checked without real Tapis credentials —
-the test suite runs with dummy ones and `.testing` skips every network call.
+Everything here that could be checked without a deployment has been, against the **staging**
+tenant `icicleai.staging.tapis.io` — a separate vault, so none of it touched production.
 
+- [x] Confirmed `TAPIS_BASE_URL` needs `/v3` and `TAPIS_TENANT` is `icicleai`, read from a live
+      token's `tapis/tenant_id`. Subtlety the original note missed: each tenant has its **own
+      host**, so the two values move together — `icicleai` is `icicleai.tapis.io`, not
+      `icicle.tapis.io`. `.env.example` now documents the staging and production pairings.
+- [x] `service-token init-key` runs. It could not before — see §9.
+- [x] The three `VaultControllerTests` pass against staging, writing and destroying real secrets.
+      Whole suite: 158 passing.
+- [x] `/openapi.json` carries the bearer scheme on all 22 guarded routes — every vault route
+      including reads, all admin and service-token routes, every mutation, and the webhook route.
+- [x] **Rotation exercised by hand, and further than planned:** mint → post (201) → `rotate-key`
+      → **restart** → the pre-rotation token still posts (201), with 2 keys loaded. The restart is
+      the part that matters; without it the old key is merely still in memory, and nothing proves
+      the retired key was persisted to the vault.
 - [ ] Set `ROOT_ADMIN_USERNAME` in the deployed environment. **`ADMIN_USERNAMES` no longer does
-      anything**, and boot fails outright without the new one.
-- [ ] Confirm `TAPIS_BASE_URL` carries `/v3` and `TAPIS_TENANT` is `icicleai`. `.env.example`
-      still shows `icicle` and no `/v3`; a real token says otherwise, and a wrong tenant means
-      every admin is silently refused.
-- [ ] `swift run Insights service-token init-key`, then restart. Nothing can be minted or
-      verified until this exists.
-- [ ] Run the three `VaultControllerTests` that need live Tapis — they fail here on dummy
-      credentials, and they write and destroy real secrets when they pass.
-- [ ] Check `/openapi.json` reflects the bearer scheme onto the guarded routes.
-- [ ] **Exercise a rotation by hand**: mint, post a metric, `rotate-key`, confirm the original
-      token still works. This is what the keyset design exists for and the one path no test
-      covers end to end.
+      anything**, and boot fails outright without the new one. It must be a real `tapis/username`
+      in the configured tenant — a placeholder boots fine and then matches nobody, so every write
+      returns 403 with nothing in the log to explain it.
+- [ ] Run `service-token init-key` against **production** and restart. Staging's keyset does not
+      carry over; they are separate vaults.
 
 ### 8. Known gaps
 
@@ -136,9 +142,22 @@ the test suite runs with dummy ones and `.testing` skips every network call.
       stop arriving, with no error anyone sees. `SlackNotifier` already exists; a scheduled sweep
       warning at ~14 days out is small and prevents a class of "why did that chart stop in
       November" investigations.
-- [ ] `SyncJobTests` — "Each repo kind is fetched from its own segment" asserts
-      `url.contains("expand[]=downloads")` but Vapor percent-encodes the brackets. Pre-existing,
-      unrelated to auth, still failing.
+- [x] `SyncJobTests` percent-encoding — fixed. The code was right and the test was wrong: Vapor
+      encodes `[]` as `%5B%5D`, which Hugging Face decodes and answers normally. The assertion was
+      testing Vapor's encoding choice rather than the field set requested, so it now compares
+      against the decoded query.
+
+### 9. Fixed: the bootstrap catch-22
+
+`configure` ran before every command and threw when the signing keyset was missing, so `serve`,
+`migrate`, **and `service-token init-key`** all died on a fresh deployment — the only tool that
+creates the keyset could never run. The documented bootstrap in §7 was impossible as written.
+
+The keyset read now fails **open on absence only**: a not-found installs an empty
+`JWTKeyCollection`, logs `critical` naming the command to run, and continues, so webhook
+authentication recognizes nobody while everything else works. Any other error — notably a 401,
+meaning `TAPIS_TOKEN` is wrong and every collection job would fail — still aborts the boot. Both
+paths are verified live and covered by tests.
 
 ## Deferred — deliberately not doing
 

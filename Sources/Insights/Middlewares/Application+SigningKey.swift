@@ -56,31 +56,27 @@ extension Application {
   /// rotation keep verifying until they expire, so rotating is not a flag day for every deployed
   /// service at once.
   ///
-  /// - Returns: How many keys were registered, for the boot log. A count of one after a rotation
-  ///   was expected to have happened means the retired keys were dropped and any token still
-  ///   signed with them will be refused.
+  /// - Returns: How many keys were registered, or nil when no keyset exists yet. A count of one
+  ///   after a rotation was expected to have happened means the retired keys were dropped and any
+  ///   token still signed with them will be refused.
+  /// - Throws: Any failure other than the secret being absent. A refused read — a stale
+  ///   `TAPIS_TOKEN`, most likely — is a real misconfiguration that would break every collection
+  ///   job, so it must not be mistaken for a deployment that simply has not been bootstrapped.
   @discardableResult
-  func loadServiceTokenKeys(from provider: any SecretProvider) async throws -> Int {
+  func loadServiceTokenKeys(from provider: any SecretProvider) async throws -> Int? {
     let secret: Secret
 
     do {
       secret = try await provider.readSecret(named: ServiceTokenSigningKey.secretName)
-    } catch {
-      // The first boot of a new deployment lands here, and the underlying error is a bare
-      // "Tapis request failed with status 404" that names neither the secret nor the fix. This
-      // is a setup step, not a fault, so it says what to run.
-      logger.critical(
-        """
-        Webhook token signing keyset not readable from the secret provider. \
-        Run `swift run Insights service-token init-key` once, then restart. \
-        Until it exists, no webhook token can be minted or verified.
-        """,
-        metadata: [
-          "secret": .string(ServiceTokenSigningKey.secretName),
-          "error": .string("\(error)"),
-        ]
-      )
-      throw error
+    } catch let error as TapisClientError where error.isNotFound {
+      // The first boot of any new deployment lands here. Throwing would be a catch-22: every
+      // command routes through `configure`, so a hard failure takes down the very command that
+      // creates this secret — `service-token init-key` could never run.
+      //
+      // Installing an empty collection instead leaves webhook authentication recognizing nobody,
+      // which is exactly correct while no keyset exists, and leaves everything else working.
+      installEmptyServiceTokenKeys()
+      return nil
     }
 
     let keyset = try ServiceTokenSigningKey.decode(secret)
@@ -95,6 +91,16 @@ extension Application {
     activeSigningKid = keyset.active
 
     return keyset.keys.count
+  }
+
+  /// Installs a keyset that verifies nothing and signs nothing.
+  ///
+  /// Both accessors `fatalError` when unset, so "no keyset" has to be represented by real empty
+  /// values rather than by absence. An empty `activeSigningKid` is the signal ``ServiceTokenIssuer``
+  /// checks before attempting to mint.
+  func installEmptyServiceTokenKeys() {
+    serviceTokenKeys = JWTKeyCollection()
+    activeSigningKid = ""
   }
 
   /// Registers a newly generated key and makes it active, without a restart.

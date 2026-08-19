@@ -166,14 +166,27 @@ func configure(_ app: Application) async throws {
     // Held apart from `app.jwt.keys` on purpose — see `Application+SigningKey.swift`. Missing
     // means `service-token init-key` has not been run; webhook tokens cannot be minted or
     // verified until it has.
-    let registered = try await app.loadServiceTokenKeys(from: app.secrets)
-    app.logger.notice(
-      "Webhook token signing keys loaded.",
-      metadata: [
-        "keys": .stringConvertible(registered),
-        "active_kid": .string(app.activeSigningKid),
-      ]
-    )
+    if let registered = try await app.loadServiceTokenKeys(from: app.secrets) {
+      app.logger.notice(
+        "Webhook token signing keys loaded.",
+        metadata: [
+          "keys": .stringConvertible(registered),
+          "active_kid": .string(app.activeSigningKid),
+        ]
+      )
+    } else {
+      // Not a fault — a deployment that has not been bootstrapped yet. Said loudly and with the
+      // exact command, because the underlying error is a bare 404 that names neither the secret
+      // nor the fix, and because every webhook silently stops working until it is resolved.
+      app.logger.critical(
+        """
+        No webhook token signing keyset found. Run `swift run Insights service-token init-key` \
+        once, then restart. Until then webhook tokens cannot be minted or verified; \
+        admin access, public reads, and collection are unaffected.
+        """,
+        metadata: ["secret": .string(ServiceTokenSigningKey.secretName)]
+      )
+    }
   } else {
     app.logger.notice("Testing environment: skipping Tapis key fetch and Vault keyset read.")
   }

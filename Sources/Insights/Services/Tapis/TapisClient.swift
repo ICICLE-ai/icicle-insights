@@ -12,14 +12,6 @@ struct TapisClient: Sendable {
   var vaults: Vaults {
     Vaults(client: client, config: config)
   }
-
-  // var auth: Auth {
-  //     Auth(client: client, config: config)
-  // }
-  //
-  // var mlHub: MLHub {
-  //     MLHub(client: client, config: config)
-  // }
 }
 
 /// Typed failures returned by Tapis service operations and payload decoding.
@@ -27,6 +19,24 @@ enum TapisClientError: Error, Sendable {
   case requestFailed(status: HTTPResponseStatus)
   case invalidResponse
   case secretNotFound(name: String)
+
+  /// Whether this failure means "the secret is not there", as opposed to "the request was
+  /// refused" or "the service is broken".
+  ///
+  /// The distinction is what lets a caller treat an absent secret as a setup step still pending
+  /// while a 401 stays a hard failure. Both spellings are real: the Vault read checks the status
+  /// before decoding, so a missing secret arrives as `requestFailed(.notFound)`, while a response
+  /// that succeeds but omits the name arrives as `secretNotFound`.
+  var isNotFound: Bool {
+    switch self {
+    case .secretNotFound:
+      true
+    case .requestFailed(let status):
+      status == .notFound
+    case .invalidResponse:
+      false
+    }
+  }
 }
 
 /// Let Tapis failures propagate straight out of controllers: `ErrorMiddleware` renders the

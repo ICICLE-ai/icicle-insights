@@ -40,6 +40,16 @@ struct ServiceTokenIssuer: Sendable {
     label: String,
     lifetimeInDays: Int? = nil,
   ) async throws -> Issued {
+    // Empty means the application booted without a keyset — see `installEmptyServiceTokenKeys`.
+    // Checked here rather than left to the signer, which would fail on an unregistered `kid` with
+    // an error that says nothing about the missing setup step.
+    guard !activeKid.isEmpty else {
+      throw Abort(
+        .serviceUnavailable,
+        reason: "No signing keyset. Run `service-token init-key`, then restart.",
+      )
+    }
+
     let label = try requireNonBlank(label, "label")
     let days = try requireInRange(
       lifetimeInDays ?? Self.defaultLifetimeInDays, 1...365, "expiresInDays")
