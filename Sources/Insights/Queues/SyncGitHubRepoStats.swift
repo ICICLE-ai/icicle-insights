@@ -16,16 +16,16 @@ struct GitHubRepoStatsResponse: Content {
 }
 
 /// One completed day of traffic. GitHub stamps these at UTC midnight.
-/// One UTC day from a GitHub traffic rolling window.
 struct TrafficDay: Decodable, Sendable {
   let timestamp: Date
   let count: Int
   let uniques: Int
 }
 
+/// A normalized clone or view response, including its per-day readings.
+///
 /// Decode-only, unlike the other response types here: the custom initializer below leaves
 /// `days` with no key of its own, so `Encodable` cannot be synthesised. Nothing encodes it.
-/// Normalized clone or view response, including its per-day readings.
 struct GitHubRepoTrafficResponse: Decodable, Sendable {
   /// Rolling 14-day total, not a delta. Kept as the `clones`/`views` reading, but folding it
   /// into an all-time total would re-add every day two sweeps share; `days` feeds that.
@@ -55,7 +55,6 @@ enum TrafficEndpoint: String {
 
   /// The metric each endpoint feeds, so the caller cannot pair a response with the wrong
   /// watermark.
-  /// Metric type associated with the endpoint's rolling window.
   var metric: MetricType {
     switch self {
     case .clones: .clones

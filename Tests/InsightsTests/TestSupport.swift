@@ -1,5 +1,7 @@
 import Fluent
 import Foundation
+import JWT
+import JWTKit
 import NIOConcurrencyHelpers
 import NIOCore
 import Queues
@@ -16,13 +18,20 @@ import XCTQueues
 /// `setUp` runs between `configure` and the migration, which is where a test swaps in a
 /// different queues driver: the provider also initialises the storage later dispatches read
 /// from, so it has to be in place before anything enqueues.
-func withApp(
+///
+/// Deliberately *not* named `withApp`. `VaporTesting` exports a generic `withApp` of its own
+/// that boots a bare application without `configure`, and for a single-expression closure the
+/// type checker prefers it — silently handing the test an app with no routes and no database,
+/// which surfaces as an inexplicable 404. Adding a second statement to the closure changes
+/// which overload wins, so the trap is invisible until it bites. A distinct name removes it.
+func withInsightsApp(
   setUp: (Application) async throws -> Void = { _ in },
   _ test: (Application) async throws -> Void,
 ) async throws {
   let app = try await Application.make(.testing)
   do {
     try await configure(app)
+    try await installTestCredentials(on: app)
     try await setUp(app)
     try await app.autoMigrate()
     try await test(app)
@@ -35,10 +44,10 @@ func withApp(
   try await app.asyncShutdown()
 }
 
-/// `withApp` with the in-memory queues driver in place of Fluent's, so dispatches are
+/// `withInsightsApp` with the in-memory queues driver in place of Fluent's, so dispatches are
 /// inspectable through `app.queues.asyncTest` and never touch the jobs table.
 func withQueueApp(_ test: (Application) async throws -> Void) async throws {
-  try await withApp(setUp: { $0.queues.use(.asyncTest) }, test)
+  try await withInsightsApp(setUp: { $0.queues.use(.asyncTest) }, test)
 }
 
 /// The context the worker hands a scheduled job, built by hand so a sweep can be run directly
@@ -51,6 +60,252 @@ func queueContext(for app: Application) -> QueueContext {
     logger: app.logger,
     on: app.eventLoopGroup.any(),
   )
+}
+
+// MARK: - Authentication fixtures
+
+/// A throwaway RSA keypair, generated for this test suite and used nowhere else.
+///
+/// `configure` skips the tenant key fetch under `.testing`, so tokens are signed with this half
+/// and verified against its public half. No test touches a live tenant, and no real Tapis key
+/// appears in the repository.
+enum TestKeys {
+  static let privatePEM = """
+    -----BEGIN PRIVATE KEY-----
+    MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC24UpEcK5ckQLa
+    O+l2KNTotE9rOmffJsEzg8BNiwh3dbAMA7XrXCREBPOq6FSF6Rm9VxaGjtH1TIHl
+    gFvYhDiqO5eeFVllI8KNsCIKoeT8SkUPTskDc209MmoBdBU8sRtD/Tqk9La6gblb
+    4liimjxEjb3x1xOY1ZxLoEdPZsDXPaLYR9lX3BrcKUiBZxDdV5qw3X0RxLfaAPmy
+    Mkp3Dot5N0LZKDK2Mn0eQlS/2ZaX8JE6DYP1uZAXgmnbaKw/nG8chjVshPeTd/X9
+    a8FkVHH9tzWye31zn56wLfeZje5MCfZG2L1JF23ZrF0rwwf6rhhHDDSoHqZ2eErL
+    FBJ+ie5HAgMBAAECggEABfaYrlyiQuBzoFwdw72XG7Ntd4ijBHLGEAD2z1B+SS7s
+    O6gPUYpioFks/OCwiOFN9o+Va3PSwtXo0mv6ErhVBLAGxJ/bl2GwIWCh64jV56gg
+    Ulx2T4d/A2TWcg+v9Zes1O238NMN9kzul2FtFHhFCNM6Y11pBS3J9+lVCfDGzv3k
+    aeZSx9DEv2gMJhch0EKixWeHu0X83swSw57LFylp7SVdJ5H06nF81KRVqzeTpIkk
+    AkXpwqo+Vq7KiPBpi26H1/V69Vx5FhG+43pFWV7XzoU3DwlEf4KHy6kRTfKP1Khj
+    tGqdsZxhyByUOrrHUd3FPp4pqNQ52pzBvY/L0BoFMQKBgQDadCW1ku9I3TzV82Jc
+    cDWV91xADRqrbiWBTB7FLSXHy7d9zzr5GIfhuV1jU/Iljzjt9tC4lUaa4Lhf1x69
+    h/QbAToFQpezbLHY5CXN3mLicC+AvPcuQBakYN9QHsdjD77Ie1nk+kQtg7sx/Kiz
+    EVEqWW0kfYluiYpXAsbdYvYdaQKBgQDWT+tun7kfH0rmBQ9gw1SwBn8Q1nUVEn9m
+    tLbVrQnRJbzUJAdILs792W8l8eycBtOatSvHmAh14bhIlOL4rdNNOD+9TNriVaIu
+    M9ky7/A4x0SsLxlE7PkRhuh5W2fQNesPgp9LwyLeC6Bi+Jh4DcUEZynfDT8+iJaz
+    LN1GXs1ILwKBgQCVGDp4b51i1KRlvaP/RRI9lULf8FGoeRed5I8HsiWb9Dz638n3
+    Irfy5imH1k5pNhP7zb1sjW1P3VnZB6BSaQzAtZic6HNTITdMuYHXvRUuSLUTH2Vw
+    qosJi5g+PZOF18Q1XoLfFbQcgFDt7+xPstz7k2c7RXbb+4Fwm1OQ267wKQKBgAk3
+    6NWaUzkufGdGgnHUFRl5Pg/4WZLtd8NwNIkeZ1SyvduWLSYCtW6f4rMMI/RWKtX1
+    wwtT09FWQzoEBXtS5srkh4FaA/RGYLKCEm6peXjHwYFyiTC4zMHfPrKxptaC6ziA
+    kt+MZjyM3XpEXTKUzQuycE+i3zyOXYUZge8b9tKLAoGBAJVqlvgP9v1Cbjq6784i
+    lBUouUbeZkRM8g9xPbZn0T76CLhMpkeaj3FCCZuJa69BRgHwQMhc6k4NZZFkzxHX
+    xMks7DVg46iqZP9zNCJkIzFQsgmRA1Z7YeRorSTiFbeMgXR6saR5DILCSQkmK9Rf
+    Qz39svlpQoRgWYdH3kEzqa5h
+    -----END PRIVATE KEY-----
+    """
+
+  /// The public half of ``privatePEM``, body only, for exercising PEM normalization.
+  static let publicPEMBody = """
+    MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtuFKRHCuXJEC2jvpdijU
+    6LRPazpn3ybBM4PATYsId3WwDAO161wkRATzquhUhekZvVcWho7R9UyB5YBb2IQ4
+    qjuXnhVZZSPCjbAiCqHk/EpFD07JA3NtPTJqAXQVPLEbQ/06pPS2uoG5W+JYopo8
+    RI298dcTmNWcS6BHT2bA1z2i2EfZV9wa3ClIgWcQ3VeasN19EcS32gD5sjJKdw6L
+    eTdC2SgytjJ9HkJUv9mWl/CROg2D9bmQF4Jp22isP5xvHIY1bIT3k3f1/WvBZFRx
+    /bc1snt9c5+esC33mY3uTAn2Rti9SRdt2axdK8MH+q4YRww0qB6mdnhKyxQSfonu
+    RwIDAQAB
+    """
+
+  /// A second keypair, used only to prove a correctly formed token signed by the wrong issuer
+  /// is rejected.
+  static let foreignPEM = """
+    -----BEGIN PRIVATE KEY-----
+    MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCAbYR91Dy6XjxG
+    p31bZp0W3gbCL/O/RXXPfNfJ4uEfHgLzQW3mib3mI7l7cNwDIsGCvPubsFRAwf6e
+    QrwkpUX22n7VCmf4JVyaJG7pdQ+c/EKJz/cDbBj9lf1DhKbk9oGnRxSfSVY1b7Aa
+    9qIl7+EiP39iuuKd1Ure7v2iZK6kDT9PkA5VntJ/MeX/KKCb1EcXua+BGyY4ANvK
+    4HkJ99ZQ6rnJZO5jqw/TTw3O6+yTgcWwrKRLXWhNSmlnW148C+3Blf1PaTGo1Ph/
+    5jYpQuU2JN6uVM9uf/tnct4ZyZck4W5esK7UgY8uSTv4g7DdbejTWNW5ey1iBXRC
+    9FXO7q4hAgMBAAECggEAAp5ZCHjCmTkxKO6i0XGE6/GweRahtWls5sNgofrohKon
+    vL59h2kREGdzkXcCYWT8xZXlWm4MtbpO3vq029lr1QXs9pqM9qQKYJE0Grn6jMSe
+    9bDiFDWIx+jePlluzrXQ/HBoVPwZkCLcGBylvzjGIhzh08lENBwkd+mvDbfYULt2
+    BVsRx9ConK4BKiIk25ro2vTepZsnhXN1iLkWVvTkIa2YpngvyUON4rxffsEAOgc0
+    m3yE/9fwQMnzB+F+i5hSYiWkpeWNpSgexanxrWUOQDRoS4ku2fg18UeeVm1vtJP8
+    CJ6q/G5mxtoXIU7ruzuAq3zGQsqY5w08vaKTHgSebQKBgQC1XoRw0SOT4eCwy1mW
+    2JaG8xV6fDsmoSm3PMUD1bROidBkz4qq0w78vNvLOujDO/8d+eHoKitT3WwLDppq
+    j0Qj9mdwuXW0O1STg/54PXTG4DwagCSF3ll7onvcGQDfIsANr7LQ6eoE44dLMq66
+    jllrWrYqBE7rJsPjGDFLM7DVxQKBgQC1RiNMHiQW2DS9cBj9dCmwppYCo012Zaff
+    gNEpCtaNRb35lExNJ0VOwenaMK2sFxqyT1ygYG3h6W+S0xLFZBnWQJ2oTzgdpRre
+    xmmqBw+QOnuc9xC++ROxcEZAf13WzVyBwlnB7TMo651+5bhos4T3gpu564NkEJpC
+    yXlgzNDYrQKBgDClW0yPK8W8bfG9eRgWm7kyde5WZ98ilvfI2ub+aNAv8q83Y3AS
+    EBEF7sYB1PCYpQK7RTZqKRjjaNlGX3B5YMNska4QcFuZFkRCwPwrL6kv967788/c
+    JZAdsq8EHdG7lluVZpbWRqhtBprKy0bKa3155SY75Zb43M2KbZ5IDQQpAoGBAK0b
+    2q9hBUPPmqXhu+uml/17SDwiqOHM+EBnKtbP484rcN07cpYnT3eDlQfpfqCdu7/W
+    K/V3wNeBbiw/Z2ibTFUfha9qX4Nn3T4rKlLVxVYNk2h1REerYtQLDPug5gMwQAwm
+    hkK8eyOzxcaeJ7nM3cjjsEUfFG1lsXrgHgqD7VlNAoGAcCd1Rt9wX6aRhc/8sHXp
+    FmfqYb2DR1Jo9VBB+KNYfTklGYK1Jxsc7uzqRZpJicvMce0Tf198tZ56jwr67RUu
+    vKNZ2XsPqxNziy/OH10Jskq3fBPasSehJQ58nhzrjfNrADTR0O8PJcqw4ilYd/oj
+    +D1Xr49v3NY6Zelh7XkTCJo=
+    -----END PRIVATE KEY-----
+    """
+}
+
+extension Application {
+  private struct TestAdminTokenKey: StorageKey { typealias Value = String }
+  private struct TestUserTokenKey: StorageKey { typealias Value = String }
+
+  /// Bearer token for a username on the admin allowlist.
+  var adminToken: String {
+    get { storage[TestAdminTokenKey.self] ?? "" }
+    set { storage[TestAdminTokenKey.self] = newValue }
+  }
+
+  /// Bearer token for an authenticated human who is *not* an admin.
+  var userToken: String {
+    get { storage[TestUserTokenKey.self] ?? "" }
+    set { storage[TestUserTokenKey.self] = newValue }
+  }
+
+  /// Headers for an admin, who satisfies every requirement.
+  var adminAuth: HTTPHeaders { ["Authorization": "Bearer \(adminToken)"] }
+
+  /// Headers for a signed-in non-admin — authenticated, so refusals are 403 rather than 401.
+  var userAuth: HTTPHeaders { ["Authorization": "Bearer \(userToken)"] }
+
+}
+
+/// The HMAC secret webhook tokens are signed with in tests. Fixed rather than generated so a
+/// failing assertion is readable.
+let testSigningKey = "test-webhook-signing-key-not-a-real-secret"
+
+/// The `kid` the test signing key is registered under.
+let testSigningKid = "test-kid"
+
+/// Registers the Tapis test key and the webhook signing keyset.
+///
+/// Runs after `configure`, which under `.testing` deliberately skips both the tenant key fetch
+/// and the Vault read for the keyset rather than reaching the network.
+func installTestCredentials(on app: Application) async throws {
+  try await app.jwt.keys.add(
+    rsa: Insecure.RSA.PrivateKey(pem: TestKeys.privatePEM),
+    digestAlgorithm: .sha256
+  )
+
+  let serviceKeys = JWTKeyCollection()
+  await serviceKeys.add(
+    hmac: .init(from: testSigningKey), digestAlgorithm: .sha256,
+    kid: .init(string: testSigningKid))
+  app.serviceTokenKeys = serviceKeys
+  app.activeSigningKid = testSigningKid
+
+  app.adminToken = try await signTapisToken(on: app, username: app.rootAdmin)
+  app.userToken = try await signTapisToken(on: app, username: "not-an-admin")
+}
+
+/// Mints a real webhook token through ``ServiceTokenIssuer``, so tests exercise the same path
+/// the CLI and the controller do rather than a parallel fixture that could drift.
+func issueWebhookToken(
+  on app: Application,
+  resourceID: Resource.IDValue,
+  label: String = "test-service",
+  lifetimeInDays: Int? = nil,
+) async throws -> ServiceTokenIssuer.Issued {
+  try await ServiceTokenIssuer(
+    db: app.db, keys: app.serviceTokenKeys, activeKid: app.activeSigningKid
+  ).mint(
+    resourceID: resourceID,
+    label: label,
+    lifetimeInDays: lifetimeInDays,
+  )
+}
+
+/// Signs a webhook token directly, bypassing the issuer, so a test can produce one that no
+/// legitimate path would: expired, foreign-issuer, or signed with the wrong key.
+func signWebhookToken(
+  resourceID: Resource.IDValue,
+  jti: UUID = UUID(),
+  issuer: String = WebhookToken.issuerValue,
+  expires: Date = Date().addingTimeInterval(3600),
+  key: String = testSigningKey,
+) async throws -> String {
+  let keys = JWTKeyCollection()
+  await keys.add(
+    hmac: .init(from: key), digestAlgorithm: .sha256, kid: .init(string: testSigningKid))
+
+  return try await keys.sign(
+    WebhookToken(
+      issuer: .init(value: issuer),
+      tokenID: .init(value: jti.uuidString),
+      issuedAt: .init(value: Date()),
+      expiration: .init(value: expires),
+      resourceID: resourceID,
+    ),
+    kid: .init(string: testSigningKid),
+  )
+}
+
+/// Grants admin access to a username through the table, as the dashboard would.
+@discardableResult
+func makeAdmin(
+  on db: any Database,
+  username: String,
+  addedBy: String = "test-root",
+) async throws -> Admin {
+  let admin = Admin(username: username, addedBy: addedBy)
+  try await admin.create(on: db)
+  return admin
+}
+
+/// Bearer headers for an arbitrary token value.
+func bearer(_ token: String) -> HTTPHeaders {
+  ["Authorization": "Bearer \(token)"]
+}
+
+/// Signs a Tapis-shaped token with the test key.
+func signTapisToken(
+  on app: Application,
+  username: String,
+  tenant: String? = nil,
+  expires: Date = Date().addingTimeInterval(3600),
+  key: String = TestKeys.privatePEM,
+) async throws -> String {
+  let payload = TapisToken(
+    tenant: tenant ?? app.tapisConfig.tenant,
+    username: username,
+    accountType: "user",
+    expiration: .init(value: expires),
+  )
+
+  // A key other than the tenant's gets its own collection: adding it to `app.jwt.keys` would
+  // make it a *trusted* signer, which is the opposite of what those tests assert.
+  guard key != TestKeys.privatePEM else {
+    return try await app.jwt.keys.sign(payload)
+  }
+
+  let foreign = JWTKeyCollection()
+  await foreign.add(rsa: try Insecure.RSA.PrivateKey(pem: key), digestAlgorithm: .sha256)
+  return try await foreign.sign(payload)
+}
+
+/// A `SecretProvider` backed by a dictionary, so key rotation can be exercised without a live
+/// Vault. The Tapis adapter needs real credentials even to fail usefully.
+final class InMemorySecrets: SecretProvider, @unchecked Sendable {
+  private let storage = NIOLockedValueBox<[String: String]>([:])
+
+  init(_ initial: [String: String] = [:]) {
+    storage.withLockedValue { $0 = initial }
+  }
+
+  func readSecret(named name: String) async throws -> Secret {
+    guard let value = storage.withLockedValue({ $0[name] }) else {
+      throw TapisClientError.secretNotFound(name: name)
+    }
+    return Secret(value)
+  }
+
+  func writeSecret(named name: String, secret: String) async throws {
+    storage.withLockedValue { $0[name] = secret }
+  }
+
+  func destroySecret(named name: String) async throws {
+    storage.withLockedValue { $0[name] = nil }
+  }
 }
 
 // MARK: - Tapis stub

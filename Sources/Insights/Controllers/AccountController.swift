@@ -14,16 +14,15 @@ struct AccountController: RouteCollection {
         summary: "List accounts",
         response: .type([Account.Public].self),
       )
-    // Mutating routes stay disabled until auth middleware protects them. The handlers
-    // below are kept intact so re-enabling is just uncommenting the registrations.
-    // accounts.post(use: create)
-    //     .openAPI(
-    //         tags: "Accounts",
-    //         summary: "Create account",
-    //         body: .type(Account.Create.self),
-    //         response: .type(Account.Public.self),
-    //         statusCode: 201,
-    //     )
+    accounts.grouped(Require.admin).post(use: create)
+      .openAPI(
+        tags: "Accounts",
+        summary: "Create account",
+        body: .type(Account.Create.self),
+        response: .type(Account.Public.self),
+        statusCode: 201,
+        auth: .bearer(),
+      )
     accounts.group(":accountID") { account in
       account.get(use: show)
         .openAPI(
@@ -31,18 +30,20 @@ struct AccountController: RouteCollection {
           summary: "Get account by ID",
           response: .type(Account.Public.self),
         )
-      account.patch(use: update)
+      account.grouped(Require.admin).patch(use: update)
         .openAPI(
           tags: "Accounts",
           summary: "Update account followers",
           body: .type(Account.Update.self),
           response: .type(Account.Public.self),
+          auth: .bearer(),
         )
-      account.delete(use: delete)
+      account.grouped(Require.admin).delete(use: delete)
         .openAPI(
           tags: "Accounts",
           summary: "Delete account",
           statusCode: 204,
+          auth: .bearer(),
         )
     }
   }

@@ -65,7 +65,7 @@ struct JobFailureTests {
   @Test
   func `An expired vault token alerts and re-books like any other credential failure`() async throws
   {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let notifier = stubNotifier(on: app)
       let resource = try await makeDueRepo(on: app)
       resource.scheduleNextCollection()
@@ -92,7 +92,7 @@ struct JobFailureTests {
   /// borrow the credential treatment from the cases that are.
   @Test
   func `An unavailable vault is not treated as a credential failure`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let notifier = stubNotifier(on: app)
       let resource = try await makeDueRepo(on: app)
       resource.scheduleNextCollection()
@@ -115,7 +115,7 @@ struct JobFailureTests {
   /// An error from neither family still has to produce a usable alert.
   @Test
   func `An unclassified error alerts as a platform failure`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let notifier = stubNotifier(on: app)
       let resource = try await makeDueRepo(on: app)
 
@@ -174,7 +174,7 @@ struct JobFailureTests {
 
   @Test
   func `An exhausted credential failure alerts and names the resource`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let notifier = stubNotifier(on: app)
       let resource = try await makeDueRepo(on: app)
 
@@ -197,7 +197,7 @@ struct JobFailureTests {
 
   @Test
   func `A platform failure alerts at warning rather than critical`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let notifier = stubNotifier(on: app)
       let resource = try await makeDueRepo(on: app)
 
@@ -215,7 +215,7 @@ struct JobFailureTests {
 
   @Test
   func `A credential failure re-books the resource for the next hourly sweep`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       _ = stubNotifier(on: app)
       // A week out is where the sweep left it: it advances the due date on dispatch, long before
       // the job fails. Without rebooking, a token fixed today is not noticed until next week.
@@ -237,7 +237,7 @@ struct JobFailureTests {
 
   @Test
   func `A platform failure leaves the normal cadence alone`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       _ = stubNotifier(on: app)
       let resource = try await makeDueRepo(on: app)
       resource.scheduleNextCollection()
@@ -263,7 +263,7 @@ struct JobFailureTests {
   /// for exactly this reason; this proves the Slack implementation honours it when Slack is down.
   @Test
   func `An unreachable alert channel does not fail the job`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       app.notifier = SlackNotifier(
         client: StubClient(eventLoop: app.eventLoopGroup.any(), status: .internalServerError),
         criticalWebhookURL: "https://hooks.slack.example/broken",
@@ -290,7 +290,7 @@ struct JobFailureTests {
 
   @Test
   func `An account credential failure alerts without a due date to re-book`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let notifier = stubNotifier(on: app)
       let account = try await makeAccount(on: app.db, name: "icicle-ai", platform: .github)
       let accountID = try account.requireID()

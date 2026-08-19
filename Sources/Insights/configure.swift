@@ -1,5 +1,6 @@
 import Fluent
 import FluentPostgresDriver
+import JWT
 import Leaf
 import NIOSSL
 import Queues
@@ -15,6 +16,36 @@ import Vapor
 /// - Parameter app: The Vapor application being prepared for execution.
 /// - Throws: A configuration, migration registration, service, route, or queue setup error.
 func configure(_ app: Application) async throws {
+  // All three stamp *response* headers, which are applied on the way back out — so they must sit
+  // ahead of `ErrorMiddleware`, or an error response leaves without them. A 4xx with no CORS
+  // headers is unreadable to the browser that caused it, which is exactly when reading it
+  // matters, and a 500 is the response whose ID someone most wants to quote. `.beginning` puts
+  // them in front of Vapor's defaults.
+  let corsOrigins = corsOriginsFromEnvironment()
+  if let cors = corsMiddleware(origins: corsOrigins) {
+    app.middleware.use(cors, at: .beginning)
+  }
+
+  let frameAncestors = SecurityHeadersMiddleware.frameAncestorsFromEnvironment(logger: app.logger)
+  app.middleware.use(
+    SecurityHeadersMiddleware(
+      includeHSTS: app.environment == .production,
+      frameAncestors: frameAncestors,
+    ), at: .beginning)
+
+  app.middleware.use(RequestIDMiddleware(), at: .beginning)
+
+  app.logger.notice(
+    "HTTP middleware configured.",
+    metadata: [
+      "cors_origins": .string(
+        corsOrigins.isEmpty ? "disabled" : corsOrigins.joined(separator: ",")),
+      "frame_ancestors": .string(
+        frameAncestors.isEmpty ? "denied" : frameAncestors.joined(separator: ",")),
+      "hsts": .stringConvertible(app.environment == .production),
+    ]
+  )
+
   // Serve static assets (dashboard CSS/JS) from the /Public folder.
   app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
 
@@ -48,6 +79,8 @@ func configure(_ app: Application) async throws {
 
   app.migrations.add(FirstMigration())
   app.migrations.add(RecurringCollection())
+  app.migrations.add(ServiceTokens())
+  app.migrations.add(Admins())
 
   // Development-only seed data so the dashboard has something to render. Only ever
   // registered in `.development`, so it targets `dev` and never the `test` database.
@@ -72,21 +105,87 @@ func configure(_ app: Application) async throws {
         password: Environment.get("REDIS_PASSWORD").flatMap { $0.isEmpty ? nil : $0 },
       )))
 
+  // Loaded before the provider switch because two unrelated things need it: the Vault client
+  // below, and TapisAuthenticator, which checks a caller's tenant claim against this one.
+  app.tapisConfig = try .fromEnvironment()
+
   // Credential backend selected once for the entire application. Jobs and controllers depend
   // only on SecretProvider, so another implementation adds one case here, not changes to every
   // consumer. Tapis Vault is the current adapter and fails fast on missing Tapis configuration.
   let secretProviderName = Environment.get("SECRET_PROVIDER")?.lowercased() ?? "tapis"
   switch secretProviderName {
   case "tapis":
-    app.secrets = try TapisClient(client: app.client, config: .fromEnvironment()).vaults
+    app.secrets = TapisClient(client: app.client, config: app.tapisConfig).vaults
   default:
     throw ConfigError.unsupported(name: "SECRET_PROVIDER", value: secretProviderName)
+  }
+
+  // The tenant and base URL are logged because getting either wrong is silent and expensive: a
+  // mismatched tenant refuses every admin with a plain 403, and a base URL missing its `/v3`
+  // fails the tenant key fetch below with an error that names the URL but not the setting.
+  app.logger.notice(
+    "Secret provider selected.",
+    metadata: [
+      "provider": .string(secretProviderName),
+      "tapis_base_url": .string(app.tapisConfig.baseURL),
+      "tapis_tenant": .string(app.tapisConfig.tenant),
+    ]
+  )
+
+  // Rate limit counters share the Valkey instance queues already use, so limits hold across
+  // pods rather than being granted afresh by each replica.
+  app.redis.configuration = try RedisConfiguration(
+    hostname: Environment.get("REDIS_HOST") ?? "localhost",
+    port: Environment.get("REDIS_PORT").flatMap(Int.init(_:)) ?? 6379,
+    password: Environment.get("REDIS_PASSWORD").flatMap { $0.isEmpty ? nil : $0 },
+  )
+
+  // The break-glass admin. Everyone else is managed from the dashboard, but this one holds
+  // access whatever the table says, so an accidental deletion can always be undone. Parsed here
+  // so a missing value fails the boot rather than every write returning 403 in production.
+  app.rootAdmin = try Application.rootAdminFromEnvironment()
+  app.logger.notice(
+    "Root admin resolved.", metadata: ["username": .string(app.rootAdmin)])
+
+  // Both of these reach the network, so tests skip them and inject their own fixtures through
+  // `withApp(setUp:)` instead — a throwaway keypair for the tenant key, and a registry built
+  // in memory. Without them the authenticators simply recognize nobody.
+  if app.environment != .testing {
+    // Fetched rather than pinned in source: a Tapis key rotation becomes a restart instead of
+    // every request failing 401 with nothing in the log to explain it.
+    //
+    // One key, registered as the default signer. Tokens carry a `kid`, but Tapis publishes no
+    // key set to resolve it against — its `jwks_uri` points back at the tenant record — so
+    // there is nothing to route between. See `TapisClient+Auth.swift`.
+    let tapis = TapisClient(client: app.client, config: app.tapisConfig)
+    try await app.jwt.keys.add(
+      rsa: Insecure.RSA.PublicKey(pem: try await tapis.getTenantPublicKey()),
+      digestAlgorithm: .sha256)
+    app.logger.notice("Tapis tenant public key loaded; admin tokens verify locally.")
+
+    // Held apart from `app.jwt.keys` on purpose — see `Application+SigningKey.swift`. Missing
+    // means `service-token init-key` has not been run; webhook tokens cannot be minted or
+    // verified until it has.
+    let registered = try await app.loadServiceTokenKeys(from: app.secrets)
+    app.logger.notice(
+      "Webhook token signing keys loaded.",
+      metadata: [
+        "keys": .stringConvertible(registered),
+        "active_kid": .string(app.activeSigningKid),
+      ]
+    )
+  } else {
+    app.logger.notice("Testing environment: skipping Tapis key fetch and Vault keyset read.")
   }
 
   // Where collection failures that need a human are announced. Optional by design: with no
   // webhook configured this resolves to `NoopNotifier` and failures stay in the log, which is
   // what every test run and local `swift run` wants.
   app.notifier = SlackNotifier.fromEnvironment(client: app.client, logger: app.logger)
+  app.logger.notice(
+    "Failure alerting configured.",
+    metadata: ["channel": .string(app.notifier is SlackNotifier ? "slack" : "log only")]
+  )
 
   // Encode/decode JSON dates as ISO8601 so clients (e.g. the dashboard chart) can parse them.
   let jsonEncoder = JSONEncoder()
@@ -96,7 +195,6 @@ func configure(_ app: Application) async throws {
   ContentConfiguration.global.use(encoder: jsonEncoder, for: .json)
   ContentConfiguration.global.use(decoder: jsonDecoder, for: .json)
 
-  // register routes
   try routes(app)
 
   // Queue Jobs
@@ -117,4 +215,43 @@ func configure(_ app: Application) async throws {
   // same scheduled job types without changing or waiting for the production clocks above.
   app.asyncCommands.use(CollectResourcesNowCommand(), as: "collect-resources")
   app.asyncCommands.use(CollectAccountsNowCommand(), as: "collect-accounts")
+
+  // Credential minting stays off the HTTP surface — see `ServiceTokenCommand`.
+  app.asyncCommands.use(ServiceTokenCommand(), as: "service-token")
+
+  app.logger.notice(
+    "Insights configured.",
+    metadata: [
+      "environment": .string(app.environment.name),
+      "database": .string(databaseName),
+    ]
+  )
+}
+
+/// Reads the browser origins permitted to call this API from `CORS_ORIGINS`.
+private func corsOriginsFromEnvironment() -> [String] {
+  guard let raw = Environment.get("CORS_ORIGINS") else { return [] }
+
+  return
+    raw.split(separator: ",")
+    .map { $0.trimmingCharacters(in: .whitespaces) }
+    .filter { !$0.isEmpty }
+}
+
+/// Builds the CORS middleware, or nil when no origins are configured.
+///
+/// Returning nil rather than a permissive default is the point: a same-origin deployment then
+/// carries no CORS surface at all, and enabling it for another ICICLE site is a config change
+/// rather than a code change.
+private func corsMiddleware(origins: [String]) -> CORSMiddleware? {
+  guard !origins.isEmpty else { return nil }
+
+  return CORSMiddleware(
+    configuration: .init(
+      allowedOrigin: .any(origins),
+      allowedMethods: [.GET, .POST, .PATCH, .DELETE, .OPTIONS],
+      // `.authorization` is not optional here: without it a browser refuses to send the Tapis
+      // token, and every cross-origin call from the dashboard arrives anonymous.
+      allowedHeaders: [.accept, .authorization, .contentType, .origin],
+    ))
 }

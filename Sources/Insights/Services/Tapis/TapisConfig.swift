@@ -31,10 +31,15 @@ struct TapisConfig: Sendable {
     "\(baseURL)/security/vault/secret"
   }
 
-  // var authBaseURL: String {
-  //     // TODO: Write the correct base
-  //     "\(baseURL)/auth-placeholder"
-  // }
+  /// Base endpoint for Tapis OAuth2 operations.
+  var authBaseURL: String {
+    "\(baseURL)/oauth2"
+  }
+
+  /// Base endpoint for tenant metadata, whose `public_key` verifies caller tokens.
+  var tenantsBaseURL: String {
+    "\(baseURL)/tenants"
+  }
 
   /// Loads required Tapis settings from the process environment.
   /// - Throws: ``ConfigError`` when any required value is absent.
