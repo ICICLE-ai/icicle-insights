@@ -1,3 +1,9 @@
+# Frontend dependency and build state. The Node stage installs from package*.json inside the
+# image; a host node_modules would be the wrong platform's binaries and megabytes of context.
+web/node_modules/
+web/dist/
+web/.angular/
+
 # Swift build and package-manager state
 .build/
 .swiftpm/
