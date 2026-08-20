@@ -476,12 +476,28 @@ function wireControls() {
   });
 }
 
+// Every read lives under /api. These were top-level before the API was namespaced, which left
+// the dashboard fetching four 404s and rendering an empty page while still returning 200 itself.
+const API = "/api";
+
+async function loadJSON(path) {
+  const response = await fetch(`${API}${path}`);
+
+  // Without this a failed fetch surfaces as a JSON parse error against an error page, which says
+  // nothing about which request failed or why.
+  if (!response.ok) {
+    throw new Error(`GET ${API}${path} failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 async function loadData() {
   const [accounts, resources, metrics, releases] = await Promise.all([
-    fetch("/accounts").then((r) => r.json()),
-    fetch("/resources").then((r) => r.json()),
-    fetch("/metrics").then((r) => r.json()),
-    fetch("/releases").then((r) => r.json()),
+    loadJSON("/accounts"),
+    loadJSON("/resources"),
+    loadJSON("/metrics"),
+    loadJSON("/releases"),
   ]);
   state.accounts = accounts;
   state.resources = resources;
