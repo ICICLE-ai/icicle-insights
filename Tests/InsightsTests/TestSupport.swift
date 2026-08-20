@@ -173,18 +173,47 @@ extension Application {
 
 }
 
-/// Whether `TAPIS_TOKEN` holds something that could actually authenticate.
+/// Whether `TAPIS_TOKEN` holds a credential that could actually authenticate right now.
 ///
 /// A handful of `VaultControllerTests` reach a real Tapis Vault, because the adapter needs real
 /// credentials even to fail usefully — they write and destroy secrets rather than asserting
-/// against a stub. Without this they fail with 500s wherever no token is configured, which is
-/// indistinguishable from a genuine regression and makes the suite unusable in CI.
+/// against a stub. Without this they fail with 500s wherever no usable token is configured, which
+/// is indistinguishable from a genuine regression and makes the suite unusable in CI.
 ///
-/// Detected by shape rather than by an opt-in variable so it needs no configuration in either
-/// direction: every Tapis token is a JWT, and no placeholder is. Point `.env` at the staging
-/// tenant and they run; leave the token blank and they skip.
+/// Needs no configuration in either direction: point `.env` at the staging tenant and they run,
+/// leave the token blank and they skip.
+///
+/// **Expiry is checked, not just shape.** Tapis tokens last hours, so "looks like a JWT" is not
+/// the same question as "will authenticate" — and an expired one produces exactly the confusing
+/// 500s this exists to prevent. The signature is deliberately *not* verified: this decides whether
+/// running the test is worthwhile, not whether the token is trustworthy, and the server it is
+/// presented to makes that judgement itself.
 var hasLiveTapisCredentials: Bool {
-  (Environment.get("TAPIS_TOKEN") ?? "").hasPrefix("eyJ")
+  guard let expiry = tapisTokenExpiry(Environment.get("TAPIS_TOKEN")) else { return false }
+  return expiry > Date()
+}
+
+/// Reads `exp` out of a JWT payload, or nil when the value is not a JWT carrying one.
+private func tapisTokenExpiry(_ token: String?) -> Date? {
+  let segments = (token ?? "").split(separator: ".")
+  guard segments.count == 3 else { return nil }
+
+  // base64url differs from base64 in two characters and omits the padding Data requires.
+  var encoded =
+    String(segments[1])
+    .replacingOccurrences(of: "-", with: "+")
+    .replacingOccurrences(of: "_", with: "/")
+  encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+
+  guard
+    let data = Data(base64Encoded: encoded),
+    let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+    let exp = claims["exp"] as? TimeInterval
+  else {
+    return nil
+  }
+
+  return Date(timeIntervalSince1970: exp)
 }
 
 /// The HMAC secret webhook tokens are signed with in tests. Fixed rather than generated so a

@@ -11,12 +11,24 @@ Four things, in order. The third is the one people miss.
 Required, and boot fails without them:
 
 ```dotenv
+VAPOR_ENV=production
 TAPIS_BASE_URL=https://icicleai.tapis.io/v3
 TAPIS_TENANT=icicleai
 TAPIS_USER=<service identity>
 TAPIS_TOKEN=<service token>
 ROOT_ADMIN_USERNAME=<a real tapis/username in the tenant above>
 ```
+
+**`VAPOR_ENV` must be set for a deployment**, and it is read by every process rather than passed as
+a flag to one. Unset, Vapor defaults to `development`, and `configure` then resolves
+`DATABASE_NAME ?? "dev"` instead of `?? "vapor_database"` — so `serve` and the workers can end up
+on *different databases* unless `DATABASE_NAME` is also pinned explicitly. It additionally
+registers `ICICLESnapshotJuly2026`, a development-only seed migration, in production.
+
+Do not pass `--env` on a command line. That flag outranks `VAPOR_ENV`, so pinning it on one
+process is how a stack ends up with processes disagreeing about their own environment. The local
+stacks set `VAPOR_ENV=development` in `.env.container` and `docker-compose.yml` for the same
+reason: one value, every process.
 
 `TAPIS_BASE_URL` and `TAPIS_TENANT` name the **same** tenant, and each tenant has its own host.
 The `/v3` suffix is required — every Tapis URL is built off the base, so omitting it fails the
@@ -55,6 +67,12 @@ every boot, naming the command. This is survivable by design — every command r
 `configure`, so failing hard would take down `init-key` itself.
 
 ### 4. Verify the boot log
+
+Every process should report the same environment. A quick check after any deploy:
+
+```bash
+for c in app queues scheduled; do docker compose logs $c | grep "Insights configured"; done
+```
 
 A correct start prints, at `notice`:
 

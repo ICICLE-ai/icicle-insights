@@ -81,7 +81,8 @@ struct SyncGitHubRepoStats: AsyncJob, BackoffRetrying {
         .with(\.$account)
         .first()
     else {
-      throw JobError.entryNotFound(id: payload.id)
+      context.entryVanished(id: payload.id, job: Self.name)
+      return
     }
 
     guard

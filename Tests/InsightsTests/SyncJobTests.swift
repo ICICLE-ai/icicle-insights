@@ -156,18 +156,28 @@ struct SyncJobTests {
   }
 
   @Test
-  func `A sweep for a missing resource fails with entryNotFound`() async throws {
+  func `A sweep for a missing resource is a no-op rather than a retried failure`() async throws {
     try await withInsightsApp { app in
-      stubAPI(on: app, [])
+      let requests = stubAPI(on: app, [])
 
-      let error = await thrownJobError {
-        try await SyncGitHubRepoStats().dequeue(queueContext(for: app), .init(id: UUID()))
-      }
+      // Throwing here would be retried four times across roughly ten minutes, because
+      // `QueueWorker` decides from the remaining attempt count alone and the budget is fixed at
+      // dispatch. A deleted row will not reappear, so the job completes instead.
+      try await SyncGitHubRepoStats().dequeue(queueContext(for: app), .init(id: UUID()))
 
-      guard case .entryNotFound? = error else {
-        Issue.record("expected entryNotFound, got \(String(describing: error?.description))")
-        return
-      }
+      // And it stops before spending a request on a resource it cannot describe.
+      #expect(requests.withLockedValue { $0 }.isEmpty)
+    }
+  }
+
+  @Test
+  func `A sweep for a missing account is a no-op`() async throws {
+    try await withInsightsApp { app in
+      let requests = stubAPI(on: app, [])
+
+      try await SyncGitHubOrgStats().dequeue(queueContext(for: app), .init(id: UUID()))
+
+      #expect(requests.withLockedValue { $0 }.isEmpty)
     }
   }
 

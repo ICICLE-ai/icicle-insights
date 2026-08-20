@@ -51,6 +51,17 @@ flowchart LR
     W2 --> J
 ```
 
+### When a job's subject has been deleted
+
+A job whose resource or account no longer exists logs at `notice` and returns, rather than
+throwing. `QueueWorker` decides whether to retry from the remaining attempt count alone — there is
+no per-error hook, and the retry budget is fixed at dispatch — so a thrown error would be retried
+four times across roughly ten minutes to rediscover a row that is gone.
+
+A deleted subject is not a failure the job can recover from; it is work that no longer needs
+doing. The usual cause is a resource deleted between dispatch and execution, occasionally a queued
+payload outliving the database state that produced it.
+
 Scheduled jobs stay small: they query for work and enqueue typed jobs. Workers own remote API
 requests, so a slow synchronization cannot delay the scheduler's next tick.
 

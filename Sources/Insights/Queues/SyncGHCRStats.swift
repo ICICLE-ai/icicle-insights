@@ -29,7 +29,8 @@ struct SyncGHCRStats: AsyncJob {
       .first() != nil
 
     guard exists else {
-      throw JobError.entryNotFound(id: payload.id)
+      context.entryVanished(id: payload.id, job: Self.name)
+      return
     }
   }
 }
