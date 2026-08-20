@@ -109,7 +109,7 @@ struct QueueSweepTests {
   @Test
   func `A dispatch failure leaves the resource due and the sweep continues`() async throws {
     let driver = FlakyQueuesDriver()
-    try await withApp(setUp: { $0.queues.use(custom: driver) }) { app in
+    try await withInsightsApp(setUp: { $0.queues.use(custom: driver) }) { app in
       let account = try await makeAccount(on: app.db)
       let accountID = try account.requireID()
       let wasDue = past(1)

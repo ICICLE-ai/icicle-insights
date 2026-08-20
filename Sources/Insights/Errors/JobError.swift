@@ -4,7 +4,6 @@ import Vapor
 
 /// Domain failures surfaced by platform synchronization jobs.
 enum JobError: Error {
-  case entryNotFound(id: UUID)
   case apiRequestFailed(url: String, statusCode: Int, message: String?)
   case missingToken(id: UUID)
   case decodingFailed(url: String, underlying: any Error)
@@ -18,7 +17,6 @@ extension JobError: DebuggableError {
   /// search in a way that prose never is.
   var identifier: String {
     switch self {
-    case .entryNotFound: "entry_not_found"
     case .apiRequestFailed: "api_request_failed"
     case .missingToken: "missing_token"
     case .decodingFailed: "decoding_failed"
@@ -28,8 +26,6 @@ extension JobError: DebuggableError {
   /// A log-oriented explanation of the failed collection operation.
   var reason: String {
     switch self {
-    case .entryNotFound(let id):
-      "No entry found with id \(id)"
     case .apiRequestFailed(let url, let statusCode, let message):
       // The status alone is rarely enough: GitHub answers a missing header with a bare 403 and
       // explains itself only in the body.
@@ -53,7 +49,7 @@ extension JobError: DebuggableError {
       .critical
     case .apiRequestFailed(_, let statusCode, _):
       isCredentialStatus(statusCode) ? .critical : .warning
-    case .entryNotFound, .decodingFailed:
+    case .decodingFailed:
       .error
     }
   }
@@ -93,7 +89,7 @@ extension JobError {
       true
     case .apiRequestFailed(_, let statusCode, _):
       isCredentialStatus(statusCode)
-    case .entryNotFound, .decodingFailed:
+    case .decodingFailed:
       false
     }
   }

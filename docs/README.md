@@ -9,8 +9,12 @@ task-oriented guides as needed.
 | [Introduction](introduction.md) | You are new to the project and want the visual mental model |
 | [Architecture](architecture.md) | You need the system map and request/job lifecycles |
 | [Invariants](invariants.md) | You are changing behavior and need the rules that must remain true |
+| [API authentication](api-authentication.md) | You are working on credentials, admins, or webhook tokens |
+| [Operations](operations.md) | You are deploying, bootstrapping, or on call |
+| [Frontend contract](frontend.md) | You are building a browser client against this API |
 | [Secret providers](secret-providers.md) | You are configuring or adding a credential backend |
 | [Queue workers and scheduling](queue-workers.md) | You are changing clocks, queues, workers, or scaling |
+| [Test reference](testing.md) | You need to know what the suite covers, or why it will not run |
 | [Testing collection](testing-collection.md) | You need to run collection immediately and inspect it |
 | [Adding a job](jobs.md) | You are implementing another platform collector |
 | [Metric collection](collection.md) | You need to understand snapshots, rolling windows, and retention |

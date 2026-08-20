@@ -4,15 +4,21 @@ import VaporToOpenAPI
 
 /// Serves Vault metadata while delegating secret values to Tapis Vault.
 struct VaultController: RouteCollection {
-  /// Mounts Vault metadata routes under `/vaults`.
+  /// Mounts Vault metadata routes under `/vaults`, admin-only throughout.
+  ///
+  /// Unlike the other controllers, the reads are protected too. `Vault.Public` carries no
+  /// secret value, but listing which credentials exist and when they expire is reconnaissance
+  /// worth denying — and no service client has a reason to ask, since jobs resolve secrets
+  /// in-process through ``SecretProvider`` rather than over HTTP.
   func boot(routes: any RoutesBuilder) throws {
-    let vaults = routes.grouped("vaults")
+    let vaults = routes.grouped("vaults").grouped(Require.admin)
 
     vaults.get(use: index)
       .openAPI(
         tags: "Vaults",
         summary: "List vaults",
-        response: .type([Vault.Public].self)
+        response: .type([Vault.Public].self),
+        auth: .bearer()
       )
     vaults.post(use: create)
       .openAPI(
@@ -20,27 +26,31 @@ struct VaultController: RouteCollection {
         summary: "Create vault",
         body: .type(Vault.Create.self),
         response: .type(Vault.Public.self),
-        statusCode: 201
+        statusCode: 201,
+        auth: .bearer()
       )
     vaults.group(":vaultID") { vault in
       vault.get(use: show)
         .openAPI(
           tags: "Vaults",
           summary: "Get vault by ID",
-          response: .type(Vault.Public.self)
+          response: .type(Vault.Public.self),
+          auth: .bearer()
         )
       vault.patch(use: update)
         .openAPI(
           tags: "Vaults",
           summary: "Update token in vault",
           body: .type(Vault.Update.self),
-          response: .type(Vault.Public.self)
+          response: .type(Vault.Public.self),
+          auth: .bearer()
         )
       vault.delete(use: delete)
         .openAPI(
           tags: "Vaults",
           summary: "Delete vault",
-          statusCode: 204
+          statusCode: 204,
+          auth: .bearer()
         )
     }
   }

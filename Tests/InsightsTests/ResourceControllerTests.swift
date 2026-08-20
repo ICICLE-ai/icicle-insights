@@ -8,14 +8,15 @@ import VaporTesting
 struct ResourceControllerTests {
   @Test
   func `Create lowercases the name`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let payload = Resource.Create(
         name: "Insights", type: .model, accountID: try account.requireID())
 
       try await app.testing().test(
         .POST,
-        "resources",
+        "api/resources",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .created)
@@ -29,14 +30,15 @@ struct ResourceControllerTests {
 
   @Test
   func `Create trims surrounding whitespace from the name`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let payload = Resource.Create(
         name: "  Insights  ", type: .model, accountID: try account.requireID())
 
       try await app.testing().test(
         .POST,
-        "resources",
+        "api/resources",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .created)
@@ -49,13 +51,14 @@ struct ResourceControllerTests {
 
   @Test
   func `Create rejects a blank name`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let payload = Resource.Create(name: " ", type: .model, accountID: try account.requireID())
 
       try await app.testing().test(
         .POST,
-        "resources",
+        "api/resources",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -68,7 +71,7 @@ struct ResourceControllerTests {
 
   @Test
   func `Create rejects a duplicate name and type for the same account`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let accountID = try account.requireID()
       _ = try await makeResource(on: app.db, accountID: accountID, name: "insights", type: .model)
@@ -76,7 +79,8 @@ struct ResourceControllerTests {
       let payload = Resource.Create(name: "Insights", type: .model, accountID: accountID)
       try await app.testing().test(
         .POST,
-        "resources",
+        "api/resources",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .conflict)
@@ -89,12 +93,13 @@ struct ResourceControllerTests {
 
   @Test
   func `Create with missing account is a bad request`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let payload = Resource.Create(name: "insights", type: .model, accountID: UUID())
 
       try await app.testing().test(
         .POST,
-        "resources",
+        "api/resources",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -107,7 +112,7 @@ struct ResourceControllerTests {
 
   @Test
   func `Index returns all resources`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let accountID = try account.requireID()
       _ = try await makeResource(on: app.db, accountID: accountID, name: "insights", type: .model)
@@ -116,7 +121,7 @@ struct ResourceControllerTests {
 
       try await app.testing().test(
         .GET,
-        "resources",
+        "api/resources",
         afterResponse: { res async throws in
           #expect(res.status == .ok)
           let names = try res.content.decode([Resource.Public].self).compactMap(\.name).sorted()
@@ -128,14 +133,14 @@ struct ResourceControllerTests {
 
   @Test
   func `Show resource by ID`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let resourceID = try resource.requireID()
 
       try await app.testing().test(
         .GET,
-        "resources/\(resourceID)",
+        "api/resources/\(resourceID)",
         afterResponse: { res async throws in
           #expect(res.status == .ok)
           let returned = try res.content.decode(Resource.Public.self)
@@ -147,13 +152,14 @@ struct ResourceControllerTests {
 
   @Test
   func `Delete resource`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
 
       try await app.testing().test(
         .DELETE,
-        "resources/\(resource.requireID())",
+        "api/resources/\(resource.requireID())",
+        headers: app.adminAuth,
         afterResponse: { res async throws in
           #expect(res.status == .noContent)
           let model = try await Resource.find(resource.id, on: app.db)

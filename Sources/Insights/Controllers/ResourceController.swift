@@ -15,16 +15,15 @@ struct ResourceController: RouteCollection {
         summary: "List resources",
         response: .type([Resource.Public].self),
       )
-    // Mutating routes stay disabled until auth middleware protects them. The handlers
-    // below are kept intact so re-enabling is just uncommenting the registrations.
-    // resources.post(use: create)
-    //     .openAPI(
-    //         tags: "Resources",
-    //         summary: "Create resource",
-    //         body: .type(Resource.Create.self),
-    //         response: .type(Resource.Public.self),
-    //         statusCode: 201,
-    //     )
+    resources.grouped(Require.admin).post(use: create)
+      .openAPI(
+        tags: "Resources",
+        summary: "Create resource",
+        body: .type(Resource.Create.self),
+        response: .type(Resource.Public.self),
+        statusCode: 201,
+        auth: .bearer(),
+      )
     resources.group(":resourceID") { resource in
       resource.get(use: show)
         .openAPI(
@@ -32,12 +31,13 @@ struct ResourceController: RouteCollection {
           summary: "Get resource by ID",
           response: .type(Resource.Public.self),
         )
-      // resource.delete(use: delete)
-      //     .openAPI(
-      //         tags: "Resources",
-      //         summary: "Delete resource",
-      //         statusCode: 204,
-      //     )
+      resource.grouped(Require.admin).delete(use: delete)
+        .openAPI(
+          tags: "Resources",
+          summary: "Delete resource",
+          statusCode: 204,
+          auth: .bearer(),
+        )
     }
   }
 

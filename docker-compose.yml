@@ -23,6 +23,15 @@ volumes:
 
 x-shared_environment: &shared_environment
   LOG_LEVEL: ${LOG_LEVEL:-debug}
+  # Every process reads this, so all of them agree. Only `serve` used to be told its environment,
+  # via a --env flag on its command; the workers, scheduler, and migrator fell through to Vapor's
+  # default of development, leaving processes in one stack disagreeing about which environment
+  # they were in — and therefore about which database name to default to.
+  #
+  # development locally, because that is what this file is: the ICICLE seed migration registers
+  # only in development, so a fresh volume still comes up with a populated dashboard. Deployments
+  # set VAPOR_ENV=production once, here, rather than on eight command lines.
+  VAPOR_ENV: ${VAPOR_ENV:-development}
   DATABASE_HOST: db
   DATABASE_NAME: &db_name vapor_database
   DATABASE_USERNAME: &db_username vapor_username
@@ -46,6 +55,20 @@ x-shared_environment: &shared_environment
   # credential ones.
   SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
   SLACK_WEBHOOK_URL_WARNINGS: ${SLACK_WEBHOOK_URL_WARNINGS:-}
+  # Required, and deliberately without a default. `configure` throws when it is unset, so every
+  # service here dies at boot without it — which is how this file came to be unbootable once the
+  # variable was introduced: compose passes only what it names, so an unreferenced variable never
+  # reaches a container no matter what `.env` holds.
+  #
+  # No fallback value on purpose. A placeholder boots perfectly well and then matches nobody, so
+  # every write returns 403 with nothing in the log explaining it. Failing at boot is kinder.
+  ROOT_ADMIN_USERNAME: ${ROOT_ADMIN_USERNAME}
+  # The rest have defaults in code; named here so the full surface is visible in one place.
+  TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-insights-token-signing-key}
+  CORS_ORIGINS: ${CORS_ORIGINS:-}
+  FRAME_ANCESTORS: ${FRAME_ANCESTORS:-}
+  RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-300}
+  WEBHOOK_RATE_LIMIT_PER_MINUTE: ${WEBHOOK_RATE_LIMIT_PER_MINUTE:-60}
 
 
 services:
@@ -61,7 +84,9 @@ services:
     ports:
       - '8080:8080'
     # user: '0' # uncomment to run as root for testing purposes even though Dockerfile defines 'vapor' user.
-    command: ["serve", "--env", "production", "--hostname", "0.0.0.0", "--port", "8080"]
+    # No --env: the flag outranks VAPOR_ENV in `Environment.detect`, so passing it here would pin
+    # this one process to production while every sibling followed the shared variable.
+    command: ["serve", "--hostname", "0.0.0.0", "--port", "8080"]
   # Drains the `metrics` queue: the platform syncs themselves. `serve` does not process queued
   # jobs, so without this nothing dispatched ever runs.
   queues:

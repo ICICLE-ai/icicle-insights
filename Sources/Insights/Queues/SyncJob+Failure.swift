@@ -16,6 +16,26 @@ import struct Foundation.UUID
 private let credentialRetryInterval: TimeInterval = 3600
 
 extension QueueContext {
+  /// Records that the row a job was dispatched for no longer exists.
+  ///
+  /// Called instead of throwing, and that is the whole point. `QueueWorker` decides whether to
+  /// retry from the remaining attempt count alone — there is no per-error hook, and the retry
+  /// budget is fixed at dispatch, before the error exists. So a thrown error here would be retried
+  /// four times across ten minutes to rediscover a row that has been deleted.
+  ///
+  /// Returning normally instead lets the worker clear the job on the first attempt. A deleted
+  /// resource is not a failure the job can recover from; it is work that no longer needs doing.
+  ///
+  /// `notice`, not `debug`: the sweep dispatches from a live query, so a missing row means the
+  /// queue and the database disagreed — ordinarily a resource deleted mid-flight, occasionally a
+  /// payload outliving the database that produced it. Benign, but worth being able to see.
+  func entryVanished(id: UUID, job: String) {
+    logger.notice(
+      "Skipping job: the entry it was dispatched for no longer exists.",
+      metadata: ["job": .string(job), "entry": .string(id.uuidString)]
+    )
+  }
+
   /// Reports a resource sync that has exhausted its retries, and keeps a credential failure in
   /// rotation so it recovers on its own once the token is repaired.
   func reportResourceSyncFailure(_ error: any Error, job: String, resourceID: UUID) async {

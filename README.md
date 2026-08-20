@@ -23,8 +23,8 @@
   <p>
     <a href="#quick-start">Quick start</a> ·
     <a href="#architecture">Architecture</a> ·
-    <a href="#collection-status">Collection status</a> ·
-    <a href="#secret-provider-integration">Secret providers</a> ·
+    <a href="#authentication">Authentication</a> ·
+    <a href="#configuration">Configuration</a> ·
     <a href="#documentation">Documentation</a>
   </p>
 </div>
@@ -51,7 +51,7 @@ its open-source impact.
   `SecretProvider` contract instead of coupling collection logic to one backend.
 - **Durable asynchronous collection** — Valkey stores work while stateless workers scale
   independently from the HTTP service and scheduler.
-- **Portable operations** — run with Docker Compose or Apple's Container CLI on macOS 26+.
+- **Public by default, guarded where it matters** — reads need no credential; every write does.
 
 <div align="center">
   <img src="assets/screenshots/dashboard-overview.png" alt="ICICLE Insights dashboard overview" width="900">
@@ -84,7 +84,7 @@ flowchart LR
 |---|---|---|
 | HTTP service | Dashboard, REST API, OpenAPI | Scale horizontally |
 | PostgreSQL | Accounts, resources, metric series, watermarks | One managed database or HA cluster |
-| Valkey/Redis | Durable queue storage | One shared service or managed deployment |
+| Valkey/Redis | Queue storage and rate-limit counters | One shared service or managed deployment |
 | Scheduler | Evaluates every registered clock | **Exactly one replica** |
 | Queue worker | Claims and executes jobs from `metrics` | Scale horizontally |
 
@@ -117,39 +117,55 @@ The hourly scan does not call every platform hourly. Each resource has a
 - [`just`](https://just.systems/)
 - Credentials for the selected secret provider
 
-Copy the example configuration and fill in the settings for your selected provider:
-
 ```bash
 cp .env.example .env
 ```
 
+Fill in at minimum:
+
 ```dotenv
-SECRET_PROVIDER=tapis
-TAPIS_BASE_URL=https://example.tapis.io
-TAPIS_TENANT=example
+TAPIS_BASE_URL=https://icicleai.staging.tapis.io/v3
+TAPIS_TENANT=icicleai
 TAPIS_USER=your-service-user
 TAPIS_TOKEN=replace-me
+ROOT_ADMIN_USERNAME=your-tapis-username
+DATABASE_TLS=disable
 ```
 
-When `SECRET_PROVIDER=tapis`, `TAPIS_TOKEN` authenticates the service identity used to read
-platform credentials. Keep `.env` out of version control.
+> **Use the staging tenant for local work.** It is a separate vault, so nothing you do locally
+> touches production credentials. `TAPIS_BASE_URL` and `TAPIS_TENANT` must name the *same* tenant —
+> each has its own host — and the `/v3` suffix is required. Getting this pair wrong boots cleanly
+> and then refuses every admin with a bare 403.
+
+Keep `.env` out of version control; it is already gitignored.
+
+### Native Swift development
+
+Run PostgreSQL and Valkey locally, then:
+
+```bash
+just migrate
+swift run Insights service-token init-key   # once per deployment, before minting tokens
+just run
+```
+
+Open:
+
+- Dashboard: <http://127.0.0.1:8080/>
+- API reference: <http://127.0.0.1:8080/docs>
+- OpenAPI JSON: <http://127.0.0.1:8080/openapi.json>
+- Health: <http://127.0.0.1:8080/health> and `/ready`
 
 ### Apple Container (macOS 26+)
 
-Apple Container settings for local services live in `.env.container`; secret-provider
-credentials remain in `.env`. BuildKit is started with four CPUs and 8 GiB of memory by the
-included recipes.
+Apple Container settings for local services live in `.env.container`; credentials remain in
+`.env`. BuildKit is started with four CPUs and 8 GiB of memory by the included recipes.
 
 ```bash
-just stack
-```
-
-This creates the network and persistent volumes, starts PostgreSQL and Valkey, applies
-migrations, and launches the HTTP service, metrics worker, and single scheduler.
-
-```bash
-just stop     # remove stack containers; preserve data volumes
-just clean    # also remove the project network; preserve data volumes
+just dns              # once, before the first stack run; needs an administrator password
+just stack-scheduled  # db, valkey, migrate, app, queue worker, scheduler
+just stop             # remove stack containers; preserve data volumes
+just clean            # also remove the project network; preserve data volumes
 ```
 
 ### Docker Compose
@@ -169,43 +185,62 @@ docker compose up --scale queues=2 app queues scheduled
 
 Do not scale `scheduled` above one replica.
 
-### Native Swift development
+## Authentication
 
-Run PostgreSQL and Valkey locally, then:
+Reads are public. Writes are guarded, and two kinds of caller can authenticate:
+
+| Caller | Credential | May do |
+|---|---|---|
+| A person on the dashboard | Tapis JWT, sent as `Authorization: Bearer` | Everything, if an admin |
+| A deployed service | Webhook token this server minted | Post metrics for exactly one resource |
+
+Tapis tokens are verified locally against the tenant public key fetched at boot, so no request
+makes a round trip to Tapis. Admins are `ROOT_ADMIN_USERNAME` plus an `admins` table managed from
+the dashboard.
+
+Webhook tokens are scoped to a single resource inside the signature, expire at 90 days, and are
+revocable immediately. Rotate signing keys without downtime:
 
 ```bash
-just migrate
-just run
+swift run Insights service-token issue --resource <uuid> --label prod-inference
+swift run Insights service-token list
+swift run Insights service-token revoke --jti <uuid>
+swift run Insights service-token rotate-key    # additive; issued tokens keep working
 ```
 
-Open:
-
-- Dashboard: <http://127.0.0.1:8080/dashboard>
-- API reference: <http://127.0.0.1:8080/docs>
-- OpenAPI JSON: <http://127.0.0.1:8080/openapi.json>
+Full detail in [API authentication](docs/api-authentication.md).
 
 ## Configuration
 
 | Variable | Required | Description |
 |---|---:|---|
-| `SECRET_PROVIDER` | No | Credential backend; defaults to the currently supported `tapis` adapter |
-| `TAPIS_BASE_URL` | When `tapis` is selected | Tapis base URL, for example `https://example.tapis.io` |
-| `TAPIS_TENANT` | When `tapis` is selected | Tapis tenant identifier |
-| `TAPIS_USER` | When `tapis` is selected | Service username used for Vault calls |
-| `TAPIS_TOKEN` | When `tapis` is selected | Service access token; treat as a secret |
-| `DATABASE_HOST` | Deployment | PostgreSQL hostname; defaults to `localhost` natively |
+| `VAPOR_ENV` | Deployment | `production` in a deployment. Read by every process; unset means `development` |
+| `SECRET_PROVIDER` | No | Credential backend; defaults to `tapis` |
+| `TAPIS_BASE_URL` | Yes | Tenant base URL **including `/v3`** |
+| `TAPIS_TENANT` | Yes | Tenant ID; must match the host above |
+| `TAPIS_USER` | Yes | Service username; scopes the vault path |
+| `TAPIS_TOKEN` | Yes | Service access token; treat as a secret |
+| `ROOT_ADMIN_USERNAME` | Yes | Break-glass admin. Boot fails when empty |
+| `TOKEN_SIGNING_SECRET` | No | Vault secret holding the webhook keyset |
+| `CORS_ORIGINS` | No | Comma-separated allowlist; unset installs no CORS middleware |
+| `FRAME_ANCESTORS` | No | Origins permitted to iframe the dashboard; unset denies framing |
+| `RATE_LIMIT_PER_MINUTE` | No | Per client IP across `/api`. Default 300 |
+| `WEBHOOK_RATE_LIMIT_PER_MINUTE` | No | Per token on the webhook route. Default 60 |
+| `SLACK_WEBHOOK_URL` | No | Collection failure alerts; unset logs only |
+| `SLACK_WEBHOOK_URL_WARNINGS` | No | Optional second channel for lower-severity failures |
+| `DATABASE_HOST` | Deployment | Defaults to `localhost` natively |
 | `DATABASE_PORT` | No | Defaults to `5432` |
-| `DATABASE_NAME` | No | Production defaults to `vapor_database`; development uses `dev`; tests use `test` |
+| `DATABASE_NAME` | No | Production `vapor_database`; development `dev`; tests `test` |
 | `DATABASE_USERNAME` | No | Defaults to `vapor_username` |
 | `DATABASE_PASSWORD` | No | Defaults to `vapor_password`; replace in deployments |
 | `DATABASE_TLS` | No | Set `disable` only for the local stock PostgreSQL container |
-| `REDIS_HOST` | Deployment | Valkey/Redis hostname; defaults to `localhost` natively |
+| `REDIS_HOST` | Deployment | Defaults to `localhost` natively |
 | `REDIS_PORT` | No | Defaults to `6379` |
 | `REDIS_PASSWORD` | No | Empty for the local unauthenticated Valkey service |
-| `LOG_LEVEL` | No | `trace`, `debug`, `info`, `notice`, `warning`, `error`, or `critical` |
+| `LOG_LEVEL` | No | `trace` through `critical` |
 
-`configure.swift` selects and validates the secret adapter during application startup. The
-`tapis` adapter requires all four `TAPIS_*` values.
+`configure.swift` validates these at startup and logs the resolved values, so a misconfiguration
+is visible in the first lines of output rather than as a 403 three days later.
 
 ## Secret-provider integration
 
@@ -213,19 +248,16 @@ Platform credentials flow through `SecretProvider`, a focused interface for read
 and destroying named secrets. Collection code uses this stable application service while the
 composition root selects its adapter.
 
-`TapisClient.Vaults` provides the first adapter. Additional backends—such as HashiCorp Vault,
-cloud secret managers, or Kubernetes Secrets—can implement the same interface and participate
-through the application composition root.
+`TapisClient.Vaults` provides the first adapter. Additional backends—HashiCorp Vault, cloud
+secret managers, Kubernetes Secrets—can implement the same interface and participate through the
+application composition root.
 
-With the current Tapis adapter:
-
-1. Configure the four `TAPIS_*` variables for a dedicated service identity with minimum Vault
+1. Configure the `TAPIS_*` variables for a dedicated service identity with minimum Vault
    permissions.
 2. Create provider tokens in Tapis Vault and store only their names in Insights metadata.
 3. Never log resolved `Secret` values; the wrapper redacts descriptions and reflection output.
 
-The bundled July 2026 snapshot is ICICLE-specific and only loads in development. Any deployment
-can replace it with its own account/resource onboarding flow independently of the secret backend.
+The bundled July 2026 snapshot is ICICLE-specific and only loads in development.
 
 ## Data model
 
@@ -237,6 +269,7 @@ erDiagram
     RESOURCE ||--o{ METRIC : records
     RESOURCE ||--o{ RELEASE : publishes
     RESOURCE ||--o{ METRIC_WATERMARK : tracks
+    RESOURCE ||--o{ SERVICE_TOKEN : authorizes
 
     ACCOUNT {
         uuid id
@@ -262,6 +295,12 @@ erDiagram
         enum type
         datetime counted_through
     }
+    SERVICE_TOKEN {
+        uuid jti
+        string label
+        datetime expires_at
+        datetime revoked_at
+    }
 ```
 
 Watermarks are per resource and metric type. They record the newest completed daily value
@@ -270,13 +309,12 @@ twice. Read [Metric watermarks](docs/watermarks.md) for a visual explanation.
 
 ## API and dashboard
 
-The generated OpenAPI document at `/docs` is the source of truth for enabled routes. Current
-public functionality includes collection endpoints, account update/delete handlers, resource
-views, metric queries, the dashboard, and OpenAPI output. Several mutation routes are
-intentionally disabled until authentication and authorization are implemented.
+The generated OpenAPI document at `/docs` is the source of truth for enabled routes. Guarded
+routes carry the bearer scheme in the document.
 
-All JSON timestamps use ISO 8601. `/metrics` supports `resourceID`, `type`, and `limit` filters
-and returns newest readings first.
+All JSON timestamps use ISO 8601. `/api/metrics` supports `resourceID`, `type`, and `limit`
+filters and returns newest readings first. Every response carries an `X-Request-ID` header, which
+is worth quoting in a bug report.
 
 <div align="center">
   <img src="assets/screenshots/dashboard-metrics.png" alt="ICICLE Insights metric charts" width="900">
@@ -291,43 +329,49 @@ just fmt-check  # verify formatting without writing
 just build      # build the Apple Container application image
 ```
 
-The main implementation lives under `Sources/Insights`:
+`.env` must exist and set `DATABASE_TLS=disable` locally, or the entire suite fails during setup
+rather than in one test. See the [test reference](docs/testing.md).
 
 ```text
 Sources/Insights/
-├── Controllers/   HTTP and dashboard routes
-├── DTOs/          request and response types
-├── Migrations/    schema and development snapshot
-├── Models/        Fluent models
-├── Queues/        scheduled dispatchers, workers, and metric folds
+├── Commands/       one-shot operator commands
+├── Controllers/    HTTP boundaries and health probes
+├── DTOs/           request and response types
+├── Middlewares/    authenticators, requirements, limits, headers
+├── Migrations/     schema and development snapshot
+├── Models/         Fluent models
+├── Queues/         scheduled dispatchers, workers, and metric folds
 ├── Services/
-│   ├── Secrets/   provider-neutral credential contract and redacted value
-│   └── Tapis/     current Tapis Vault adapter
+│   ├── Admins/         who holds administrative access
+│   ├── Notifications/  failure alerting
+│   ├── Secrets/        provider-neutral credential contract
+│   ├── ServiceTokens/  webhook token issuing and signing keys
+│   └── Tapis/          Tapis Vault adapter
 └── configure.swift
 ```
 
 ## Documentation
 
 - [Introduction](docs/introduction.md) — visual orientation and recommended learning paths
-- [Developer handbook](docs/README.md) — documentation map and recommended reading order
-- [Architecture](docs/architecture.md) — components, responsibilities, lifecycles, and layout
+- [Developer handbook](docs/README.md) — documentation map and reading order
+- [Architecture](docs/architecture.md) — components, lifecycles, and layout
 - [System invariants](docs/invariants.md) — correctness rules every change must preserve
+- [API authentication](docs/api-authentication.md) — credentials, admins, webhook tokens
+- [Test reference](docs/testing.md) — what the suite covers and why it might not run
 - [Secret providers](docs/secret-providers.md) — configure, implement, test, and migrate adapters
 - [Metric collection](docs/collection.md) — snapshots, rolling windows, and retention
 - [Metric watermarks](docs/watermarks.md) — why overlapping daily windows need a bookmark
 - [Adding a job](docs/jobs.md) — registration, routing, metrics, and tests
-- [Queue workers and scheduling](docs/queue-workers.md) — schedules, scaling, containers, and
-  the current job matrix
-- [Testing collection](docs/testing-collection.md) — one-shot commands, database effects, logs,
-  and watermark behavior
+- [Queue workers and scheduling](docs/queue-workers.md) — schedules, scaling, and the job matrix
+- [Testing collection](docs/testing-collection.md) — one-shot commands and watermark behavior
 - [Troubleshooting](docs/troubleshooting.md) and [glossary](docs/glossary.md)
 
-## Security and production readiness
+## Deploying
 
-The included Compose file and Apple Container recipes are local-development tooling. Before a
-public deployment, add authentication and authorization, rotate service tokens,
-use managed secrets, enable verified TLS, restrict network exposure, configure backups, and
-monitor scheduler, queue depth, job failures, and provider rate limits.
+Before a public deployment: set `ROOT_ADMIN_USERNAME`, run `service-token init-key` against the
+production vault (staging's keyset does not carry over), point `FRAME_ANCESTORS` at any embedding
+origin, enable verified TLS, configure backups, and wire `/health` and `/ready` into your
+orchestrator. Monitor scheduler liveness, queue depth, job failures, and provider rate limits.
 
 ## License
 

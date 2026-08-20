@@ -25,7 +25,8 @@ struct SyncGitHubOrgStats: AsyncJob, BackoffRetrying {
   /// Resolves the account token, fetches followers, and updates the account snapshot.
   func dequeue(_ context: QueueContext, _ payload: GitHubAccount) async throws {
     guard let account = try await Account.find(payload.id, on: context.application.db) else {
-      throw JobError.entryNotFound(id: payload.id)
+      context.entryVanished(id: payload.id, job: Self.name)
+      return
     }
 
     guard

@@ -34,6 +34,9 @@ container_build_dns_secondary := env_var_or_default("CONTAINER_BUILD_DNS_SECONDA
 # where they appear, so the in-network DNS names always win.
 #
 # `.env` must exist: a missing --env-file is a hard error, not a skipped file. Copy .env.example.
+# `.env.container` also carries VAPOR_ENV, which every process here reads. No recipe passes
+# `--env` on a command line: that flag outranks the variable, so pinning it on `serve` alone is
+# how the stack came to hold processes disagreeing about their own environment.
 container_app_env := '--env-file .env --env-file .env.container' + \
   ' --env DATABASE_HOST=db.' + container_domain + \
   ' --env REDIS_HOST=valkey.' + container_domain
@@ -141,7 +144,7 @@ start: build
         --network '{{container_network}}' \
         --publish 127.0.0.1:{{container_host_port}}:{{container_app_port}} \
         {{container_app_env}} \
-        '{{container_image}}' serve --env production --hostname 0.0.0.0 --port '{{container_app_port}}'
+        '{{container_image}}' serve --hostname 0.0.0.0 --port '{{container_app_port}}'
 
 # Drain the metrics queue.
 queues: build

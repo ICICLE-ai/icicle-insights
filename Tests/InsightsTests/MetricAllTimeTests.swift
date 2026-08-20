@@ -34,7 +34,7 @@ struct MetricAllTimeTests {
 
   @Test
   func `Re-folding the same window counts each day once`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let id = try resource.requireID()
@@ -54,7 +54,7 @@ struct MetricAllTimeTests {
 
   @Test
   func `Today is excluded while partial and counted once complete`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let id = try resource.requireID()
@@ -81,7 +81,7 @@ struct MetricAllTimeTests {
 
   @Test
   func `A window reaching back past the watermark folds only its new tail`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let id = try resource.requireID()
@@ -111,7 +111,7 @@ struct MetricAllTimeTests {
 
   @Test
   func `No completed days leaves the total and watermark untouched`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let id = try resource.requireID()
@@ -136,7 +136,7 @@ struct MetricAllTimeTests {
   /// without erroring. `Platform.maxCollectionIntervalDays` is what keeps this from arising.
   @Test
   func `A gap longer than retention folds only what is still in the window`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let id = try resource.requireID()
@@ -167,7 +167,7 @@ struct MetricAllTimeTests {
 
   @Test
   func `Gauges keep no all-time row`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let id = try resource.requireID()
@@ -187,7 +187,7 @@ struct MetricAllTimeTests {
   /// way accumulating the rolling 30-day `downloads` would.
   @Test
   func `Setting an all-time total replaces rather than accumulates`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db, name: "icicle", platform: .huggingface)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let id = try resource.requireID()

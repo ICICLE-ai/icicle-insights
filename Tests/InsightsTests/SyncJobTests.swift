@@ -72,7 +72,7 @@ struct SyncJobTests {
 
   @Test
   func `A sweep records gauges and folds only completed traffic days`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let resource = try await makeGitHubRepo(on: app)
       let id = try resource.requireID()
 
@@ -120,7 +120,7 @@ struct SyncJobTests {
   /// next sweep, and folding it whole would re-add every shared day.
   @Test
   func `Re-running a sweep adds readings but not a double-counted total`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let resource = try await makeGitHubRepo(on: app)
       let id = try resource.requireID()
 
@@ -156,24 +156,34 @@ struct SyncJobTests {
   }
 
   @Test
-  func `A sweep for a missing resource fails with entryNotFound`() async throws {
-    try await withApp { app in
-      stubAPI(on: app, [])
+  func `A sweep for a missing resource is a no-op rather than a retried failure`() async throws {
+    try await withInsightsApp { app in
+      let requests = stubAPI(on: app, [])
 
-      let error = await thrownJobError {
-        try await SyncGitHubRepoStats().dequeue(queueContext(for: app), .init(id: UUID()))
-      }
+      // Throwing here would be retried four times across roughly ten minutes, because
+      // `QueueWorker` decides from the remaining attempt count alone and the budget is fixed at
+      // dispatch. A deleted row will not reappear, so the job completes instead.
+      try await SyncGitHubRepoStats().dequeue(queueContext(for: app), .init(id: UUID()))
 
-      guard case .entryNotFound? = error else {
-        Issue.record("expected entryNotFound, got \(String(describing: error?.description))")
-        return
-      }
+      // And it stops before spending a request on a resource it cannot describe.
+      #expect(requests.withLockedValue { $0 }.isEmpty)
+    }
+  }
+
+  @Test
+  func `A sweep for a missing account is a no-op`() async throws {
+    try await withInsightsApp { app in
+      let requests = stubAPI(on: app, [])
+
+      try await SyncGitHubOrgStats().dequeue(queueContext(for: app), .init(id: UUID()))
+
+      #expect(requests.withLockedValue { $0 }.isEmpty)
     }
   }
 
   @Test
   func `A sweep for an account without a vault fails with missingToken`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db, name: "icicle-ai", platform: .github)
       let resource = try await makeResource(
         on: app.db, accountID: try account.requireID(), name: "insights", type: .repository)
@@ -195,7 +205,7 @@ struct SyncJobTests {
   /// half-swept resource — gauges without the traffic rows that share their timestamp.
   @Test
   func `A failed traffic fetch writes no metrics at all`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let resource = try await makeGitHubRepo(on: app)
       let id = try resource.requireID()
 
@@ -223,7 +233,7 @@ struct SyncJobTests {
 
   @Test
   func `A malformed body fails with decodingFailed`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let resource = try await makeGitHubRepo(on: app)
 
       stubAPI(on: app, [.malformed("/repos/icicle-ai/insights")])
@@ -244,7 +254,7 @@ struct SyncJobTests {
 
   @Test
   func `A Hub sweep stores the rolling window and snapshots the lifetime total`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db, name: "icicle", platform: .huggingface)
       let accountID = try account.requireID()
       _ = try await makeVault(on: app.db, accountID: accountID, name: "huggingface-token")
@@ -295,7 +305,7 @@ struct SyncJobTests {
   /// the Hub's, not ours — datasets and models live under different roots.
   @Test
   func `Each repo kind is fetched from its own segment with every expanded field`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db, name: "icicle", platform: .huggingface)
       let accountID = try account.requireID()
       _ = try await makeVault(on: app.db, accountID: accountID, name: "huggingface-token")
@@ -320,10 +330,15 @@ struct SyncJobTests {
         .filter { $0.contains("huggingface.co") }
       #expect(hubURLs.count == 2)
 
+      // Compared against the percent-decoded query rather than the raw string: Vapor encodes the
+      // brackets as `%5B%5D`, which Hugging Face decodes back to `expand[]` and answers normally.
+      // Asserting on the literal brackets tests Vapor's encoding choice rather than the field set
+      // this job actually asks for, and fails without anything being wrong.
       for url in hubURLs {
-        #expect(url.contains("expand[]=downloads"))
-        #expect(url.contains("expand[]=downloadsAllTime"))
-        #expect(url.contains("expand[]=likes"))
+        let decoded = url.removingPercentEncoding ?? url
+        #expect(decoded.contains("expand[]=downloads"))
+        #expect(decoded.contains("expand[]=downloadsAllTime"))
+        #expect(decoded.contains("expand[]=likes"))
       }
       #expect(hubURLs.contains { $0.contains("/api/models/icicle/insights") })
       #expect(hubURLs.contains { $0.contains("/api/datasets/icicle/corpus") })
@@ -334,7 +349,7 @@ struct SyncJobTests {
 
   @Test
   func `Org followers are written back from the plural orgs endpoint`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(
         on: app.db, name: "icicle-ai", platform: .github, followers: 10)
       let accountID = try account.requireID()
@@ -353,7 +368,7 @@ struct SyncJobTests {
 
   @Test
   func `An unchanged follower count leaves the account untouched`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(
         on: app.db, name: "icicle-ai", platform: .github, followers: 42)
       let accountID = try account.requireID()

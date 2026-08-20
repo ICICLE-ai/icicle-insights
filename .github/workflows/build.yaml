@@ -3,18 +3,76 @@ name: build
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     tags: ["v*"]
+  # `dev` is where work actually integrates — PR #10 targeted it, and `main` trails behind. Tests
+  # that only run against `main` would first see a regression at release, which is the one moment
+  # nobody wants to be debugging it.
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 permissions:
   contents: write
   packages: write
 
 jobs:
+  test:
+    runs-on: ubuntu-24.04
+    container: swift:6.3-noble
+
+    services:
+      # The suite always targets the `test` database — configure.swift hardcodes it for
+      # `.testing`, so a stray run can never reach dev or production data.
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: vapor_username
+          POSTGRES_PASSWORD: vapor_password
+          POSTGRES_DB: test
+        options: >-
+          --health-cmd "pg_isready -U vapor_username -d test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      valkey:
+        image: valkey/valkey:9-alpine
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+
+    env:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_USERNAME: vapor_username
+      DATABASE_PASSWORD: vapor_password
+      # The stock Postgres image serves no TLS. Without this every connection fails
+      # `sslUnsupported`, which looks like a code fault rather than configuration.
+      DATABASE_TLS: disable
+      REDIS_HOST: valkey
+      REDIS_PORT: "6379"
+      # TapisConfig.fromEnvironment() throws on any missing value, and it runs inside
+      # `configure`, so absent variables fail every test in setup rather than one.
+      TAPIS_BASE_URL: https://icicleai.staging.tapis.io/v3
+      TAPIS_TENANT: icicleai
+      TAPIS_USER: ci
+      # Deliberately not a JWT. The handful of vault tests that write real secrets detect
+      # credentials by shape and skip themselves; a real token would expire within hours and
+      # turn this job red for reasons unrelated to the change under test.
+      TAPIS_TOKEN: ci-placeholder-not-a-jwt
+      ROOT_ADMIN_USERNAME: ci-root-admin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: swift build --build-tests
+
+      # Serial because every suite shares the one `test` database and runs its own
+      # migrate/revert, so overlapping suites revert the schema out from under each other.
+      - name: Test
+        run: swift test --no-parallel
+
   docker:
     runs-on: ubuntu-24.04
+    needs: [test]
 
     steps:
       - uses: actions/checkout@v4
@@ -57,12 +115,16 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
+      # The image builds a binary named `Insights` — SwiftPM names it after the product, and the
+      # Dockerfile's ENTRYPOINT is ["./Insights"]. Copying `/app/icicle-insights` failed every
+      # tagged release. Renamed on the way out so the published asset keeps its existing name.
       - name: Extract binary from image
         run: |
           docker pull ghcr.io/icicle-ai/insights:${{ github.sha }}
           id=$(docker create ghcr.io/icicle-ai/insights:${{ github.sha }})
-          docker cp $id:/app/icicle-insights ./icicle-insights
+          docker cp $id:/app/Insights ./icicle-insights
           docker rm $id
+          test -s ./icicle-insights
 
       - name: Create tarball
         run: tar -czf icicle-insights-linux-amd64.tar.gz icicle-insights

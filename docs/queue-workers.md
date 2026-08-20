@@ -32,20 +32,35 @@ flowchart LR
     S[One scheduler container]
     R[CollectDueResources<br/>hourly due scan]
     A[CollectAccountStats<br/>monthly]
+    E[WarnExpiringServiceTokens<br/>daily, alerts inline]
     Q[(Valkey: metrics)]
     W1[metrics worker 1]
     W2[metrics worker N]
     J[Registered sync jobs]
+    N[FailureNotifier]
 
     S --> R
     S --> A
+    S --> E
     R --> Q
     A --> Q
+    E --> N
     Q --> W1
     Q --> W2
     W1 --> J
     W2 --> J
 ```
+
+### When a job's subject has been deleted
+
+A job whose resource or account no longer exists logs at `notice` and returns, rather than
+throwing. `QueueWorker` decides whether to retry from the remaining attempt count alone — there is
+no per-error hook, and the retry budget is fixed at dispatch — so a thrown error would be retried
+four times across roughly ten minutes to rediscover a row that is gone.
+
+A deleted subject is not a failure the job can recover from; it is work that no longer needs
+doing. The usual cause is a resource deleted between dispatch and execution, occasionally a queued
+payload outliving the database state that produced it.
 
 Scheduled jobs stay small: they query for work and enqueue typed jobs. Workers own remote API
 requests, so a slow synchronization cannot delay the scheduler's next tick.
@@ -66,6 +81,7 @@ to the `metrics` queue.
 | GitHub accounts | `CollectAccountStats` | First day of every month at 03:00; every GitHub account is eligible because accounts have no `nextCollectionAt`. | `SyncGitHubOrgStats` | `metrics` / `queues --queue metrics` | Followers are a current-value snapshot. No watermark or resource interval applies. |
 | GHCR resources | Planned | Awaiting schedule and dispatch routing. | `SyncGHCRStats` prototype | Queue pending | Activation requires registration, routing, tests, and a queue decision for the HTML-scraping workload. |
 | npm resources | None | Not scheduled; `dispatchSync` logs and skips them. | None | None | No collection implementation yet. |
+| Webhook token expiry | `WarnExpiringServiceTokens` | Daily at 07:00; warns at 14, 7, 3, and 1 days remaining. | None — alerts inline | Scheduler only | Writes nothing. Queries live, unexpired tokens and calls `FailureNotifier`; critical at 3 days or fewer, warning above that. |
 | PyPI resources | None | Not scheduled; `dispatchSync` logs and skips them. | None | None | No collection implementation yet. |
 
 The hourly resource schedule is a due-work scanner. After a successful dispatch,

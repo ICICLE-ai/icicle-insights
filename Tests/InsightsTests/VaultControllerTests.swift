@@ -7,9 +7,11 @@ import VaporTesting
 
 @Suite("Vault Controller", .serialized)
 struct VaultControllerTests {
-  @Test
+  /// Writes and destroys a real secret, so it needs live Tapis credentials. Skipped rather
+  /// than failed when none are configured — see `hasLiveTapisCredentials`.
+  @Test(.enabled(if: hasLiveTapisCredentials))
   func `Create lowercases the name`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let payload = Vault.Create(
         name: "GitHub-Token",
@@ -20,7 +22,8 @@ struct VaultControllerTests {
 
       try await app.testing().test(
         .POST,
-        "vaults",
+        "api/vaults",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .created)
@@ -34,7 +37,7 @@ struct VaultControllerTests {
 
   @Test
   func `Create with missing account is a bad request`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let payload = Vault.Create(
         name: "github-token",
         token: "ghp_example",
@@ -44,7 +47,8 @@ struct VaultControllerTests {
 
       try await app.testing().test(
         .POST,
-        "vaults",
+        "api/vaults",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -57,7 +61,7 @@ struct VaultControllerTests {
 
   @Test
   func `Create maps an upstream 5xx to 502`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       stubTapis(on: app, status: .serviceUnavailable)
       let account = try await makeAccount(on: app.db)
       let payload = Vault.Create(
@@ -69,7 +73,8 @@ struct VaultControllerTests {
 
       try await app.testing().test(
         .POST,
-        "vaults",
+        "api/vaults",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badGateway)
@@ -80,7 +85,7 @@ struct VaultControllerTests {
 
   @Test
   func `Create maps an upstream 4xx to 500`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       stubTapis(on: app, status: .unauthorized)
       let account = try await makeAccount(on: app.db)
       let payload = Vault.Create(
@@ -92,7 +97,8 @@ struct VaultControllerTests {
 
       try await app.testing().test(
         .POST,
-        "vaults",
+        "api/vaults",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .internalServerError)
@@ -103,7 +109,7 @@ struct VaultControllerTests {
 
   @Test
   func `Create rolls back the vault row when the secret write fails`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       stubTapis(on: app, status: .serviceUnavailable)
       let account = try await makeAccount(on: app.db)
       let payload = Vault.Create(
@@ -115,7 +121,8 @@ struct VaultControllerTests {
 
       try await app.testing().test(
         .POST,
-        "vaults",
+        "api/vaults",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badGateway)
@@ -128,7 +135,7 @@ struct VaultControllerTests {
 
   @Test
   func `Index returns all vaults`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let first = try await makeAccount(on: app.db, name: "alpha")
       let second = try await makeAccount(on: app.db, name: "beta", platform: .npm)
       _ = try await makeVault(on: app.db, accountID: try first.requireID(), name: "alpha-token")
@@ -136,7 +143,8 @@ struct VaultControllerTests {
 
       try await app.testing().test(
         .GET,
-        "vaults",
+        "api/vaults",
+        headers: app.adminAuth,
         afterResponse: { res async throws in
           #expect(res.status == .ok)
           let names = try res.content.decode([Vault.Public].self).compactMap(\.name).sorted()
@@ -148,14 +156,15 @@ struct VaultControllerTests {
 
   @Test
   func `Show vault by ID`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let vault = try await makeVault(on: app.db, accountID: try account.requireID())
       let vaultID = try vault.requireID()
 
       try await app.testing().test(
         .GET,
-        "vaults/\(vaultID)",
+        "api/vaults/\(vaultID)",
+        headers: app.adminAuth,
         afterResponse: { res async throws in
           #expect(res.status == .ok)
           let returned = try res.content.decode(Vault.Public.self)
@@ -165,9 +174,11 @@ struct VaultControllerTests {
     }
   }
 
-  @Test
+  /// Writes and destroys a real secret, so it needs live Tapis credentials. Skipped rather
+  /// than failed when none are configured — see `hasLiveTapisCredentials`.
+  @Test(.enabled(if: hasLiveTapisCredentials))
   func `Update sets the expiration date`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let vault = try await makeVault(on: app.db, accountID: try account.requireID())
 
@@ -175,7 +186,8 @@ struct VaultControllerTests {
       let update = Vault.Update(token: "ghp_rotated", expires: expires)
       try await app.testing().test(
         .PATCH,
-        "vaults/\(vault.requireID())",
+        "api/vaults/\(vault.requireID())",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(update) },
         afterResponse: { res async throws in
           #expect(res.status == .ok)
@@ -193,7 +205,7 @@ struct VaultControllerTests {
 
   @Test
   func `Create rejects a blank name`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let payload = Vault.Create(
         name: "   ",
@@ -204,7 +216,8 @@ struct VaultControllerTests {
 
       try await app.testing().test(
         .POST,
-        "vaults",
+        "api/vaults",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -217,7 +230,7 @@ struct VaultControllerTests {
 
   @Test
   func `Create rejects a blank token`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let payload = Vault.Create(
         name: "github-token",
@@ -228,7 +241,8 @@ struct VaultControllerTests {
 
       try await app.testing().test(
         .POST,
-        "vaults",
+        "api/vaults",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -241,7 +255,7 @@ struct VaultControllerTests {
 
   @Test
   func `Create rejects an out of range expiration day`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let payload = Vault.Create(
         name: "github-token",
@@ -252,7 +266,8 @@ struct VaultControllerTests {
 
       try await app.testing().test(
         .POST,
-        "vaults",
+        "api/vaults",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -265,7 +280,7 @@ struct VaultControllerTests {
 
   @Test
   func `Create rejects an expiration in the past`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let payload = Vault.Create(
         name: "github-token",
@@ -276,7 +291,8 @@ struct VaultControllerTests {
 
       try await app.testing().test(
         .POST,
-        "vaults",
+        "api/vaults",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -289,7 +305,7 @@ struct VaultControllerTests {
 
   @Test
   func `Create rejects a duplicate name for the same account`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       _ = try await makeVault(on: app.db, accountID: try account.requireID(), name: "github-token")
 
@@ -302,7 +318,8 @@ struct VaultControllerTests {
 
       try await app.testing().test(
         .POST,
-        "vaults",
+        "api/vaults",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .conflict)
@@ -315,14 +332,15 @@ struct VaultControllerTests {
 
   @Test
   func `Update rejects a blank token`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let vault = try await makeVault(on: app.db, accountID: try account.requireID())
 
       let update = Vault.Update(token: " ", expires: futureExpires())
       try await app.testing().test(
         .PATCH,
-        "vaults/\(vault.requireID())",
+        "api/vaults/\(vault.requireID())",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(update) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -335,7 +353,7 @@ struct VaultControllerTests {
 
   @Test
   func `Update rejects an expiration in the past`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let vault = try await makeVault(on: app.db, accountID: try account.requireID())
 
@@ -343,7 +361,8 @@ struct VaultControllerTests {
         token: "ghp_rotated", expires: Vault.Expires(day: 1, month: 1, year: 1999))
       try await app.testing().test(
         .PATCH,
-        "vaults/\(vault.requireID())",
+        "api/vaults/\(vault.requireID())",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(update) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -354,15 +373,18 @@ struct VaultControllerTests {
     }
   }
 
-  @Test
+  /// Writes and destroys a real secret, so it needs live Tapis credentials. Skipped rather
+  /// than failed when none are configured — see `hasLiveTapisCredentials`.
+  @Test(.enabled(if: hasLiveTapisCredentials))
   func `Delete vault`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let vault = try await makeVault(on: app.db, accountID: try account.requireID())
 
       try await app.testing().test(
         .DELETE,
-        "vaults/\(vault.requireID())",
+        "api/vaults/\(vault.requireID())",
+        headers: app.adminAuth,
         afterResponse: { res async throws in
           #expect(res.status == .noContent)
           let model = try await Vault.find(vault.id, on: app.db)

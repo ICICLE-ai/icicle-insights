@@ -1,8 +1,7 @@
 import Vapor
 import VaporToOpenAPI
 
-/// Serves the generated OpenAPI document and a Scalar-based reference UI.
-/// Generates the OpenAPI document and registers its JSON and Scalar UI endpoints.
+/// Registers the generated OpenAPI document and its Scalar reference UI.
 ///
 /// - Parameter app: The application whose annotated routes describe the API document.
 /// - Throws: An error when the document or documentation routes cannot be registered.
