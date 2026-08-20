@@ -2,7 +2,7 @@
 
 What the suite covers, how the harness works, and which tests need credentials.
 
-**158 tests across 13 suites.** Everything lives in `Tests/InsightsTests/`.
+**166 tests across 14 suites.** Everything lives in `Tests/InsightsTests/`.
 
 ```bash
 just test          # swift test --no-parallel
@@ -18,7 +18,8 @@ test — which reads like the code is broken when it is not:
 - **`DATABASE_TLS=disable`** against the local Postgres container, which serves no TLS. Without it
   every connection fails with `PSQLError(code: sslUnsupported)`.
 
-Dummy Tapis values are fine for all but three tests — see [Live credentials](#live-credentials).
+Dummy Tapis values are fine throughout: the three tests that need real ones skip themselves — see
+[Live credentials](#live-credentials).
 
 ## Why the suite is serial
 
@@ -140,6 +141,16 @@ Minting over HTTP returns the token exactly once and it works; revoking stops it
 retained as the audit trail. Non-admins, webhook tokens, and anonymous callers are all refused —
 a leaked token must not become a credential-minting oracle.
 
+### Service token expiry warnings — 8 tests
+
+The daily sweep that warns before a webhook token lapses. Each threshold (14, 7, 3, 1 days) fires
+exactly once; a token between thresholds stays quiet, which is the point — alerting every day for a
+fortnight is how a channel gets muted. Revoked and already-expired tokens are excluded, urgency
+escalates to `critical` at three days, and the alert names the resource and the reissue command.
+
+The rounding test is the subtle one: 6.4 days truncates to 6, which is not a threshold, so a token
+squarely inside the 7-day window would be skipped entirely. Remaining days round *up*.
+
 ### Vault Controller — 16 tests
 
 Name normalisation, validation (blank name and token, expiry range and past dates, duplicate name
@@ -188,8 +199,13 @@ fail usefully:
 - `Delete vault`
 
 They **write and destroy real secrets**, so point `.env` at the staging tenant
-(`https://icicleai.staging.tapis.io/v3`, tenant `icicleai`) rather than production. With dummy
-credentials they fail with 500s and everything else still passes.
+(`https://icicleai.staging.tapis.io/v3`, tenant `icicleai`) rather than production.
+
+They carry `.enabled(if: hasLiveTapisCredentials)` and **skip** rather than fail when no usable
+token is configured. Detection is by shape — every Tapis token is a JWT, no placeholder is — so it
+needs no configuration in either direction: point `.env` at staging and they run; leave the token
+blank and they skip. Before this they failed with 500s wherever credentials were absent, which is
+indistinguishable from a genuine regression and made CI impossible.
 
 Tapis tokens are short-lived. A batch of otherwise-inexplicable vault failures usually means the
 token expired.
@@ -202,6 +218,7 @@ token expired.
   restart proves the retired key was persisted. Exercised by hand — see `TODO.md` §7.
 - **The scheduler's clocks.** Jobs are driven directly through `queueContext`; that `.hourly()` and
   `.monthly()` are wired correctly is not asserted.
-- **CI.** `.github/workflows/build.yaml` builds the image and never runs `swift test`.
+- **A real rotation in CI.** The workflow runs with a placeholder token, so anything needing live
+  Tapis skips there.
 
 #icicle-insights# #testing# #developer-documentation#

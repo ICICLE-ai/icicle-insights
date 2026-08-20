@@ -173,6 +173,20 @@ extension Application {
 
 }
 
+/// Whether `TAPIS_TOKEN` holds something that could actually authenticate.
+///
+/// A handful of `VaultControllerTests` reach a real Tapis Vault, because the adapter needs real
+/// credentials even to fail usefully — they write and destroy secrets rather than asserting
+/// against a stub. Without this they fail with 500s wherever no token is configured, which is
+/// indistinguishable from a genuine regression and makes the suite unusable in CI.
+///
+/// Detected by shape rather than by an opt-in variable so it needs no configuration in either
+/// direction: every Tapis token is a JWT, and no placeholder is. Point `.env` at the staging
+/// tenant and they run; leave the token blank and they skip.
+var hasLiveTapisCredentials: Bool {
+  (Environment.get("TAPIS_TOKEN") ?? "").hasPrefix("eyJ")
+}
+
 /// The HMAC secret webhook tokens are signed with in tests. Fixed rather than generated so a
 /// failing assertion is readable.
 let testSigningKey = "test-webhook-signing-key-not-a-real-secret"

@@ -224,6 +224,11 @@ func configure(_ app: Application) async throws {
   app.queues.schedule(CollectDueResources()).hourly().at(0)
   app.queues.schedule(CollectAccountStats()).monthly().on(.first).at(3, 0)
 
+  // Daily, and the cadence is what makes the thresholds work: each fires once as a token's
+  // remaining days pass through it. Early morning, so a warning is waiting at the start of a
+  // working day rather than arriving in the middle of one.
+  app.queues.schedule(WarnExpiringServiceTokens()).daily().at(7, 0)
+
   // One-shot equivalents for local testing and operator-initiated backfills. They invoke the
   // same scheduled job types without changing or waiting for the production clocks above.
   app.asyncCommands.use(CollectResourcesNowCommand(), as: "collect-resources")

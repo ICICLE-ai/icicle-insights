@@ -120,8 +120,13 @@ The token value is shown exactly once. Nothing persists it and no route reads it
 is revoked and reissued. Minting for a resource that already has a live token revokes the old one
 in the same transaction.
 
-Tokens expire at 90 days. **Nothing currently warns before that happens** — a service's metrics
-simply stop arriving. Until a warning sweep exists, `service-token list` is the way to check.
+Tokens expire at 90 days. `WarnExpiringServiceTokens` sweeps daily at 07:00 and alerts at 14, 7,
+3, and 1 days remaining — `warning` above three days, `critical` at or below. Fixed thresholds
+rather than "anything under a fortnight", so a token does not alert every day for two weeks, which
+is how a channel gets muted.
+
+Alerts go wherever `FailureNotifier` points; with no Slack webhook configured they are log lines
+at `warning`. `service-token list` shows expiry dates directly.
 
 ## Embedding the dashboard
 
@@ -145,7 +150,6 @@ only contradict the CSP.
 - **Queue depth** on `metrics`. Sustained growth means workers cannot keep up.
 - **`critical` log lines.** Credential failures and the missing-keyset warning are both critical.
 - **Provider rate limits.** GitHub and Hugging Face both throttle.
-- **Webhook token expiry**, until an automated warning exists.
 
 Failures that exhaust their retries reach Slack when `SLACK_WEBHOOK_URL` is set; unset, they stay
 in the log. `SLACK_WEBHOOK_URL_WARNINGS` optionally splits lower-severity failures into a second
@@ -158,11 +162,17 @@ An inbound `X-Request-ID` is honoured, so a caller can correlate across both sid
 over-long or contain anything outside `[A-Za-z0-9_-]` are replaced, because the header reaches log
 metadata verbatim.
 
+## Continuous integration
+
+`.github/workflows/build.yaml` runs `test` → `docker` → `release`. The test job brings up Postgres
+and Valkey as services and runs the suite serially against them.
+
+It sets `TAPIS_TOKEN` to a deliberate non-JWT placeholder. The vault tests that write real secrets
+detect credentials by shape and skip themselves, because a real token would expire within hours and
+turn the job red for reasons unrelated to the change under test.
+
 ## Known gaps
 
-- **No CI test run.** `.github/workflows/build.yaml` builds the image and never runs `swift test`.
-- **The release job is broken.** It copies `/app/icicle-insights`, but the Dockerfile builds
-  `Insights`, so any `v*` tag fails.
 - **No CSP beyond `frame-ancestors`.** A full policy waits on the frontend's asset origins. The
   Leaf dashboard and the Scalar API reference both load scripts from jsdelivr, which a policy will
   need to allow or which should be vendored.

@@ -138,10 +138,12 @@ tenant `icicleai.staging.tapis.io` — a separate vault, so none of it touched p
 
 ### 8. Known gaps
 
-- [ ] **Nothing warns before a webhook token expires.** At 90 days a service's metrics simply
-      stop arriving, with no error anyone sees. `SlackNotifier` already exists; a scheduled sweep
-      warning at ~14 days out is small and prevents a class of "why did that chart stop in
-      November" investigations.
+- [x] **Webhook token expiry warnings** — `WarnExpiringServiceTokens`, daily at 07:00, alerting at
+      14, 7, 3, and 1 days remaining through the existing `FailureNotifier`. Fixed thresholds
+      rather than "anything under a fortnight", so a token does not alert daily for two weeks and
+      get itself muted. Critical at three days or fewer. Revoked and already-lapsed tokens are
+      excluded; remaining days round up, or a token at 6.4 days would fall between thresholds and
+      never warn at all.
 - [x] `SyncJobTests` percent-encoding — fixed. The code was right and the test was wrong: Vapor
       encodes `[]` as `%5B%5D`, which Hugging Face decodes and answers normally. The assertion was
       testing Vapor's encoding choice rather than the field set requested, so it now compares

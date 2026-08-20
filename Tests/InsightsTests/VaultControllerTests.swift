@@ -7,7 +7,9 @@ import VaporTesting
 
 @Suite("Vault Controller", .serialized)
 struct VaultControllerTests {
-  @Test
+  /// Writes and destroys a real secret, so it needs live Tapis credentials. Skipped rather
+  /// than failed when none are configured — see `hasLiveTapisCredentials`.
+  @Test(.enabled(if: hasLiveTapisCredentials))
   func `Create lowercases the name`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
@@ -172,7 +174,9 @@ struct VaultControllerTests {
     }
   }
 
-  @Test
+  /// Writes and destroys a real secret, so it needs live Tapis credentials. Skipped rather
+  /// than failed when none are configured — see `hasLiveTapisCredentials`.
+  @Test(.enabled(if: hasLiveTapisCredentials))
   func `Update sets the expiration date`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
@@ -369,7 +373,9 @@ struct VaultControllerTests {
     }
   }
 
-  @Test
+  /// Writes and destroys a real secret, so it needs live Tapis credentials. Skipped rather
+  /// than failed when none are configured — see `hasLiveTapisCredentials`.
+  @Test(.enabled(if: hasLiveTapisCredentials))
   func `Delete vault`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
