@@ -3,10 +3,13 @@ name: build
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     tags: ["v*"]
+  # `dev` is where work actually integrates — PR #10 targeted it, and `main` trails behind. Tests
+  # that only run against `main` would first see a regression at release, which is the one moment
+  # nobody wants to be debugging it.
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 permissions:
   contents: write
