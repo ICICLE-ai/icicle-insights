@@ -70,14 +70,20 @@ Sources/Insights/
 ├── Middlewares/     authenticators, Require, rate limits, headers, request IDs
 ├── Migrations/      PostgreSQL schema and development snapshot
 ├── Models/          Fluent domain persistence
-├── Queues/          dispatchers, workers, routing, watermark folds
+├── Queues/          scheduled sweeps, queue jobs, routing, watermark folds
 ├── Services/
+│   ├── Admins/         who holds administrative access
 │   ├── Notifications/  FailureNotifier contract, Slack and noop adapters
 │   ├── Secrets/        provider-neutral protocol, redacted value, app storage
-│   ├── ServiceTokens/  webhook token claims and the mint/revoke/list issuer
+│   ├── ServiceTokens/  webhook token claims, signing keyset, mint/revoke/list
 │   └── Tapis/          current Tapis Vault adapter and tenant key fetch
 └── configure.swift  composition root
 ```
+
+`Middlewares/` holds things that conform to `AsyncMiddleware` or `AsyncBearerAuthenticator`, plus
+the `Authenticatable` identities they produce. Anything that merely hangs off `Application` belongs
+with the domain it serves — signing-key lifecycle sits beside the issuer that uses it, and admin
+resolution beside the model it reads — because that is where someone looks for it.
 
 Read [invariants.md](invariants.md) before changing interactions between these components.
 
