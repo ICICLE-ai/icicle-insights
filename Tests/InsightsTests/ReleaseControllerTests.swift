@@ -9,7 +9,7 @@ import VaporTesting
 struct ReleaseControllerTests {
   @Test
   func `Create derives releasedAt from month and year`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let payload = Release.Create(
@@ -17,7 +17,8 @@ struct ReleaseControllerTests {
 
       try await app.testing().test(
         .POST,
-        "releases",
+        "api/releases",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .created)
@@ -35,7 +36,7 @@ struct ReleaseControllerTests {
 
   @Test
   func `Create rejects a blank version`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let payload = Release.Create(
@@ -43,7 +44,8 @@ struct ReleaseControllerTests {
 
       try await app.testing().test(
         .POST,
-        "releases",
+        "api/releases",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -56,7 +58,7 @@ struct ReleaseControllerTests {
 
   @Test
   func `Create rejects an out of range month`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let payload = Release.Create(
@@ -64,7 +66,8 @@ struct ReleaseControllerTests {
 
       try await app.testing().test(
         .POST,
-        "releases",
+        "api/releases",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -77,7 +80,7 @@ struct ReleaseControllerTests {
 
   @Test
   func `Create rejects an out of range year`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let payload = Release.Create(
@@ -85,7 +88,8 @@ struct ReleaseControllerTests {
 
       try await app.testing().test(
         .POST,
-        "releases",
+        "api/releases",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -98,12 +102,13 @@ struct ReleaseControllerTests {
 
   @Test
   func `Create with missing resource is a bad request`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let payload = Release.Create(version: "1.0.0", month: 7, year: 2026, resourceID: UUID())
 
       try await app.testing().test(
         .POST,
-        "releases",
+        "api/releases",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -116,7 +121,7 @@ struct ReleaseControllerTests {
 
   @Test
   func `Index returns all releases`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let resourceID = try resource.requireID()
@@ -125,7 +130,7 @@ struct ReleaseControllerTests {
 
       try await app.testing().test(
         .GET,
-        "releases",
+        "api/releases",
         afterResponse: { res async throws in
           #expect(res.status == .ok)
           let versions = try res.content.decode([Release.Public].self).compactMap(\.version)
@@ -138,7 +143,7 @@ struct ReleaseControllerTests {
 
   @Test
   func `Show release by ID`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let release = try await makeRelease(on: app.db, resourceID: try resource.requireID())
@@ -146,7 +151,7 @@ struct ReleaseControllerTests {
 
       try await app.testing().test(
         .GET,
-        "releases/\(releaseID)",
+        "api/releases/\(releaseID)",
         afterResponse: { res async throws in
           #expect(res.status == .ok)
           let returned = try res.content.decode(Release.Public.self)
@@ -158,14 +163,15 @@ struct ReleaseControllerTests {
 
   @Test
   func `Delete release`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let release = try await makeRelease(on: app.db, resourceID: try resource.requireID())
 
       try await app.testing().test(
         .DELETE,
-        "releases/\(release.requireID())",
+        "api/releases/\(release.requireID())",
+        headers: app.adminAuth,
         afterResponse: { res async throws in
           #expect(res.status == .noContent)
           let model = try await Release.find(release.id, on: app.db)

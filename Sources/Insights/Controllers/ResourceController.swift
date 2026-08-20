@@ -3,7 +3,9 @@ import Queues
 import Vapor
 import VaporToOpenAPI
 
+/// Serves resource catalog endpoints and dispatches collection when a resource is created.
 struct ResourceController: RouteCollection {
+  /// Mounts resource routes under `/resources`.
   func boot(routes: any RoutesBuilder) throws {
     let resources = routes.grouped("resources")
 
@@ -13,16 +15,15 @@ struct ResourceController: RouteCollection {
         summary: "List resources",
         response: .type([Resource.Public].self),
       )
-    // Mutating routes stay disabled until auth middleware protects them. The handlers
-    // below are kept intact so re-enabling is just uncommenting the registrations.
-    // resources.post(use: create)
-    //     .openAPI(
-    //         tags: "Resources",
-    //         summary: "Create resource",
-    //         body: .type(Resource.Create.self),
-    //         response: .type(Resource.Public.self),
-    //         statusCode: 201,
-    //     )
+    resources.grouped(Require.admin).post(use: create)
+      .openAPI(
+        tags: "Resources",
+        summary: "Create resource",
+        body: .type(Resource.Create.self),
+        response: .type(Resource.Public.self),
+        statusCode: 201,
+        auth: .bearer(),
+      )
     resources.group(":resourceID") { resource in
       resource.get(use: show)
         .openAPI(
@@ -30,21 +31,24 @@ struct ResourceController: RouteCollection {
           summary: "Get resource by ID",
           response: .type(Resource.Public.self),
         )
-      // resource.delete(use: delete)
-      //     .openAPI(
-      //         tags: "Resources",
-      //         summary: "Delete resource",
-      //         statusCode: 204,
-      //     )
+      resource.grouped(Require.admin).delete(use: delete)
+        .openAPI(
+          tags: "Resources",
+          summary: "Delete resource",
+          statusCode: 204,
+          auth: .bearer(),
+        )
     }
   }
 
   @Sendable
+  /// Lists all active resources.
   func index(req: Request) async throws -> [Resource.Public] {
     try await Resource.query(on: req.db).all().map { $0.toPublic() }
   }
 
   @Sendable
+  /// Creates, immediately collects, and schedules a resource under an existing account.
   func create(req: Request) async throws -> Response {
     let resource = try req.content.decode(Resource.Create.self).toModel()
 
@@ -79,6 +83,7 @@ struct ResourceController: RouteCollection {
   }
 
   @Sendable
+  /// Returns one resource by identifier.
   func show(req: Request) async throws -> Resource.Public {
     guard let resource = try await Resource.find(req.parameters.get("resourceID"), on: req.db)
     else {
@@ -89,6 +94,7 @@ struct ResourceController: RouteCollection {
   }
 
   @Sendable
+  /// Soft-deletes a resource and its future collection eligibility.
   func delete(req: Request) async throws -> HTTPStatus {
     guard let resource = try await Resource.find(req.parameters.get("resourceID"), on: req.db)
     else {

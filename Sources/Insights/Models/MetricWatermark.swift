@@ -15,9 +15,11 @@ final class MetricWatermark: Model, @unchecked Sendable {
   var id: UUID?
 
   @Parent(key: "resource_id")
+  /// Resource whose rolling metric progress is tracked.
   var resource: Resource
 
   @Enum(key: "type")
+  /// Rolling metric type tracked independently from other metrics.
   var type: MetricType
 
   /// Newest completed day already folded in. Days after it have not been counted.
@@ -32,6 +34,7 @@ final class MetricWatermark: Model, @unchecked Sendable {
 
   init() {}
 
+  /// Creates the counted-through bookmark for one resource and rolling metric type.
   init(
     id: UUID? = nil,
     resourceID: Resource.IDValue,

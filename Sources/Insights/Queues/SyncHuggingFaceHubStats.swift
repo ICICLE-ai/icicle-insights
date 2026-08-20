@@ -3,10 +3,12 @@ import Foundation
 import Queues
 import Vapor
 
+/// Minimal queue payload identifying the Hugging Face resource to synchronize.
 struct HuggingFaceResource: Codable {
   let id: UUID
 }
 
+/// Snapshot and lifetime fields returned by the Hugging Face Hub API.
 struct HuggingFaceRepoStatsResponse: Content {
   /// Trailing 30 days, not a lifetime figure — the Hub reports it as a rolling window.
   let downloads: Int
@@ -16,10 +18,19 @@ struct HuggingFaceRepoStatsResponse: Content {
   let likes: Int
 }
 
-struct SyncHuggingFaceHubStats: AsyncJob {
+/// Synchronizes rolling and lifetime Hub statistics for one resource.
+struct SyncHuggingFaceHubStats: AsyncJob, BackoffRetrying {
   let baseUrl = "https://huggingface.co/api"
   typealias Payload = HuggingFaceResource
 
+  /// Called once the retry budget is spent, never before.
+  func error(_ context: QueueContext, _ error: any Error, _ payload: HuggingFaceResource)
+    async throws
+  {
+    await context.reportResourceSyncFailure(error, job: Self.name, resourceID: payload.id)
+  }
+
+  /// Resolves credentials, fetches Hub statistics, and persists a coherent snapshot.
   func dequeue(_ context: QueueContext, _ payload: HuggingFaceResource) async throws {
     guard
       let resource = try await Resource.query(on: context.application.db)
@@ -27,7 +38,8 @@ struct SyncHuggingFaceHubStats: AsyncJob {
         .with(\.$account)
         .first()
     else {
-      throw JobError.entryNotFound(id: payload.id)
+      context.entryVanished(id: payload.id, job: Self.name)
+      return
     }
 
     guard
@@ -38,13 +50,14 @@ struct SyncHuggingFaceHubStats: AsyncJob {
       throw JobError.missingToken(id: resource.$account.id)
     }
 
-    let token = try await context.application.tapis.vaults.readSecret(named: vault.name)
+    let token = try await context.application.secrets.readSecret(named: vault.name)
     let headers = HTTPHeaders([
       ("Accept", "application/json"),
       ("Authorization", "Bearer \(token.getSecretValue())"),
     ])
     let stats = try await fetchRepoStats(
-      context, owner: resource.account.name, name: resource.name, kind: resource.type, headers: headers)
+      context, owner: resource.account.name, name: resource.name, kind: resource.type,
+      headers: headers)
 
     let resourceID = try resource.requireID()
     let metrics = [
@@ -64,6 +77,7 @@ struct SyncHuggingFaceHubStats: AsyncJob {
     )
   }
 
+  /// Fetches expanded rolling downloads, lifetime downloads, and likes from the Hub API.
   func fetchRepoStats(
     _ context: QueueContext,
     owner: String,
@@ -84,10 +98,7 @@ struct SyncHuggingFaceHubStats: AsyncJob {
     }
 
     guard response.status == .ok else {
-      throw JobError.apiRequestFailed(
-        url: url.string,
-        statusCode: Int(response.status.code)
-      )
+      throw JobError.apiRequestFailed(url: url, response: response)
     }
 
     do {

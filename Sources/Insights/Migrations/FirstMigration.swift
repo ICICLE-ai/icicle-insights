@@ -2,7 +2,9 @@ import Fluent
 import FluentSQL
 import SQLKit
 
+/// Creates the initial account, resource, metric, release, and Vault schema.
 struct FirstMigration: AsyncMigration {
+  /// Creates enums, tables, constraints, and indexes for the core data model.
   func prepare(on database: any Database) async throws {
     // Create Enums
     _ = try await database.enum("platform")
@@ -106,6 +108,7 @@ struct FirstMigration: AsyncMigration {
       .create()
   }
 
+  /// Removes the initial schema in dependency-safe order.
   func revert(on database: any Database) async throws {
     // Delete tables
     try await database.schema("releases").delete()

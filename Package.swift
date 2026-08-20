@@ -13,9 +13,8 @@ let package = Package(
     .package(url: "https://github.com/vapor/fluent.git", from: "4.13.0"),
     // 🐘 Fluent driver for Postgres.
     .package(url: "https://github.com/vapor/fluent-postgres-driver.git", from: "2.12.0"),
-    // 🐘 Vapor Queues Fluent driver for Postgres
-    .package(
-      url: "https://github.com/vapor-community/vapor-queues-fluent-driver.git", from: "3.0.0"),
+    // 🟥 Vapor Queues Redis driver.
+    .package(url: "https://github.com/vapor/queues-redis-driver.git", from: "1.1.1"),
     // 📮 The queuing system itself. Direct, not just transitive, for XCTQueues' test driver.
     .package(url: "https://github.com/vapor/queues.git", from: "1.18.0"),
     // 🍃 An expressive, performant, and extensible templating language built for Swift.
@@ -26,6 +25,11 @@ let package = Package(
     .package(url: "https://github.com/dankinsoid/VaporToOpenAPI.git", from: "4.8.1"),
     // 🍜 HTML Parsing for web scraping
     .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.6.0"),
+    // 🪙 JSON Web Token (JWT)
+    .package(url: "https://github.com/vapor/jwt.git", from: "5.0.0"),
+    // 🟥 Redis client. Already resolved transitively through the queues driver; declared here
+    // so rate limit counters can share the Valkey instance queues already use.
+    .package(url: "https://github.com/vapor/redis.git", from: "4.11.0"),
 
   ],
   targets: [
@@ -34,13 +38,15 @@ let package = Package(
       dependencies: [
         .product(name: "Fluent", package: "fluent"),
         .product(name: "FluentPostgresDriver", package: "fluent-postgres-driver"),
-        .product(name: "QueuesFluentDriver", package: "vapor-queues-fluent-driver"),
+        .product(name: "QueuesRedisDriver", package: "queues-redis-driver"),
         .product(name: "Leaf", package: "leaf"),
         .product(name: "Vapor", package: "vapor"),
         .product(name: "NIOCore", package: "swift-nio"),
         .product(name: "NIOPosix", package: "swift-nio"),
         .product(name: "VaporToOpenAPI", package: "VaporToOpenAPI"),
         .product(name: "SwiftSoup", package: "SwiftSoup"),
+        .product(name: "JWT", package: "jwt"),
+        .product(name: "Redis", package: "redis"),
       ],
       swiftSettings: swiftSettings,
     ),

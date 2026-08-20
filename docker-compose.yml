@@ -8,28 +8,67 @@
 #
 # Learn more: https://docs.docker.com/compose/reference/
 #
-#   Build images: docker compose build
-#      Start app: docker compose up app
-# Start database: docker compose up db
-# Run migrations: docker compose run migrate
-#       Stop all: docker compose down (add -v to wipe db)
+#     Build images: docker compose build
+#        Start app: docker compose up app
+#   Start database: docker compose up db
+#   Run migrations: docker compose run migrate
+#    Start workers: docker compose up queues scheduled
+#    Sweep due now: docker compose run collect-now
+#         Stop all: docker compose down (add -v to wipe db)
 #
 
 volumes:
   db_data:
+  valkey_data:
 
 x-shared_environment: &shared_environment
   LOG_LEVEL: ${LOG_LEVEL:-debug}
+  # Every process reads this, so all of them agree. Only `serve` used to be told its environment,
+  # via a --env flag on its command; the workers, scheduler, and migrator fell through to Vapor's
+  # default of development, leaving processes in one stack disagreeing about which environment
+  # they were in — and therefore about which database name to default to.
+  #
+  # development locally, because that is what this file is: the ICICLE seed migration registers
+  # only in development, so a fresh volume still comes up with a populated dashboard. Deployments
+  # set VAPOR_ENV=production once, here, rather than on eight command lines.
+  VAPOR_ENV: ${VAPOR_ENV:-development}
   DATABASE_HOST: db
   DATABASE_NAME: &db_name vapor_database
   DATABASE_USERNAME: &db_username vapor_username
   DATABASE_PASSWORD: &db_password vapor_password
+  DATABASE_TLS: disable
+  # Queue storage. The local server runs without auth, so REDIS_PASSWORD is left unset;
+  # deployments set it to the cache's generated password.
+  REDIS_HOST: valkey
+  REDIS_PORT: '6379'
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
   # Sync jobs resolve their platform tokens from Tapis Vault, and `configure` fails fast when
   # any of these is missing — every service here aborts at boot without them, workers included.
+  SECRET_PROVIDER: ${SECRET_PROVIDER:-tapis}
   TAPIS_BASE_URL: ${TAPIS_BASE_URL}
   TAPIS_TOKEN: ${TAPIS_TOKEN}
   TAPIS_USER: ${TAPIS_USER}
   TAPIS_TENANT: ${TAPIS_TENANT}
+  # Slack incoming webhook for collections that have exhausted their retries. Unset, failures
+  # go to the log alone, which is the right setting for local work. The optional warnings
+  # webhook splits the recoverable failures off so the primary channel carries only the
+  # credential ones.
+  SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+  SLACK_WEBHOOK_URL_WARNINGS: ${SLACK_WEBHOOK_URL_WARNINGS:-}
+  # Required, and deliberately without a default. `configure` throws when it is unset, so every
+  # service here dies at boot without it — which is how this file came to be unbootable once the
+  # variable was introduced: compose passes only what it names, so an unreferenced variable never
+  # reaches a container no matter what `.env` holds.
+  #
+  # No fallback value on purpose. A placeholder boots perfectly well and then matches nobody, so
+  # every write returns 403 with nothing in the log explaining it. Failing at boot is kinder.
+  ROOT_ADMIN_USERNAME: ${ROOT_ADMIN_USERNAME}
+  # The rest have defaults in code; named here so the full surface is visible in one place.
+  TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-insights-token-signing-key}
+  CORS_ORIGINS: ${CORS_ORIGINS:-}
+  FRAME_ANCESTORS: ${FRAME_ANCESTORS:-}
+  RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-300}
+  WEBHOOK_RATE_LIMIT_PER_MINUTE: ${WEBHOOK_RATE_LIMIT_PER_MINUTE:-60}
 
 
 services:
@@ -41,10 +80,13 @@ services:
       <<: *shared_environment
     depends_on:
       - db
+      - valkey
     ports:
       - '8080:8080'
     # user: '0' # uncomment to run as root for testing purposes even though Dockerfile defines 'vapor' user.
-    command: ["serve", "--env", "production", "--hostname", "0.0.0.0", "--port", "8080"]
+    # No --env: the flag outranks VAPOR_ENV in `Environment.detect`, so passing it here would pin
+    # this one process to production while every sibling followed the shared variable.
+    command: ["serve", "--hostname", "0.0.0.0", "--port", "8080"]
   # Drains the `metrics` queue: the platform syncs themselves. `serve` does not process queued
   # jobs, so without this nothing dispatched ever runs.
   queues:
@@ -55,6 +97,7 @@ services:
       <<: *shared_environment
     depends_on:
       - db
+      - valkey
     command: ["queues", "--queue", "metrics"]
   # Runs the scheduled sweeps, which only enqueue work onto the queue above. Separate from
   # `queues` so a long sync cannot hold up the next sweep, and single-replica because two
@@ -67,6 +110,7 @@ services:
       <<: *shared_environment
     depends_on:
       - db
+      - valkey
     command: ["queues", "--scheduled"]
   migrate:
     image: insights:latest
@@ -90,6 +134,56 @@ services:
     command: ["migrate", "--revert", "--yes"]
     deploy:
       replicas: 0
+  # The sweeps the `scheduled` service runs on a timer, available on demand. Each only enqueues
+  # onto `metrics`, so `queues` has to be up for anything to actually collect. replicas: 0 keeps
+  # them out of `docker compose up`; reach them with `docker compose run <name>`.
+  collect-now:
+    image: insights:latest
+    build:
+      context: .
+    environment:
+      <<: *shared_environment
+    depends_on:
+      - db
+      - valkey
+    command: ["collect-resources"]
+    deploy:
+      replicas: 0
+  # Ignores the schedule and dispatches every active resource. Dispatched resources still book
+  # their next collection, so this shifts the cadence forward rather than replaying it.
+  collect-all-now:
+    image: insights:latest
+    build:
+      context: .
+    environment:
+      <<: *shared_environment
+    depends_on:
+      - db
+      - valkey
+    command: ["collect-resources", "--force"]
+    deploy:
+      replicas: 0
+  collect-accounts-now:
+    image: insights:latest
+    build:
+      context: .
+    environment:
+      <<: *shared_environment
+    depends_on:
+      - db
+      - valkey
+    command: ["collect-accounts"]
+    deploy:
+      replicas: 0
+  # Job storage for the two workers above — Valkey, speaking the same protocol the Redis driver
+  # expects. Append-only so a restart does not drop whatever the scheduler had already enqueued.
+  valkey:
+    image: valkey/valkey:9-alpine
+    command: ["valkey-server", "--appendonly", "yes"]
+    volumes:
+      - valkey_data:/data
+    ports:
+      - '6379:6379'
   db:
     image: postgres:18-alpine
     volumes:

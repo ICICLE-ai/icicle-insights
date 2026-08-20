@@ -8,14 +8,15 @@ import VaporTesting
 struct MetricControllerTests {
   @Test
   func `Create metric`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let payload = Metric.Create(reading: 100, type: .stars, resourceID: try resource.requireID())
 
       try await app.testing().test(
         .POST,
-        "metrics",
+        "api/metrics",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .created)
@@ -30,14 +31,15 @@ struct MetricControllerTests {
 
   @Test
   func `Create rejects a negative reading`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let payload = Metric.Create(reading: -1, type: .stars, resourceID: try resource.requireID())
 
       try await app.testing().test(
         .POST,
-        "metrics",
+        "api/metrics",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -50,12 +52,13 @@ struct MetricControllerTests {
 
   @Test
   func `Create with missing resource is a bad request`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let payload = Metric.Create(reading: 1, type: .stars, resourceID: UUID())
 
       try await app.testing().test(
         .POST,
-        "metrics",
+        "api/metrics",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -68,7 +71,7 @@ struct MetricControllerTests {
 
   @Test
   func `Index returns readings oldest to newest`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let resourceID = try resource.requireID()
@@ -78,7 +81,7 @@ struct MetricControllerTests {
 
       try await app.testing().test(
         .GET,
-        "metrics",
+        "api/metrics",
         afterResponse: { res async throws in
           #expect(res.status == .ok)
           let readings = try res.content.decode([Metric.Public].self).compactMap(\.reading)
@@ -90,7 +93,7 @@ struct MetricControllerTests {
 
   @Test
   func `Index filters by type`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let resourceID = try resource.requireID()
@@ -100,7 +103,7 @@ struct MetricControllerTests {
 
       try await app.testing().test(
         .GET,
-        "metrics?type=stars",
+        "api/metrics?type=stars",
         afterResponse: { res async throws in
           #expect(res.status == .ok)
           let returned = try res.content.decode([Metric.Public].self)
@@ -113,7 +116,7 @@ struct MetricControllerTests {
 
   @Test
   func `Index filters by resourceID`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let accountID = try account.requireID()
       let first = try await makeResource(
@@ -127,7 +130,7 @@ struct MetricControllerTests {
 
       try await app.testing().test(
         .GET,
-        "metrics?resourceID=\(firstID)",
+        "api/metrics?resourceID=\(firstID)",
         afterResponse: { res async throws in
           #expect(res.status == .ok)
           let returned = try res.content.decode([Metric.Public].self)
@@ -140,7 +143,7 @@ struct MetricControllerTests {
 
   @Test
   func `Index honors limit and returns the most recent rows`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let resourceID = try resource.requireID()
@@ -150,7 +153,7 @@ struct MetricControllerTests {
 
       try await app.testing().test(
         .GET,
-        "metrics?limit=3",
+        "api/metrics?limit=3",
         afterResponse: { res async throws in
           #expect(res.status == .ok)
           // Most recent 3 (4,5 newest) returned oldest→newest.
@@ -161,15 +164,15 @@ struct MetricControllerTests {
     }
   }
 
-  // The `-> Void` is load-bearing: VaporTesting exports a generic `withApp<T>` that skips
+  // The `-> Void` is load-bearing: VaporTesting exports a generic `withInsightsApp<T>` that skips
   // `configure`, and a single-expression closure returns the tester, which would select that
   // overload and leave the app with no routes.
   @Test(arguments: ["-1", "0", "1001"])
   func `Index rejects an out of range limit`(limit: String) async throws {
-    try await withApp { app -> Void in
+    try await withInsightsApp { app -> Void in
       try await app.testing().test(
         .GET,
-        "metrics?limit=\(limit)",
+        "api/metrics?limit=\(limit)",
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
         },
@@ -179,7 +182,7 @@ struct MetricControllerTests {
 
   @Test
   func `Show metric by ID`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let metric = try await makeMetric(on: app.db, resourceID: try resource.requireID())
@@ -187,7 +190,7 @@ struct MetricControllerTests {
 
       try await app.testing().test(
         .GET,
-        "metrics/\(metricID)",
+        "api/metrics/\(metricID)",
         afterResponse: { res async throws in
           #expect(res.status == .ok)
           let returned = try res.content.decode(Metric.Public.self)
@@ -199,14 +202,15 @@ struct MetricControllerTests {
 
   @Test
   func `Delete metric`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let resource = try await makeResource(on: app.db, accountID: try account.requireID())
       let metric = try await makeMetric(on: app.db, resourceID: try resource.requireID())
 
       try await app.testing().test(
         .DELETE,
-        "metrics/\(metric.requireID())",
+        "api/metrics/\(metric.requireID())",
+        headers: app.adminAuth,
         afterResponse: { res async throws in
           #expect(res.status == .noContent)
           let model = try await Metric.find(metric.id, on: app.db)

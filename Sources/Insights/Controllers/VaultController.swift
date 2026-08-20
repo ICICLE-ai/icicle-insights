@@ -2,55 +2,67 @@ import Fluent
 import Vapor
 import VaporToOpenAPI
 
+/// Serves Vault metadata while delegating secret values to Tapis Vault.
 struct VaultController: RouteCollection {
+  /// Mounts Vault metadata routes under `/vaults`, admin-only throughout.
+  ///
+  /// Unlike the other controllers, the reads are protected too. `Vault.Public` carries no
+  /// secret value, but listing which credentials exist and when they expire is reconnaissance
+  /// worth denying — and no service client has a reason to ask, since jobs resolve secrets
+  /// in-process through ``SecretProvider`` rather than over HTTP.
   func boot(routes: any RoutesBuilder) throws {
-    let vaults = routes.grouped("vaults")
+    let vaults = routes.grouped("vaults").grouped(Require.admin)
 
     vaults.get(use: index)
       .openAPI(
         tags: "Vaults",
         summary: "List vaults",
-        response: .type([Vault.Public].self)
+        response: .type([Vault.Public].self),
+        auth: .bearer()
       )
-    // Mutating routes stay disabled until auth middleware protects them. The handlers
-    // below are kept intact so re-enabling is just uncommenting the registrations.
-    // vaults.post(use: create)
-    //     .openAPI(
-    //         tags: "Vaults",
-    //         summary: "Create vault",
-    //         body: .type(Vault.Create.self),
-    //         response: .type(Vault.Public.self),
-    //         statusCode: 201
-    //     )
+    vaults.post(use: create)
+      .openAPI(
+        tags: "Vaults",
+        summary: "Create vault",
+        body: .type(Vault.Create.self),
+        response: .type(Vault.Public.self),
+        statusCode: 201,
+        auth: .bearer()
+      )
     vaults.group(":vaultID") { vault in
       vault.get(use: show)
         .openAPI(
           tags: "Vaults",
           summary: "Get vault by ID",
-          response: .type(Vault.Public.self)
+          response: .type(Vault.Public.self),
+          auth: .bearer()
         )
-      // vault.patch(use: update)
-      //     .openAPI(
-      //         tags: "Vaults",
-      //         summary: "Update token in vault",
-      //         body: .type(Vault.Update.self),
-      //         response: .type(Vault.Public.self)
-      //     )
-      // vault.delete(use: delete)
-      //     .openAPI(
-      //         tags: "Vaults",
-      //         summary: "Delete vault",
-      //         statusCode: 204
-      //     )
+      vault.patch(use: update)
+        .openAPI(
+          tags: "Vaults",
+          summary: "Update token in vault",
+          body: .type(Vault.Update.self),
+          response: .type(Vault.Public.self),
+          auth: .bearer()
+        )
+      vault.delete(use: delete)
+        .openAPI(
+          tags: "Vaults",
+          summary: "Delete vault",
+          statusCode: 204,
+          auth: .bearer()
+        )
     }
   }
 
   @Sendable
+  /// Lists Vault references without returning secret values.
   func index(req: Request) async throws -> [Vault.Public] {
     try await Vault.query(on: req.db).all().map { $0.toPublic() }
   }
 
   @Sendable
+  /// Creates Vault metadata and its Tapis secret as one logical operation.
   func create(req: Request) async throws -> Response {
     let payload = try req.content.decode(Vault.Create.self)
     let vault = try payload.toModel()
@@ -67,7 +79,7 @@ struct VaultController: RouteCollection {
       // metadata pointing at nothing.
       try await req.db.transaction { db in
         try await account.$vault.create(vault, on: db)
-        try await req.application.tapis.vaults.writeSecret(
+        try await req.application.secrets.writeSecret(
           named: vault.name, secret: payload.token,
         )
       }
@@ -77,6 +89,7 @@ struct VaultController: RouteCollection {
   }
 
   @Sendable
+  /// Returns one Vault reference without resolving its secret value.
   func show(req: Request) async throws -> Vault.Public {
     guard let vault = try await Vault.find(req.parameters.get("vaultID"), on: req.db)
     else {
@@ -87,6 +100,7 @@ struct VaultController: RouteCollection {
   }
 
   @Sendable
+  /// Replaces a Tapis secret and updates its local expiration metadata.
   func update(req: Request) async throws -> Vault.Public {
     guard let vault = try await Vault.find(req.parameters.get("vaultID"), on: req.db)
     else {
@@ -104,13 +118,14 @@ struct VaultController: RouteCollection {
     // never leaves the two disagreeing.
     try await req.db.transaction { db in
       try await vault.save(on: db)
-      try await req.application.tapis.vaults.writeSecret(named: vault.name, secret: newValues.token)
+      try await req.application.secrets.writeSecret(named: vault.name, secret: newValues.token)
     }
 
     return vault.toPublic()
   }
 
   @Sendable
+  /// Destroys the Tapis secret and deletes its local metadata.
   func delete(req: Request) async throws -> HTTPStatus {
     guard let vault = try await Vault.find(req.parameters.get("vaultID"), on: req.db)
     else {
@@ -121,7 +136,7 @@ struct VaultController: RouteCollection {
     // failed destroy must not leave the row deleted with the secret still live.
     try await req.db.transaction { db in
       try await vault.delete(on: db)
-      try await req.application.tapis.vaults.destroySecret(named: vault.name)
+      try await req.application.secrets.destroySecret(named: vault.name)
     }
 
     return .noContent

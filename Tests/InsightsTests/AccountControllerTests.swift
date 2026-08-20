@@ -8,11 +8,12 @@ import VaporTesting
 struct AccountControllerTests {
   @Test
   func `Create lowercases the name`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let payload = Account.Create(name: "OctoCat", platform: .github)
       try await app.testing().test(
         .POST,
-        "accounts",
+        "api/accounts",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .created)
@@ -27,11 +28,12 @@ struct AccountControllerTests {
 
   @Test
   func `Create supports GitHub Container Registry accounts`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let payload = Account.Create(name: "icicle-ai", platform: .ghcr)
       try await app.testing().test(
         .POST,
-        "accounts",
+        "api/accounts",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .created)
@@ -45,11 +47,12 @@ struct AccountControllerTests {
 
   @Test
   func `Create rejects a blank name`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let payload = Account.Create(name: "   ", platform: .github)
       try await app.testing().test(
         .POST,
-        "accounts",
+        "api/accounts",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -62,13 +65,14 @@ struct AccountControllerTests {
 
   @Test
   func `Create rejects a duplicate name on the same platform`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       _ = try await makeAccount(on: app.db, name: "octocat", platform: .github)
 
       let payload = Account.Create(name: "OctoCat", platform: .github)
       try await app.testing().test(
         .POST,
-        "accounts",
+        "api/accounts",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .conflict)
@@ -81,13 +85,13 @@ struct AccountControllerTests {
 
   @Test
   func `Index returns all accounts`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       _ = try await makeAccount(on: app.db, name: "alpha")
       _ = try await makeAccount(on: app.db, name: "beta", platform: .npm)
 
       try await app.testing().test(
         .GET,
-        "accounts",
+        "api/accounts",
         afterResponse: { res async throws in
           #expect(res.status == .ok)
           let names = try res.content.decode([Account.Public].self).compactMap(\.name).sorted()
@@ -99,7 +103,7 @@ struct AccountControllerTests {
 
   @Test
   func `Show includes resources and vault`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let accountID = try account.requireID()
       _ = try await makeResource(on: app.db, accountID: accountID)
@@ -107,7 +111,7 @@ struct AccountControllerTests {
 
       try await app.testing().test(
         .GET,
-        "accounts/\(accountID)",
+        "api/accounts/\(accountID)",
         afterResponse: { res async throws in
           #expect(res.status == .ok)
           let returned = try res.content.decode(Account.Public.self)
@@ -121,13 +125,14 @@ struct AccountControllerTests {
 
   @Test
   func `Update followers`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db, followers: 0)
 
       let update = Account.Update(followers: 42)
       try await app.testing().test(
         .PATCH,
-        "accounts/\(account.requireID())",
+        "api/accounts/\(account.requireID())",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(update) },
         afterResponse: { res async throws in
           #expect(res.status == .ok)
@@ -140,13 +145,14 @@ struct AccountControllerTests {
 
   @Test
   func `Update rejects negative followers`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db, followers: 10)
 
       let update = Account.Update(followers: -1)
       try await app.testing().test(
         .PATCH,
-        "accounts/\(account.requireID())",
+        "api/accounts/\(account.requireID())",
+        headers: app.adminAuth,
         beforeRequest: { req in try req.content.encode(update) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
@@ -159,12 +165,13 @@ struct AccountControllerTests {
 
   @Test
   func `Delete account`() async throws {
-    try await withApp { app in
+    try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
 
       try await app.testing().test(
         .DELETE,
-        "accounts/\(account.requireID())",
+        "api/accounts/\(account.requireID())",
+        headers: app.adminAuth,
         afterResponse: { res async throws in
           #expect(res.status == .noContent)
           let model = try await Account.find(account.id, on: app.db)

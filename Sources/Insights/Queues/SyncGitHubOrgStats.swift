@@ -3,20 +3,30 @@ import Foundation
 import Queues
 import Vapor
 
+/// Minimal queue payload identifying the GitHub account to synchronize.
 struct GitHubAccount: Codable {
   let id: UUID
 }
 
+/// Account-level snapshot returned by GitHub's organization endpoint.
 struct GitHubOrgStatsResponse: Content {
   let followers: Int
 }
 
-struct SyncGitHubOrgStats: AsyncJob {
+/// Synchronizes the follower snapshot for one GitHub organization account.
+struct SyncGitHubOrgStats: AsyncJob, BackoffRetrying {
   typealias Payload = GitHubAccount
 
+  /// Called once the retry budget is spent, never before.
+  func error(_ context: QueueContext, _ error: any Error, _ payload: GitHubAccount) async throws {
+    await context.reportAccountSyncFailure(error, job: Self.name, accountID: payload.id)
+  }
+
+  /// Resolves the account token, fetches followers, and updates the account snapshot.
   func dequeue(_ context: QueueContext, _ payload: GitHubAccount) async throws {
     guard let account = try await Account.find(payload.id, on: context.application.db) else {
-      throw JobError.entryNotFound(id: payload.id)
+      context.entryVanished(id: payload.id, job: Self.name)
+      return
     }
 
     guard
@@ -28,7 +38,7 @@ struct SyncGitHubOrgStats: AsyncJob {
     }
 
     // Resolve the account's access token from Tapis Vault.
-    let token = try await context.application.tapis.vaults.readSecret(named: vault.name)
+    let token = try await context.application.secrets.readSecret(named: vault.name)
 
     // `/orgs/{org}`, plural — the singular spelling 404s.
     let url = URI("https://api.github.com/orgs/\(account.name)")
@@ -36,13 +46,12 @@ struct SyncGitHubOrgStats: AsyncJob {
       req.headers.add(name: .accept, value: "application/vnd.github+json")
       req.headers.add(name: .authorization, value: "Bearer \(token.getSecretValue())")
       req.headers.add(name: "X-GitHub-Api-Version", value: "2026-03-10")
+      // Required by GitHub: requests without one are rejected with 403, not 400.
+      req.headers.add(name: .userAgent, value: "icicle-insights")
     }
 
     guard response.status == .ok else {
-      throw JobError.apiRequestFailed(
-        url: url.string,
-        statusCode: Int(response.status.code)
-      )
+      throw JobError.apiRequestFailed(url: url, response: response)
     }
 
     let payload: GitHubOrgStatsResponse
@@ -58,8 +67,4 @@ struct SyncGitHubOrgStats: AsyncJob {
       try await account.save(on: context.application.db)
     }
   }
-
-  // func error(_ context: QueueContext, _ error: Error, _ payload: GitHubAccount) async throws {
-  // context.
-  // }
 }

@@ -1,18 +1,22 @@
 import Vapor
 
 extension Application {
-  private struct TapisClientKey: StorageKey {
-    typealias Value = TapisClient
+  private struct TapisConfigKey: StorageKey {
+    typealias Value = TapisConfig
   }
 
-  /// The shared `TapisClient`. Set once in `configure.swift`; reused by every job/controller.
-  var tapis: TapisClient {
+  /// Tenant-scoped Tapis settings, loaded once at boot.
+  ///
+  /// Held separately from `app.secrets` because two unrelated things need it: the Vault client
+  /// behind ``SecretProvider``, and ``TapisAuthenticator``, which compares a caller's
+  /// `tapis/tenant_id` against ``TapisConfig/tenant``.
+  var tapisConfig: TapisConfig {
     get {
-      guard let existing = storage[TapisClientKey.self] else {
-        fatalError("TapisClient not configured — set app.tapis in configure.swift")
+      guard let config = storage[TapisConfigKey.self] else {
+        fatalError("Tapis not configured — set app.tapisConfig in configure.swift")
       }
-      return existing
+      return config
     }
-    set { storage[TapisClientKey.self] = newValue }
+    set { storage[TapisConfigKey.self] = newValue }
   }
 }

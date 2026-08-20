@@ -3,9 +3,13 @@ import Vapor
 import VaporToOpenAPI
 
 extension Resource {
+  /// Request body for creating a collectable resource under an account.
   struct Create: Content, WithExample {
+    /// Provider-specific resource name or path.
     var name: String
+    /// Catalog classification of the resource.
     var type: ResourceType
+    /// Account that owns the resource.
     var accountID: Account.IDValue
     /// Days between syncs. Omitted means the default cadence; the create route is what bounds
     /// it against the platform's retention window, since that needs the account.
@@ -22,6 +26,7 @@ extension Resource {
       collectionIntervalDays: 7,
     )
 
+    /// Validates and converts the request into an unsaved Fluent model.
     func toModel() throws -> Resource {
       let model = Resource()
       model.name = try requireNonBlank(name, "name").lowercased()
@@ -33,14 +38,22 @@ extension Resource {
     }
   }
 
+  /// Public resource representation returned by the API.
   struct Public: Content {
     var id: UUID?
+    /// Account that owns the resource.
     var accountID: Account.IDValue?
+    /// Normalized provider-specific resource name.
     var name: String?
+    /// Catalog classification of the resource.
     var type: ResourceType?
+    /// Loaded metric history, when requested with the relationship.
     var metrics: [Metric.Public]?
+    /// Loaded release history, when requested with the relationship.
     var releases: [Release.Public]?
+    /// Earliest instant at which the due-resource sweep may dispatch it.
     var nextCollectionAt: Date?
+    /// Number of days booked between successful dispatches.
     var collectionIntervalDays: Int?
     var createdAt: Date?
     var updatedAt: Date?
@@ -52,6 +65,7 @@ extension Resource {
     }
   }
 
+  /// Projects loaded model fields and child collections into the public API shape.
   func toPublic() -> Public {
     .init(
       id: id,

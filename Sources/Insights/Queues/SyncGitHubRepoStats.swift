@@ -3,10 +3,12 @@ import Foundation
 import Queues
 import Vapor
 
+/// Minimal queue payload identifying the resource to synchronize from GitHub.
 struct GitHubResource: Codable {
   let id: UUID
 }
 
+/// Snapshot fields returned by GitHub's repository endpoint.
 struct GitHubRepoStatsResponse: Content {
   let stargazers_count: Int
   let forks_count: Int
@@ -20,6 +22,8 @@ struct TrafficDay: Decodable, Sendable {
   let uniques: Int
 }
 
+/// A normalized clone or view response, including its per-day readings.
+///
 /// Decode-only, unlike the other response types here: the custom initializer below leaves
 /// `days` with no key of its own, so `Encodable` cannot be synthesised. Nothing encodes it.
 struct GitHubRepoTrafficResponse: Decodable, Sendable {
@@ -45,6 +49,7 @@ struct GitHubRepoTrafficResponse: Decodable, Sendable {
   }
 }
 
+/// GitHub traffic endpoints supported by the repository synchronization job.
 enum TrafficEndpoint: String {
   case clones, views
 
@@ -58,10 +63,17 @@ enum TrafficEndpoint: String {
   }
 }
 
-struct SyncGitHubRepoStats: AsyncJob {
+/// Synchronizes GitHub repository snapshots and traffic windows for one resource.
+struct SyncGitHubRepoStats: AsyncJob, BackoffRetrying {
   let baseUrl = "https://api.github.com/repos"
   typealias Payload = GitHubResource
 
+  /// Called once the retry budget is spent, never before.
+  func error(_ context: QueueContext, _ error: any Error, _ payload: GitHubResource) async throws {
+    await context.reportResourceSyncFailure(error, job: Self.name, resourceID: payload.id)
+  }
+
+  /// Resolves credentials, fetches all repository responses, then persists one coherent sweep.
   func dequeue(_ context: QueueContext, _ payload: GitHubResource) async throws {
     guard
       let resource = try await Resource.query(on: context.application.db)
@@ -69,7 +81,8 @@ struct SyncGitHubRepoStats: AsyncJob {
         .with(\.$account)
         .first()
     else {
-      throw JobError.entryNotFound(id: payload.id)
+      context.entryVanished(id: payload.id, job: Self.name)
+      return
     }
 
     guard
@@ -80,12 +93,14 @@ struct SyncGitHubRepoStats: AsyncJob {
       throw JobError.missingToken(id: resource.$account.id)
     }
 
-    let token = try await context.application.tapis.vaults.readSecret(named: vault.name)
+    let token = try await context.application.secrets.readSecret(named: vault.name)
     let owner = resource.account.name
     let headers = HTTPHeaders([
       ("Accept", "application/vnd.github+json"),
       ("Authorization", "Bearer \(token.getSecretValue())"),
       ("X-GitHub-Api-Version", "2026-03-10"),
+      // Required by GitHub: requests without one are rejected with 403, not 400.
+      ("User-Agent", "icicle-insights"),
     ])
     let repoStats = try await fetchRepoStats(
       context, owner: owner, name: resource.name, headers: headers)
@@ -120,6 +135,7 @@ struct SyncGitHubRepoStats: AsyncJob {
     }
   }
 
+  /// Fetches the repository snapshot using the supplied GitHub bearer token.
   func fetchRepoStats(
     _ context: QueueContext,
     owner: String,
@@ -132,10 +148,7 @@ struct SyncGitHubRepoStats: AsyncJob {
     }
 
     guard response.status == .ok else {
-      throw JobError.apiRequestFailed(
-        url: url.string,
-        statusCode: Int(response.status.code)
-      )
+      throw JobError.apiRequestFailed(url: url, response: response)
     }
 
     do {
@@ -145,6 +158,7 @@ struct SyncGitHubRepoStats: AsyncJob {
     }
   }
 
+  /// Fetches and decodes one GitHub traffic rolling window.
   func fetchTrafficStats(
     _ context: QueueContext,
     owner: String,
@@ -158,10 +172,7 @@ struct SyncGitHubRepoStats: AsyncJob {
     }
 
     guard response.status == .ok else {
-      throw JobError.apiRequestFailed(
-        url: url.string,
-        statusCode: Int(response.status.code)
-      )
+      throw JobError.apiRequestFailed(url: url, response: response)
     }
 
     do {

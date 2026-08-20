@@ -6,7 +6,9 @@ import Vapor
 /// value, narrow enough to catch a typo'd or defaulted year.
 let supportedYears = 1970...2100
 
-/// Returns `value` if it is non-negative, otherwise aborts with `400 Bad Request`.
+/// Validates that an integer is zero or greater.
+/// - Returns: The unchanged validated value.
+/// - Throws: `Abort(.badRequest)` when the value is negative.
 func requireNonNegative(_ value: Int, _ field: String) throws -> Int {
   guard value >= 0 else {
     throw Abort(.badRequest, reason: "'\(field)' must be greater than or equal to 0.")
@@ -14,7 +16,9 @@ func requireNonNegative(_ value: Int, _ field: String) throws -> Int {
   return value
 }
 
-/// Returns `value` if it is non-negative, otherwise aborts with `400 Bad Request`.
+/// Validates that a finite floating-point value is zero or greater.
+/// - Returns: The unchanged validated value.
+/// - Throws: `Abort(.badRequest)` when the value is negative or non-finite.
 func requireNonNegative(_ value: Double, _ field: String) throws -> Double {
   guard value >= 0 else {
     throw Abort(.badRequest, reason: "'\(field)' must be greater than or equal to 0.")
@@ -22,8 +26,9 @@ func requireNonNegative(_ value: Double, _ field: String) throws -> Double {
   return value
 }
 
-/// Returns `value` trimmed of surrounding whitespace, or aborts with `400 Bad Request` if
-/// nothing is left once trimmed.
+/// Trims surrounding whitespace and rejects an empty result.
+/// - Returns: The normalized, nonblank string.
+/// - Throws: `Abort(.badRequest)` when no non-whitespace content remains.
 func requireNonBlank(_ value: String, _ field: String) throws -> String {
   let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
   guard !trimmed.isEmpty else {
@@ -32,7 +37,9 @@ func requireNonBlank(_ value: String, _ field: String) throws -> String {
   return trimmed
 }
 
-/// Returns `value` if it falls inside `range`, otherwise aborts with `400 Bad Request`.
+/// Validates that an integer lies inside an inclusive range.
+/// - Returns: The unchanged validated value.
+/// - Throws: `Abort(.badRequest)` when the value falls outside `range`.
 func requireInRange(_ value: Int, _ range: ClosedRange<Int>, _ field: String) throws -> Int {
   guard range.contains(value) else {
     throw Abort(
@@ -43,9 +50,12 @@ func requireInRange(_ value: Int, _ range: ClosedRange<Int>, _ field: String) th
   return value
 }
 
-/// Builds a date from the given components, aborting with `400 Bad Request` unless they describe
-/// a real calendar date. `DateComponents.isValidDate` round-trips through the calendar, which is
-/// what rejects February 30 and the month-13 rollover that `Calendar.date(from:)` allows.
+/// Constructs a strict UTC calendar date and rejects normalized invalid dates.
+///
+/// `DateComponents.isValidDate` round-trips through the calendar, which is what rejects
+/// February 30 and the month-13 rollover that `Calendar.date(from:)` silently normalizes.
+/// - Returns: The requested date at midnight UTC.
+/// - Throws: `Abort(.badRequest)` when the components do not form a real date.
 func requireCalendarDate(year: Int, month: Int, day: Int = 1, _ field: String) throws -> Date {
   var components = DateComponents()
   components.calendar = Calendar(identifier: .gregorian)
@@ -59,7 +69,9 @@ func requireCalendarDate(year: Int, month: Int, day: Int = 1, _ field: String) t
   return date
 }
 
-/// Returns `date` if it is in the future, otherwise aborts with `400 Bad Request`.
+/// Validates that a date is later than the current instant.
+/// - Returns: The unchanged future date.
+/// - Throws: `Abort(.badRequest)` when the date is now or in the past.
 func requireFuture(_ date: Date, _ field: String) throws -> Date {
   guard date > Date() else {
     throw Abort(.badRequest, reason: "'\(field)' must be in the future.")
@@ -71,6 +83,9 @@ func requireFuture(_ date: Date, _ field: String) throws -> Date {
 ///
 /// FluentPostgresDriver maps the SQLSTATE 23xxx integrity-violation codes onto
 /// `DatabaseError.isConstraintFailure`, so this stays driver-agnostic.
+///
+/// Non-constraint errors pass through unchanged, so an infrastructure failure is never presented
+/// to the caller as though they had sent a conflicting request.
 func conflictOnConstraintFailure<T>(
   _ reason: String,
   _ operation: () async throws -> T,
