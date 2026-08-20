@@ -59,7 +59,11 @@ struct SyncGHCRStats: AsyncJob, BackoffRetrying {
         .with(\.$account)
         .first()
     else {
-      throw JobError.entryNotFound(id: payload.id)
+      // Not a throw. A deleted row will not reappear, and `QueueWorker` decides whether to retry
+      // from the remaining attempt count alone — so throwing here costs four attempts across ten
+      // minutes to rediscover that it is gone. Returning completes the job on the first one.
+      context.entryVanished(id: payload.id, job: Self.name)
+      return
     }
 
     // fetch, then write
@@ -72,8 +76,11 @@ Conventions the existing jobs follow:
 - **Fetch everything, then write.** `SyncGitHubRepoStats` collects all three responses before
   creating a single `Metric` batch, so a failure partway through leaves no half-swept resource —
   gauges stranded without the traffic rows that share their timestamp. There's a test for this.
-- **Express failures as `JobError`.** The four cases in `Sources/Insights/Errors/JobError.swift`
-  (`entryNotFound`, `missingToken`, `apiRequestFailed`, `decodingFailed`) are what the tests
+- **A missing subject is not a failure.** If the row the job was dispatched for has been deleted,
+  call `context.entryVanished(id:job:)` and return. Retries cannot help — the row is gone — and the
+  worker has no way to be told not to retry once something throws.
+- **Express real failures as `JobError`.** The three cases in `Sources/Insights/Errors/JobError.swift`
+  (`missingToken`, `apiRequestFailed`, `decodingFailed`) are what the tests
   pattern-match on, and its `DebuggableError` conformance is what decides the log severity and
   whether anyone is alerted. Throwing anything else still works, but it is reported as an
   unclassified `.warning` with no suggested fix.
@@ -140,7 +147,8 @@ failure handler itself, in a private `Error` extension in `SyncJob+Failure.swift
 | `JobError.missingToken`, `apiRequestFailed` 401/403 | `.critical` | 🔴 credential | yes — ~1 hour |
 | `TapisClientError.secretNotFound`, `requestFailed` 401/403 | `.critical` | 🔴 credential | yes — ~1 hour |
 | `JobError.apiRequestFailed`, other statuses | `.warning` | ⚠️ | no |
-| `JobError.entryNotFound`, `decodingFailed` | `.error` | ⚠️ | no |
+| `JobError.decodingFailed` | `.error` | ⚠️ | no |
+| Subject deleted (`entryVanished`) | `.notice` | none | no — the job completes |
 | `TapisClientError.invalidResponse`, 5xx | `.warning` | ⚠️ | no |
 | Anything else | `.warning` | ⚠️ `unknown` | no |
 

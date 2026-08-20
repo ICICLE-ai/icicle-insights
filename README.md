@@ -214,6 +214,7 @@ Full detail in [API authentication](docs/api-authentication.md).
 
 | Variable | Required | Description |
 |---|---:|---|
+| `VAPOR_ENV` | Deployment | `production` in a deployment. Read by every process; unset means `development` |
 | `SECRET_PROVIDER` | No | Credential backend; defaults to `tapis` |
 | `TAPIS_BASE_URL` | Yes | Tenant base URL **including `/v3`** |
 | `TAPIS_TENANT` | Yes | Tenant ID; must match the host above |

@@ -34,6 +34,10 @@ just fmt-check
 - `TAPIS_BASE_URL` and `TAPIS_TENANT` **move together** — each tenant has its own host. Mixing them
   boots cleanly and then refuses every admin with a bare 403.
 - Tapis tokens are short-lived. Unexplained vault failures usually mean expiry.
+- **`VAPOR_ENV` sets the environment for every process**, and nothing should pass `--env` on a
+  command line — that flag outranks the variable, so pinning it on one process is how a stack ends
+  up with processes disagreeing about their own environment. Deployments set `production`; the
+  local stacks set `development` in `.env.container` and `docker-compose.yml`.
 
 ## Conventions
 

@@ -2,7 +2,7 @@
 
 What the suite covers, how the harness works, and which tests need credentials.
 
-**166 tests across 14 suites.** Everything lives in `Tests/InsightsTests/`.
+**167 tests across 14 suites.** Everything lives in `Tests/InsightsTests/`.
 
 ```bash
 just test          # swift test --no-parallel
@@ -175,7 +175,7 @@ The double-count prevention. Re-folding the same window counts each day once; to
 while partial and counted once complete; a window reaching past the watermark folds only its new
 tail; a gap longer than retention folds only what remains; gauges keep no all-time row.
 
-### Sync jobs — 10 tests
+### Sync jobs — 11 tests
 
 End-to-end sweeps per platform against stubbed APIs, the error paths (missing resource, missing
 vault, failed fetch writing *no* metrics at all, malformed body), and URL construction.
@@ -202,13 +202,17 @@ They **write and destroy real secrets**, so point `.env` at the staging tenant
 (`https://icicleai.staging.tapis.io/v3`, tenant `icicleai`) rather than production.
 
 They carry `.enabled(if: hasLiveTapisCredentials)` and **skip** rather than fail when no usable
-token is configured. Detection is by shape — every Tapis token is a JWT, no placeholder is — so it
-needs no configuration in either direction: point `.env` at staging and they run; leave the token
-blank and they skip. Before this they failed with 500s wherever credentials were absent, which is
-indistinguishable from a genuine regression and made CI impossible.
+token is configured, which needs no configuration in either direction: point `.env` at staging and
+they run, leave the token blank and they skip. Without it they fail with 500s wherever credentials
+are absent — indistinguishable from a genuine regression, and impossible in CI.
 
-Tapis tokens are short-lived. A batch of otherwise-inexplicable vault failures usually means the
-token expired.
+**The check reads `exp` from the token, not just its shape.** Tapis tokens last hours, so "looks
+like a JWT" and "will authenticate" are different questions: an expired token passes a shape check
+and then produces exactly the confusing 500s the guard exists to prevent. The signature is
+deliberately not verified — this decides whether running the test is worthwhile, not whether the
+token is trustworthy.
+
+So a batch of inexplicable vault failures no longer means the token expired; that case now skips.
 
 ## Deliberately not covered
 

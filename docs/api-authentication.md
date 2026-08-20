@@ -173,6 +173,7 @@ remove history.
 
 | Variable | Notes |
 |---|---|
+| `VAPOR_ENV` | `production` in a deployment. Every process reads it; a `--env` flag would outrank it. |
 | `TAPIS_BASE_URL` | Needs the `/v3` suffix. Must name the same tenant as below — each tenant has its own host. |
 | `TAPIS_TENANT` | Compared against every caller's `tapis/tenant_id`. |
 | `TAPIS_USER`, `TAPIS_TOKEN` | The service identity used for vault reads. |
