@@ -1,0 +1,34 @@
+<!-- First focusable thing on the page, so a keyboard or screen-reader user reaches the content
+     without going through the navigation on every route change. -->
+<a class="ins-skip-link" href="#main">Skip to main content</a>
+
+<div class="ins-shell">
+  <main id="main" class="ins-main" tabindex="-1">
+    <router-outlet />
+  </main>
+
+  <footer class="ins-footer">
+    <section aria-labelledby="footer-data-heading">
+      <h2 id="footer-data-heading" class="ins-footer__heading">About these figures</h2>
+      <p>
+        Every figure is a point-in-time reading, not a live counter, and each metric states the
+        window it covers. Collection runs on a rolling schedule per resource.
+      </p>
+    </section>
+
+    <section aria-labelledby="footer-acknowledgment-heading">
+      <h2 id="footer-acknowledgment-heading" class="ins-footer__heading">Acknowledgment</h2>
+      <p>
+        Developed as part of ICICLE—Intelligent Cyberinfrastructure with Computational Learning in
+        the Environment.
+      </p>
+      <!-- Add the approved NSF award/disclaimer and copyright owner here once supplied. -->
+    </section>
+  </footer>
+</div>
+
+@if (devMode) {
+  @defer (on idle) {
+    <app-dev-tools />
+  }
+}

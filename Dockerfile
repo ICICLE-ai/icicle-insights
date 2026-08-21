@@ -1,5 +1,19 @@
 # ================================
-# Build image
+# Frontend build image
+# ================================
+FROM node:24-bookworm-slim AS frontend-build
+
+WORKDIR /web
+
+# Dependency metadata first so source edits do not invalidate npm's install layer.
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+COPY web/ ./
+RUN npm run build -- --output-path=/web-dist
+
+# ================================
+# Server build image
 # ================================
 FROM swift:6.3-noble AS build
 
@@ -22,6 +36,12 @@ RUN swift package resolve \
 
 # Copy entire repo into container
 COPY . .
+
+# Replace the retired Leaf assets with the Angular production output. The application builder
+# emits browser artifacts in a nested directory; Vapor continues to serve the stable /Public
+# path, so the runtime stage and deployment topology do not change.
+RUN rm -rf /build/Public && mkdir /build/Public
+COPY --from=frontend-build /web-dist/browser/ /build/Public/
 
 RUN mkdir /staging
 

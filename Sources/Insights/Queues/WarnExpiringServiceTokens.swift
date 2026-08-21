@@ -25,6 +25,7 @@ struct WarnExpiringServiceTokens: AsyncScheduledJob {
 
   /// Warns for every live token whose remaining lifetime lands on a threshold today.
   func run(context: QueueContext) async throws {
+    await context.recordSchedulerHeartbeat(job: "WarnExpiringServiceTokens")
     let now = Date()
 
     // Bounded by the widest threshold so the query stays selective; expired tokens are excluded

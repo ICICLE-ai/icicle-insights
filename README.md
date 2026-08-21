@@ -34,7 +34,7 @@
 ## Overview
 
 **ICICLE Insights** collects popularity and usage metrics for open-source accounts and the
-resources they publish—repositories, models, datasets, packages, images, and services. It turns
+resources they publish—repositories, models, datasets, packages, containers, and services. It turns
 those readings into a historical REST API and interactive dashboard.
 
 Built for the [ICICLE](https://icicle.osu.edu/) research ecosystem, its platform-neutral data
@@ -43,7 +43,7 @@ its open-source impact.
 
 ### Why it exists
 
-- **One view across platforms** — accounts, repositories, models, datasets, packages, and images
+- **One view across platforms** — accounts, repositories, models, datasets, packages, and containers
   share a consistent metric model.
 - **Correct rolling totals** — daily watermarks prevent overlapping API windows from being
   counted twice.
@@ -112,6 +112,7 @@ The hourly scan does not call every platform hourly. Each resource has a
 ### Requirements
 
 - Swift 6.3+
+- Node.js 24+ and npm (for local dashboard development)
 - PostgreSQL
 - Valkey or Redis
 - [`just`](https://just.systems/)
@@ -141,7 +142,7 @@ Keep `.env` out of version control; it is already gitignored.
 
 ### Native Swift development
 
-Run PostgreSQL and Valkey locally, then:
+Run PostgreSQL and Valkey locally, then start the API:
 
 ```bash
 just migrate
@@ -149,12 +150,23 @@ swift run Insights service-token init-key   # once per deployment, before mintin
 just run
 ```
 
+In a second terminal, start the Angular development server:
+
+```bash
+cd web
+npm ci
+npm start
+```
+
 Open:
 
-- Dashboard: <http://127.0.0.1:8080/>
+- Dashboard: <http://localhost:4200/> (proxies `/api` to Vapor on port 8080)
 - API reference: <http://127.0.0.1:8080/docs>
 - OpenAPI JSON: <http://127.0.0.1:8080/openapi.json>
 - Health: <http://127.0.0.1:8080/health> and `/ready`
+
+The container build compiles Angular and embeds the hashed output in Vapor's `Public/` directory,
+so the deployed image serves the dashboard directly at `/` without a Node runtime.
 
 ### Apple Container (macOS 26+)
 

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ICICLE Insights</title>
+    <base href="/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Open-source impact metrics for the ICICLE AI Institute: downloads, stars, clones and releases across GitHub, GHCR, Hugging Face, npm and PyPI."
+    />
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <script>
+      // Applied before first paint, deliberately inline and render-blocking. Resolving the theme
+      // from Angular instead would let the light palette paint first and then swap, which reads
+      // as a flash on every load for anyone using dark mode.
+      //
+      // Three states collapse to one class here: an explicit choice wins, and "system" defers to
+      // the OS. Kept in step with ThemeStore, which writes the same storage key.
+      (function () {
+        try {
+          var stored = localStorage.getItem('insights-theme');
+          var dark =
+            stored === 'dark' ||
+            (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) {
+            document.documentElement.classList.add('app-dark');
+          }
+        } catch (error) {
+          // Storage can throw outright when cookies are blocked or the frame is partitioned —
+          // which is exactly the embedded case this app ships into. Falling through leaves the
+          // light theme, which is a cosmetic loss rather than a broken page.
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <app-root></app-root>
+  </body>
+</html>

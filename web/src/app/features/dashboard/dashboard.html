@@ -1,0 +1,223 @@
+<header class="ins-masthead">
+  <div class="ins-masthead__scope-controls">
+    <h1 class="ins-visually-hidden">{{ scopeLabel() }}</h1>
+    <app-platform-picker />
+    <app-filter-bar />
+  </div>
+  <app-nav />
+</header>
+
+<!-- Announces the outcome of a load once it settles. Polite rather than assertive: a refresh is
+     something the user asked for, so it should not interrupt whatever they are reading. -->
+<p class="ins-visually-hidden" role="status" aria-live="polite">
+  @if (store.isLoading()) {
+    Loading dashboard data.
+  } @else if (store.error()) {
+    Dashboard data failed to load.
+  } @else {
+    Showing {{ scopeLabel() }}. {{ summary() }}
+  }
+</p>
+
+@if (store.error(); as failure) {
+  <app-error-notice [error]="failure" (retry)="store.reload()" />
+} @else if (store.isLoading()) {
+  <div class="ins-skeleton-grid" aria-hidden="true">
+    @for (placeholder of [1, 2, 3, 4]; track placeholder) {
+      <div class="ins-skeleton"></div>
+    }
+  </div>
+} @else if (!hasData()) {
+  <div class="ins-empty">
+    <p class="ins-empty__title">Nothing measured here yet</p>
+    <p class="ins-empty__hint">
+      Widen the filters, or check that collection has run for these resources.
+    </p>
+  </div>
+} @else {
+  @if (saturationNotice(); as notice) {
+    <p class="ins-notice">
+      <span class="ins-notice__icon" aria-hidden="true">ⓘ</span>
+      {{ notice }}
+    </p>
+  }
+
+  @if (dashboardSections().length > 1) {
+    <nav class="ins-section-nav" aria-label="Dashboard sections">
+      @for (section of dashboardSections(); track section.id) {
+        <button
+          type="button"
+          class="ins-section-nav__item"
+          [attr.aria-controls]="'dashboard-section-' + section.id"
+          [attr.aria-current]="activeDashboardSection() === section.id ? 'page' : null"
+          (click)="selectDashboardSection(section.id)"
+        >
+          {{ section.label }}
+        </button>
+      }
+    </nav>
+  }
+
+  <section
+    id="dashboard-section-headline"
+    class="ins-dashboard-section"
+    [hidden]="!showDashboardSection('headline')"
+    aria-labelledby="dashboard-heading-headline"
+  >
+    <h2 id="dashboard-heading-headline" class="ins-eyebrow ins-section">Headline</h2>
+    <div class="ins-headline" [class.ins-headline--profile-only]="visibleHeadlines().length === 0">
+      @if (showStructure()) {
+        <app-structure-sunburst [rows]="structureRows()" />
+      } @else {
+        <app-scope-profile
+          [heading]="scopeProfile().heading"
+          [profileLabel]="scopeProfile().profileLabel"
+          [subtitle]="scopeProfile().subtitle"
+          [stats]="scopeProfile().stats"
+          [coverage]="scopeProfile().coverage"
+          [coverageLabel]="scopeProfile().coverageLabel"
+        />
+      }
+
+      @if (visibleHeadlines().length > 0) {
+        <div class="ins-tiles ins-headline__tiles">
+          @for (headline of visibleHeadlines(); track headline.type) {
+            <app-stat-tile
+              [label]="headline.label"
+              [value]="headline.total"
+              [context]="coverageLabel(headline.coverage)"
+            />
+          }
+        </div>
+      }
+    </div>
+  </section>
+
+  @if (topResourceRows().length > 0) {
+    <section
+      id="dashboard-section-reach"
+      class="ins-dashboard-section"
+      [hidden]="!showDashboardSection('reach')"
+      aria-labelledby="dashboard-heading-reach"
+    >
+      <h2 id="dashboard-heading-reach" class="ins-eyebrow ins-section">Reach by resource</h2>
+      <div class="ins-reach">
+        <app-top-resources-chart
+          [rows]="topResourceRows()"
+          [metricOptions]="sizingOptions()"
+          [metric]="sizingMetric()"
+          (metricChange)="sizingMetric.set($event)"
+        />
+      </div>
+    </section>
+  }
+
+  @if (trendSections().length > 0) {
+    <section
+      id="dashboard-section-trends"
+      class="ins-dashboard-section"
+      [hidden]="!showDashboardSection('trends')"
+      aria-labelledby="dashboard-heading-trends"
+    >
+      <h2 id="dashboard-heading-trends" class="ins-eyebrow ins-section">Over time</h2>
+      <app-trend-chart
+        [series]="trendSections()"
+        [metricOptions]="trendOptions()"
+        [metric]="trendMetric()"
+        [slot]="selectedTrendSlot()"
+        (metricChange)="trendMetric.set($event)"
+      />
+    </section>
+  }
+
+  <section
+    id="dashboard-section-releases"
+    class="ins-dashboard-section"
+    [hidden]="!showDashboardSection('releases')"
+    aria-labelledby="dashboard-heading-releases"
+  >
+    <div class="ins-release-heading ins-section">
+      <h2 id="dashboard-heading-releases" class="ins-eyebrow">Software Releases</h2>
+      <div class="ins-release-views" role="group" aria-label="Software release view">
+        <button
+          type="button"
+          class="ins-release-views__item"
+          [attr.aria-pressed]="releaseDisplay() === 'cadence'"
+          (click)="releaseDisplay.set('cadence')"
+        >
+          Cadence
+        </button>
+        <button
+          type="button"
+          class="ins-release-views__item"
+          [attr.aria-pressed]="releaseDisplay() === 'lineage'"
+          (click)="releaseDisplay.set('lineage')"
+        >
+          Lineage
+        </button>
+      </div>
+    </div>
+    @if (releaseMonths().length === 0) {
+      <p class="ins-empty__hint">No releases recorded for this selection.</p>
+    } @else if (releaseDisplay() === 'cadence') {
+      <!-- Aggregated by month rather than listed one per row. Eighty-odd release rows is a log,
+           and the question worth answering here is whether shipping is steady or bursty. Each
+           month names the resources that shipped, so the detail is not lost, only folded. -->
+      <p-table
+        [value]="releaseMonths()"
+        [paginator]="releaseMonths().length > 12"
+        [rows]="8"
+        [rowsPerPageOptions]="[8, 12, 24, 48]"
+        size="small"
+        styleClass="ins-release-table"
+        currentPageReportTemplate="{first}–{last} of {totalRecords} release months"
+        [showCurrentPageReport]="true"
+        dataKey="month"
+      >
+        <ng-template #caption>
+          <span class="ins-visually-hidden">
+            Resources with software releases per month in {{ scopeLabel() }}, newest first.
+          </span>
+        </ng-template>
+
+        <ng-template #header>
+          <tr>
+            <th scope="col">Release</th>
+            <th scope="col" class="ins-table__number">Resources</th>
+            <th scope="col">Which</th>
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-row>
+          <tr>
+            <th scope="row" class="ins-mono ins-release-table__month">{{ row.month }}</th>
+            <td class="ins-table__number ins-mono">{{ row.resourceCount }}</td>
+            <td class="ins-release-table__which">
+              <div class="ins-release-resource-list">
+                @for (resource of row.resources; track resource.id; let last = $last) {
+                  <button
+                    type="button"
+                    class="ins-release-resource"
+                    [attr.aria-label]="'View dashboard for ' + resource.name"
+                    (click)="selectReleasedResource(resource.id)"
+                  >
+                    <span class="ins-release-resource__name">{{ resource.name }}</span>
+                    @if (!last) {
+                      <span class="ins-release-resource__separator" aria-hidden="true">,</span>
+                    }
+                  </button>
+                }
+              </div>
+            </td>
+          </tr>
+        </ng-template>
+      </p-table>
+    } @else {
+      <app-release-graph
+        [releases]="store.scopedReleases()"
+        [resources]="store.scopedResources()"
+        (resourceSelect)="selectReleasedResource($event)"
+      />
+    }
+  </section>
+}

@@ -1,7 +1,6 @@
 import Fluent
 import FluentPostgresDriver
 import JWT
-import Leaf
 import NIOSSL
 import Queues
 import QueuesRedisDriver
@@ -46,7 +45,11 @@ func configure(_ app: Application) async throws {
     ]
   )
 
-  // Serve static assets (dashboard CSS/JS) from the /Public folder.
+  // Both policies sit outside FileMiddleware in the chain so they can classify the response it
+  // returns. Hashed Angular assets are immutable; index.html and SPA deep links revalidate.
+  app.middleware.use(StaticAssetCacheMiddleware(), at: .beginning)
+
+  // Serve the Angular artifacts produced into /Public by the Docker frontend stage.
   app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
 
   // Postgres serves its image's self-signed `CN=localhost` cert, which no CA can vouch
@@ -81,6 +84,7 @@ func configure(_ app: Application) async throws {
   app.migrations.add(RecurringCollection())
   app.migrations.add(ServiceTokens())
   app.migrations.add(Admins())
+  app.migrations.add(JobFailures())
 
   // Development-only seed data so the dashboard has something to render. Only ever
   // registered in `.development`, so it targets `dev` and never the `test` database.
@@ -89,8 +93,6 @@ func configure(_ app: Application) async throws {
   if app.environment == .development {
     app.migrations.add(ICICLESnapshotJuly2026())
   }
-
-  app.views.use(.leaf)
 
   // Jobs live in Redis rather than Postgres: the worker's poll is a blocking pop instead of a
   // table scan on every tick. Assembled from parts rather than a `redis://` URL so a generated
@@ -270,6 +272,13 @@ private func corsMiddleware(origins: [String]) -> CORSMiddleware? {
       allowedMethods: [.GET, .POST, .PATCH, .DELETE, .OPTIONS],
       // `.authorization` is not optional here: without it a browser refuses to send the Tapis
       // token, and every cross-origin call from the dashboard arrives anonymous.
-      allowedHeaders: [.accept, .authorization, .contentType, .origin],
+      allowedHeaders: [
+        .accept,
+        .authorization,
+        .contentType,
+        .origin,
+        .init("X-Request-ID"),
+        .init("X-Tapis-Token"),
+      ],
     ))
 }

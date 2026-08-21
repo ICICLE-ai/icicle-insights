@@ -1,0 +1,285 @@
+/* ICICLE Insights — global styles.
+ *
+ * Layer order is declared before anything imports into those layers, so Optimus component
+ * styles sit between Tailwind's base and its utilities. Without this a Tailwind utility and an
+ * Optimus component style collide on raw specificity, and which one wins depends on stylesheet
+ * order rather than intent — the classic symptom being a `p-*` component that ignores a utility
+ * class you put on it. `provideOptimus` must name the same layer (see app.config.ts).
+ */
+@layer theme, base, optimus, components, utilities;
+
+@import 'tailwindcss';
+
+/* Dark mode is a class on <html>, never the bare media query, because three states have to be
+ * representable: system, explicitly light, and explicitly dark. A media query alone cannot
+ * express "the OS says dark but the user chose light". ThemeStore resolves the three down to
+ * this one class, and index.html applies it before first paint to avoid a flash.
+ * The selector must stay in step with `darkModeSelector` in app.config.ts. */
+@custom-variant dark (&:where(.app-dark, .app-dark *));
+
+/* ---------------------------------------------------------------------------
+ * Design direction
+ *
+ * This is an instrument, not a brochure — a standing record of what the institute's software
+ * does in the world, read by people deciding whether it matters. So the surface is quiet and
+ * the data is loud, rather than the other way round.
+ *
+ * Two typographic roles, and the split is drawn from the subject rather than applied to it.
+ * Everything the registries themselves treat as an identifier — resource names, version
+ * strings, counts, timestamps — is set in mono, because in this domain those *are* monospace
+ * strings. Prose is set in the UI sans. The result reads like a console for the things it
+ * measures, without dressing up as a terminal.
+ *
+ * System stacks only, deliberately. `docs/frontend.md` prefers vendoring over allowlisting a
+ * font CDN, and the CSP is still unwritten; a webfont would spend that budget before there is a
+ * policy to spend it against. Personality comes from the scale, the weights and the tracking.
+ * --------------------------------------------------------------------------- */
+
+:root {
+  /* Cool-shifted neutrals rather than warm paper or pure black — the temperature of a monitor
+   * rather than a printed page, and distinct from both of the palettes this replaces. */
+  color-scheme: light;
+
+  --ins-plane: #f0f2f5;
+  --ins-surface: #ffffff;
+  --ins-raised: #f7f9fb;
+  --ins-ink: #0b0f14; /* 19.2:1 on surface */
+  --ins-ink-secondary: #48525f; /* 7.9:1 */
+  --ins-ink-muted: #626d7a; /* 4.7:1 on the plane, 5.2:1 on the surface */
+  --ins-grid: #e3e7ec;
+  --ins-axis: #cbd2da;
+  --ins-border: rgb(11 15 20 / 11%);
+  --ins-border-strong: rgb(11 15 20 / 20%);
+
+  /* Categorical series, fixed order. Re-validated against #ffffff: lightness band, chroma
+   * floor, adjacent CVD separation (worst ΔE 9.1) and the normal-vision floor (19.6) all pass.
+   * Aqua, yellow and magenta fall below 3:1 here, whose documented mitigation is visible labels
+   * or a table view — ChartFigure makes the table structural, so that obligation is met. */
+  --ins-series-1: #2a78d6;
+  --ins-series-2: #eb6834;
+  --ins-series-3: #1baf7a;
+  --ins-series-4: #eda100;
+  --ins-series-5: #e87ba4;
+  --ins-series-6: #008300;
+  --ins-series-7: #4a3aa7;
+  --ins-series-8: #e34948;
+
+  /* Ranked bars share the radial chart's medium-saturation visual weight, with a separate hue
+   * sequence so the two charts feel related rather than duplicated. */
+  --ins-rank-1: #3a78d4;
+  --ins-rank-2: #dc6b3c;
+  --ins-rank-3: #249a73;
+  --ins-rank-4: #7856c8;
+  --ins-rank-5: #d14f82;
+  --ins-rank-ink: #ffffff;
+
+  /* Registry identity is a separate semantic palette from the generic analytical series above.
+   * These hues name stable external systems; they do not change when the data is re-ranked.
+   * GitHub stays neutral, GHCR uses GitHub's purple family, and the remaining three use their
+   * established brand hue. Labels and exact-value tables remain structural, so colour is never
+   * the only way to identify a registry. */
+  --ins-platform-github: #24292f;
+  --ins-platform-ghcr: #8250df;
+  --ins-platform-huggingface: #d4a900;
+  --ins-platform-npm: #cb3837;
+  --ins-platform-pypi: #3775a9;
+
+  /* Status. Reserved — never reused as a series colour, always paired with an icon and label. */
+  --ins-good: #0ca30c;
+  --ins-warning: #fab219;
+  --ins-serious: #ec835a;
+  --ins-critical: #d03b3b;
+
+  /* Type scale. Tight and short on purpose: a dashboard has three real sizes — micro label,
+   * body, and figure — and every extra step is another chance for two things that mean the same
+   * to be set differently. */
+  --ins-text-micro: 0.6875rem;
+  --ins-text-small: 0.8125rem;
+  --ins-text-body: 0.875rem;
+  --ins-text-lead: 1rem;
+  --ins-text-title: 1.375rem;
+  --ins-text-figure: 2.25rem;
+
+  --ins-font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --ins-font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  --ins-radius: 0.625rem;
+  --ins-radius-sm: 0.375rem;
+
+  /* Shared chrome dimensions. Keeping these in one place prevents the dashboard selectors,
+   * primary navigation, and administration masthead from drifting out of alignment. */
+  --ins-masthead-height: 3.5rem;
+  --ins-section-nav-height: 2.5rem;
+}
+
+:root.app-dark {
+  color-scheme: dark;
+
+  --ins-plane: #0b0f14;
+  --ins-surface: #141a22;
+  --ins-raised: #1b222c;
+  --ins-ink: #f2f5f8; /* 16.0:1 on surface */
+  --ins-ink-secondary: #b3bdc9; /* 9.2:1 */
+  --ins-ink-muted: #8592a0; /* 5.5:1 */
+  --ins-grid: #232c37;
+  --ins-axis: #2f3945;
+  --ins-border: rgb(255 255 255 / 11%);
+  --ins-border-strong: rgb(255 255 255 / 22%);
+
+  /* The same eight hues re-stepped for the dark surface — not an automatic inversion. All eight
+   * clear 3:1 against #141a22, so the light-mode contrast caveat does not apply here. */
+  --ins-series-1: #3987e5;
+  --ins-series-2: #d95926;
+  --ins-series-3: #199e70;
+  --ins-series-4: #c98500;
+  --ins-series-5: #d55181;
+  --ins-series-6: #008300;
+  --ins-series-7: #9085e9;
+  --ins-series-8: #e66767;
+
+  /* Brighter steps remain legible on the dark surface; the surface itself becomes label ink. */
+  --ins-rank-1: #67a7ef;
+  --ins-rank-2: #f18a5c;
+  --ins-rank-3: #44c49b;
+  --ins-rank-4: #a88aeb;
+  --ins-rank-5: #ed7aa7;
+  --ins-rank-ink: #141a22;
+
+  /* Brand families stay the same in dark mode, with only the steps lifted enough to remain
+   * distinct on the dark chart surface. */
+  --ins-platform-github: #f0f6fc;
+  --ins-platform-ghcr: #a371f7;
+  --ins-platform-huggingface: #ffd21e;
+  --ins-platform-npm: #e45c5c;
+  --ins-platform-pypi: #63a6d8;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ins-plane);
+  color: var(--ins-ink);
+  font-family: var(--ins-font-sans);
+  font-size: var(--ins-text-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Anything that is an identifier or a figure. Tabular figures so columns of numbers align and
+ * a changing value does not shuffle the characters beside it. */
+.ins-mono {
+  font-family: var(--ins-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The recurring micro-label: section headings, table headers, control labels. One treatment,
+ * used everywhere that role appears, so the page has a consistent smallest voice. */
+.ins-eyebrow {
+  font-size: var(--ins-text-micro);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ins-ink-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* A visible focus ring on every interactive element, in both themes. Never remove this without
+ * replacing it — keyboard users lose their place entirely. */
+:focus-visible {
+  outline: 2px solid var(--ins-series-1);
+  outline-offset: 2px;
+  border-radius: var(--ins-radius-sm);
+}
+
+.ins-skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  background: var(--ins-surface);
+  color: var(--ins-ink);
+  border: 1px solid var(--ins-border-strong);
+  border-radius: var(--ins-radius-sm);
+}
+
+.ins-skip-link:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+}
+
+.ins-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * The data table paired with every chart.
+ *
+ * Global rather than repeated inside each chart component: all three carried an identical copy,
+ * which is three places for them to drift apart and three copies in the bundle. It is a shared
+ * treatment for a shared role, so it belongs with the other shared treatments.
+ * --------------------------------------------------------------------------- */
+
+.ins-chart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ins-text-small);
+}
+
+.ins-chart-table th,
+.ins-chart-table td {
+  padding: 0.375rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--ins-border);
+}
+
+/* Sticky header, because the container scrolls at a max height and a long table otherwise
+   scrolls its own column names out of view. */
+.ins-chart-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ins-surface);
+  font-size: var(--ins-text-micro);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ins-ink-muted);
+}
+
+.ins-chart-table tbody th {
+  font-weight: 400;
+  color: var(--ins-ink);
+}
+
+.ins-chart-table td {
+  color: var(--ins-ink-secondary);
+}
+
+.ins-chart-table__number {
+  text-align: right;
+  font-family: var(--ins-font-mono);
+  font-variant-numeric: tabular-nums;
+}

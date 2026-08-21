@@ -14,7 +14,8 @@ struct ServiceTokenControllerTests {
   func `Mint returns the token exactly once`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let resourceID = try resource.requireID()
 
       var minted: ServiceToken.Minted?
@@ -57,7 +58,8 @@ struct ServiceTokenControllerTests {
   func `Minted token works against its resource`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let resourceID = try resource.requireID()
 
       var token = ""
@@ -93,7 +95,8 @@ struct ServiceTokenControllerTests {
   func `Revoke over HTTP stops the token`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let resourceID = try resource.requireID()
       let issued = try await issueWebhookToken(on: app, resourceID: resourceID)
 
@@ -125,7 +128,8 @@ struct ServiceTokenControllerTests {
   func `Revoked rows are retained for audit`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let issued = try await issueWebhookToken(on: app, resourceID: try resource.requireID())
 
       try await app.testing().test(
@@ -151,10 +155,36 @@ struct ServiceTokenControllerTests {
   }
 
   @Test
+  func `Mint rejects a non-service resource`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .model)
+
+      try await app.testing().test(
+        .POST,
+        "api/service-tokens",
+        headers: app.adminAuth,
+        beforeRequest: { req in
+          try req.content.encode(
+            ServiceToken.Create(
+              resourceID: try resource.requireID(), label: "invalid", expiresInDays: nil))
+        },
+        afterResponse: { res async throws in
+          #expect(res.status == .badRequest)
+          #expect(res.body.string.contains("type 'service'"))
+          #expect(try await ServiceToken.query(on: app.db).count() == 0)
+        },
+      )
+    }
+  }
+
+  @Test
   func `A non-admin cannot mint`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
 
       try await app.testing().test(
         .POST,
@@ -177,7 +207,8 @@ struct ServiceTokenControllerTests {
   func `A webhook token cannot mint another`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let resourceID = try resource.requireID()
       let issued = try await issueWebhookToken(on: app, resourceID: resourceID)
 
@@ -229,7 +260,8 @@ struct ServiceTokenControllerTests {
   func `Mint rejects a blank label`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
 
       try await app.testing().test(
         .POST,

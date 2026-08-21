@@ -1,0 +1,95 @@
+:host {
+  display: block;
+  min-height: 100dvh;
+}
+
+.ins-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  max-width: 84rem;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.ins-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 1.25rem 0 2rem;
+}
+
+/* The routed dashboard takes ownership of the main region's spare height. This keeps a short
+ * selected view from leaving a blank band above the footer, without turning the footer itself
+ * into an oversized panel. */
+.ins-main > app-dashboard,
+.ins-main > app-admin-shell,
+.ins-main > app-admin-access {
+  flex: 1;
+  min-height: 0;
+}
+
+.ins-shell:has(app-dashboard) .ins-main {
+  padding-bottom: 1rem;
+}
+
+/* Keep the compact operations overview and footer inside the presentation viewport. Other admin
+ * routes retain the normal page rhythm because their forms and record lists may need more room. */
+.ins-shell:has(app-admin-overview) .ins-main {
+  padding-bottom: 1.25rem;
+}
+
+/* The skip link targets this, and a bare element is not focusable. `tabindex="-1"` makes it a
+ * programmatic target; this removes the ring that would otherwise surround the whole page, which
+ * is noise rather than information. */
+.ins-main:focus {
+  outline: none;
+}
+
+.ins-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.85fr);
+  align-content: start;
+  gap: 2rem;
+  padding: 1rem 0 1.5rem;
+  border-top: 1px solid var(--ins-border);
+  font-size: var(--ins-text-small);
+  color: var(--ins-ink-muted);
+}
+
+.ins-footer section {
+  display: grid;
+  gap: 0.375rem;
+}
+
+/* The Test Lab intentionally floats in the bottom-right corner. Reserve its footprint so it
+ * never obscures acknowledgment or future copyright language while design comparisons remain
+ * enabled. */
+.ins-footer section:last-child {
+  padding-inline-end: 7rem;
+}
+
+.ins-footer__heading {
+  margin: 0;
+  font-size: var(--ins-text-micro);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ins-ink-secondary);
+}
+
+.ins-footer p {
+  margin: 0;
+  max-width: 68ch;
+}
+
+@media (width < 42rem) {
+  .ins-footer {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .ins-footer section:last-child {
+    padding-inline-end: 0;
+  }
+}
