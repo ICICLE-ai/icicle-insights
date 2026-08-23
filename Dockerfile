@@ -6,10 +6,10 @@ FROM node:24-bookworm-slim AS frontend-build
 WORKDIR /web
 
 # Dependency metadata first so source edits do not invalidate npm's install layer.
-COPY web/package.json web/package-lock.json ./
+COPY Dashboard/package.json Dashboard/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
-COPY web/ ./
+COPY Dashboard/ ./
 RUN npm run build -- --output-path=/web-dist
 
 # ================================

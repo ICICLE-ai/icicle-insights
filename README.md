@@ -153,7 +153,7 @@ just run
 In a second terminal, start the Angular development server:
 
 ```bash
-cd web
+cd Dashboard
 npm ci
 npm start
 ```

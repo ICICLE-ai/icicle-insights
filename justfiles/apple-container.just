@@ -96,14 +96,14 @@ build: builder
     trap 'rm -rf -- "$build_context"' EXIT
     cp Dockerfile .dockerignore Package.swift Package.resolved "$build_context/"
     cp -R Sources Tests Resources Public "$build_context/"
-    # The frontend stage compiles the dashboard from source, so `web/` has to be in the context —
-    # without it the build fails on `COPY web/package.json` before it reaches Swift at all.
+    # The frontend stage compiles the dashboard from source, so `Dashboard/` has to be in the
+    # context — without it the build fails on `COPY Dashboard/package.json` before Swift starts.
     # node_modules is the wrong platform's binaries and ~300 MB; dist and .angular are stale
     # output. `.dockerignore` names the same three and is copied above so the builder applies it,
     # but the copy still has to skip them or the cost lands before the builder ever reads it.
-    mkdir -p "$build_context/web"
-    tar -cf - -C web --exclude=node_modules --exclude=dist --exclude=.angular . \
-      | tar -xf - -C "$build_context/web"
+    mkdir -p "$build_context/Dashboard"
+    tar -cf - -C Dashboard --exclude=node_modules --exclude=dist --exclude=.angular . \
+      | tar -xf - -C "$build_context/Dashboard"
     cd "$build_context"
     container build --dns '{{container_build_dns_primary}}' --dns '{{container_build_dns_secondary}}' --tag '{{container_image}}' --file Dockerfile .
 

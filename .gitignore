@@ -17,9 +17,9 @@ data/
 
 # Angular frontend. Built output goes to Public/ and is never committed; Docker produces it in a
 # dedicated Node stage so a host build never becomes part of the image accidentally.
-web/node_modules/
-web/dist/
-web/.angular/
+Dashboard/node_modules/
+Dashboard/dist/
+Dashboard/.angular/
 Public/*
 !Public/.gitkeep
 
@@ -31,5 +31,5 @@ personal-notes/
 
 # Stray tool output: a session file from a tool handed ":memory:" as a path, and an empty
 # placeholder. Neither is referenced by anything.
-web/:memory:*.ses
-web/sas.json
+Dashboard/:memory:*.ses
+Dashboard/sas.json

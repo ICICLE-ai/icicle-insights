@@ -10,7 +10,7 @@
     {
       "name": "insights-web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "web", "start"],
+      "runtimeArgs": ["--prefix", "Dashboard", "start"],
       "port": 4200,
       "url": "http://localhost:4200"
     }
