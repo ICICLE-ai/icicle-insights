@@ -1,0 +1,108 @@
+# Production overrides. Layered on top of the base file, never instead of it:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Everything here is a deliberate difference from local. If a setting is not in
+# this file, the base file's value is what a deployment gets.
+#
+# Requires Docker Compose 2.24 or newer, for the `!reset` and `!override` tags.
+# Both are load-bearing rather than stylistic: list values MERGE across overlay
+# files, so without them the base file's published `5432:5432` and `8080:8080`
+# would survive into production alongside the entries below — the database would
+# stay exposed on every interface and the app would bind the same port twice.
+# Check with `docker compose version`.
+#
+# Before the first `up`, confirm all five of these are set in the environment.
+# `configure` throws on a missing value, so a gap stops every process at boot
+# rather than starting a half-configured one:
+#
+#     TAPIS_BASE_URL  TAPIS_TENANT  TAPIS_TOKEN  TAPIS_USER  ROOT_ADMIN_USERNAME
+#
+# Then run the migrator once and wait for it before starting the rest:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm migrate
+
+x-prod_environment: &prod_environment
+  # The whole reason this file exists. `configure` derives the default database name from the
+  # environment, so a deployment that leaves this unset can put `serve` and its workers on
+  # *different databases*. It also keeps the development-only ICICLE seed migration from
+  # registering, which would otherwise write sample rows into a real deployment.
+  VAPOR_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  # No default here, unlike the base file. A deployment that forgets the cache password should
+  # fail at boot rather than quietly connect to an unauthenticated Valkey.
+  REDIS_PASSWORD: ${REDIS_PASSWORD:?set the cache password}
+  DATABASE_PASSWORD: ${DATABASE_PASSWORD:?set the database password}
+  # Pinned rather than defaulted: see VAPOR_ENV above. With the name fixed, no process can pick
+  # a different database from a differing view of its own environment.
+  DATABASE_NAME: ${DATABASE_NAME:-vapor_database}
+  DATABASE_USERNAME: ${DATABASE_USERNAME:-vapor_username}
+  # Required in transit. The base file disables TLS because the local Postgres has no
+  # certificate; leaving that in place in a deployment sends credentials in the clear.
+  DATABASE_TLS: ${DATABASE_TLS:-require}
+
+services:
+  app:
+    environment:
+      <<: *prod_environment
+    restart: unless-stopped
+    # Bound to loopback: a deployment terminates TLS in front of this, and publishing 8080 on
+    # every interface would let traffic reach the service without passing through it.
+    ports: !override
+      - '127.0.0.1:8080:8080'
+
+  queues:
+    environment:
+      <<: *prod_environment
+    restart: unless-stopped
+    # The safe knob when collection falls behind. Jobs are retry-safe and delivery is
+    # at-least-once, so extra drainers only add throughput.
+    deploy:
+      replicas: 2
+
+  scheduled:
+    environment:
+      <<: *prod_environment
+    restart: unless-stopped
+    # Still exactly one, and this is the invariant most likely to be broken by a well-meaning
+    # scale-up: two schedulers dispatch every due resource twice. Scale `queues` instead.
+    deploy:
+      replicas: 1
+
+  migrate:
+    environment:
+      <<: *prod_environment
+
+  revert:
+    environment:
+      <<: *prod_environment
+
+  collect-now:
+    environment:
+      <<: *prod_environment
+
+  collect-all-now:
+    environment:
+      <<: *prod_environment
+
+  collect-accounts-now:
+    environment:
+      <<: *prod_environment
+
+  db:
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?set the database password}
+      POSTGRES_USER: ${DATABASE_USERNAME:-vapor_username}
+      POSTGRES_DB: ${DATABASE_NAME:-vapor_database}
+    # Unpublished. The base file exposes 5432 so a local client can attach; in a deployment the
+    # only thing that needs the database is on the compose network already.
+    ports: !reset []
+
+  valkey:
+    restart: unless-stopped
+    # Auth on, which the base file omits because the local server runs open. Kept in step with
+    # REDIS_PASSWORD above — the two must match or every queue operation fails.
+    command:
+      ["valkey-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set the cache password}"]
+    ports: !reset []

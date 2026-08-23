@@ -1,12 +1,4 @@
-# Docker Compose file for Vapor
-#
-# Install Docker on your system to run and test
-# your Vapor app in a production-like environment.
-#
-# Note: This file is intended for testing and does not
-# implement best practices for a production deployment.
-#
-# Learn more: https://docs.docker.com/compose/reference/
+# The local stack: Postgres, Valkey, and every process the service runs.
 #
 #     Build images: docker compose build
 #        Start app: docker compose up app
@@ -15,6 +7,33 @@
 #    Start workers: docker compose up queues scheduled
 #    Sweep due now: docker compose run collect-now
 #         Stop all: docker compose down (add -v to wipe db)
+#
+# ---------------------------------------------------------------------------
+# Deploying
+# ---------------------------------------------------------------------------
+# This file defaults to development, because that is what it is for. A
+# deployment layers the production overrides on top rather than editing it:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# See docker-compose.prod.yml for exactly what changes and why.
+#
+# What a deployment must supply. `configure` throws on a missing value, so
+# every process here — serve, workers, scheduler, migrator — dies at boot
+# without them rather than starting up half-configured:
+#
+#     TAPIS_BASE_URL   host and tenant must name the SAME tenant
+#     TAPIS_TENANT     "
+#     TAPIS_TOKEN      short-lived; unexplained vault failures usually mean expiry
+#     TAPIS_USER       scopes the vault path
+#     ROOT_ADMIN_USERNAME  break-glass admin; a placeholder boots and matches nobody
+#
+# Everything else has a default in code. `.env.example` documents the full
+# surface with the reasoning behind each one; copy it to `.env` and fill in.
+# Compose passes only the variables it names below, so a variable present in
+# `.env` but absent from this file never reaches a container.
+#
+# Learn more: https://docs.docker.com/compose/reference/
 #
 
 volumes:
@@ -79,14 +98,25 @@ services:
     environment:
       <<: *shared_environment
     depends_on:
-      - db
-      - valkey
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
     ports:
       - '8080:8080'
     # user: '0' # uncomment to run as root for testing purposes even though Dockerfile defines 'vapor' user.
     # No --env: the flag outranks VAPOR_ENV in `Environment.detect`, so passing it here would pin
     # this one process to production while every sibling followed the shared variable.
     command: ["serve", "--hostname", "0.0.0.0", "--port", "8080"]
+    # /health is liveness only — it checks that the process is up and nothing else, so a brief
+    # database blip cannot get a recoverable container killed. /ready is the one that tests
+    # Postgres and Valkey, and belongs on a load balancer rather than here.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
   # Drains the `metrics` queue: the platform syncs themselves. `serve` does not process queued
   # jobs, so without this nothing dispatched ever runs.
   queues:
@@ -96,8 +126,10 @@ services:
     environment:
       <<: *shared_environment
     depends_on:
-      - db
-      - valkey
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
     command: ["queues", "--queue", "metrics"]
   # Runs the scheduled sweeps, which only enqueue work onto the queue above. Separate from
   # `queues` so a long sync cannot hold up the next sweep, and single-replica because two
@@ -109,9 +141,16 @@ services:
     environment:
       <<: *shared_environment
     depends_on:
-      - db
-      - valkey
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
     command: ["queues", "--scheduled"]
+    # Exactly one, always. Two schedulers dispatch every due resource twice, and the sweeps are
+    # what enqueue collection — so this is the one service here that must never be scaled.
+    # `queues` above scales freely and is the correct knob when collection falls behind.
+    deploy:
+      replicas: 1
   migrate:
     image: insights:latest
     build:
@@ -119,7 +158,8 @@ services:
     environment:
       <<: *shared_environment
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     command: ["migrate", "--yes"]
     deploy:
       replicas: 0
@@ -130,7 +170,8 @@ services:
     environment:
       <<: *shared_environment
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     command: ["migrate", "--revert", "--yes"]
     deploy:
       replicas: 0
@@ -144,8 +185,10 @@ services:
     environment:
       <<: *shared_environment
     depends_on:
-      - db
-      - valkey
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
     command: ["collect-resources"]
     deploy:
       replicas: 0
@@ -158,8 +201,10 @@ services:
     environment:
       <<: *shared_environment
     depends_on:
-      - db
-      - valkey
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
     command: ["collect-resources", "--force"]
     deploy:
       replicas: 0
@@ -170,8 +215,10 @@ services:
     environment:
       <<: *shared_environment
     depends_on:
-      - db
-      - valkey
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
     command: ["collect-accounts"]
     deploy:
       replicas: 0
@@ -184,6 +231,11 @@ services:
       - valkey_data:/data
     ports:
       - '6379:6379'
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   db:
     image: postgres:18-alpine
     volumes:
@@ -194,3 +246,11 @@ services:
       POSTGRES_DB: *db_name
     ports:
       - '5432:5432'
+    # Named user and database, not a bare `pg_isready`: the server accepts connections briefly
+    # while still running its own init scripts, and a migrator that wins that race fails on a
+    # database it can see but cannot yet use.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
