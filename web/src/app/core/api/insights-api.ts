@@ -35,8 +35,13 @@ export const ALL_METRIC_TYPES: readonly MetricType[] = [
   'viewsAllTime',
 ];
 
-/** True for the running totals the server derives rather than accepts. */
-export const isAllTimeMetric = (type: MetricType): boolean => type.endsWith('AllTime');
+/**
+ * True for the running totals the server derives rather than accepts.
+ *
+ * Takes a bare `string` because the dashboard's metric pickers carry their option types that way
+ * — and a suffix test needs no narrower domain than the one it actually inspects.
+ */
+export const isAllTimeMetric = (type: string): boolean => type.endsWith('AllTime');
 
 /**
  * The metric types a human may record.

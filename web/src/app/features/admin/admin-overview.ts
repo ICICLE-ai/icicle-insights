@@ -2,7 +2,6 @@ import { Component, computed, inject, signal } from '@angular/core';
 
 import { SessionStore } from '../../core/auth/session-store';
 import { TokenStore } from '../../core/auth/token-store';
-import { ExperimentStore } from '../../core/layout/experiment-store';
 import { ErrorNotice } from '../../shared/ui/error-notice';
 import { Paginator, pageSlice } from '../../shared/ui/paginator';
 import { AdminStore } from './admin-store';
@@ -43,7 +42,6 @@ export class AdminOverview {
   protected readonly store = inject(AdminStore);
   protected readonly session = inject(SessionStore);
   protected readonly tokens = inject(TokenStore);
-  protected readonly experiments = inject(ExperimentStore);
 
   protected readonly attentionPageSize = ATTENTION_PAGE_SIZE;
   protected readonly summary = computed(() => summarizeOperations(this.store.snapshot()));

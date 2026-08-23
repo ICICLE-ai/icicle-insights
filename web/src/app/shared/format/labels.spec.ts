@@ -52,6 +52,14 @@ describe('metricBaseLabel', () => {
     expect(metricBaseLabel('views')).toBe('Views');
   });
 
+  it('collapses an all-time twin onto the same bare name as its windowed pair', () => {
+    // Both dashboard metric pickers rely on this, and both separate the twins with optgroup
+    // headings precisely because the label alone can no longer tell them apart.
+    expect(metricBaseLabel('downloadsAllTime')).toBe('Downloads');
+    expect(metricBaseLabel('downloadsAllTime')).toBe(metricBaseLabel('downloads'));
+    expect(metricBaseLabel('viewsAllTime')).toBe('Views');
+  });
+
   it('agrees with metricLabel wherever the name is already exact', () => {
     for (const type of ['stars', 'forks', 'likes', 'subscribers']) {
       expect(metricBaseLabel(type)).toBe(metricLabel(type));

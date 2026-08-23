@@ -51,11 +51,14 @@ describe('AppNav', () => {
     expect(theme?.closest('.ins-nav__admin')).toBeNull();
   });
 
-  it('keeps the product name visible without making the brand a disclosure', async () => {
+  it('names the product on the brand mark, and is not a disclosure', async () => {
     const root = await render();
     const brand = root.querySelector('.ins-nav__brand');
 
-    expect(brand?.textContent).toContain('ICICLE Insights');
+    // The mark carries the identity with no visible text, so the name has to reach assistive
+    // technology through the element's accessible name or the masthead goes unlabelled.
+    expect(brand?.getAttribute('aria-label')).toBe('ICICLE Insights');
+    expect(brand?.getAttribute('role')).toBe('img');
     expect(brand?.matches('button')).toBe(false);
     expect(root.querySelector('.ins-nav__trigger')).toBeNull();
     expect(root.textContent).not.toContain('Public');

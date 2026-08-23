@@ -3,12 +3,16 @@ import { Component, computed, inject, linkedSignal, signal } from '@angular/core
 import { currentTotal, latestByResource, totalSeries } from '../../core/analytics/metrics';
 import type { MetricType, Platform } from '../../core/api/models';
 import { pluralize } from '../../shared/format/formatters';
-import { metricLabel, spansMultipleRegistries } from '../../shared/format/labels';
+import { metricBaseLabel, metricLabel, spansMultipleRegistries } from '../../shared/format/labels';
 import { ErrorNotice } from '../../shared/ui/error-notice';
 import { AppNav } from '../../shared/ui/app-nav';
 import { Paginator, pageSlice } from '../../shared/ui/paginator';
 import { StatTile } from '../../shared/ui/stat-tile';
-import { StructureSunburst, type StructureRow } from './charts/structure-sunburst';
+import {
+  StructureSunburst,
+  type StructureDimension,
+  type StructureRow,
+} from './charts/structure-sunburst';
 import { TopResourcesChart, type ResourceReading } from './charts/top-resources-chart';
 import {
   ALL_TREND_METRICS,
@@ -191,14 +195,30 @@ export class Dashboard {
   });
 
   /**
-   * Hidden at resource scope, where the sunburst would be a single wedge — the anti-pattern
-   * catalog's one-bar bar chart, saying less than the sentence already in the masthead.
+   * The dimension the radial should divide on: whichever one actually varies.
+   *
+   * Resource kind is the portfolio question and wins when it has more than one answer. A scope
+   * where every resource is the same kind — Packages, all of them `package` — has nothing to say
+   * about kinds but does about registries, so the ring switches rather than disappearing.
+   * Deciding on the data means no scope needs naming here.
    */
-  protected readonly showStructure = computed(
-    () =>
-      this.store.scope() !== 'resource' &&
-      new Set(this.structureRows().map((row) => row.type)).size > 1,
+  protected readonly structureDimension = computed<StructureDimension>(() =>
+    new Set(this.structureRows().map((row) => row.type)).size > 1 ? 'type' : 'registry',
   );
+
+  /**
+   * Hidden at resource scope, where the sunburst would be a single wedge — the anti-pattern
+   * catalog's one-bar bar chart, saying less than the sentence already in the masthead. Hidden
+   * too when neither dimension varies, which is the same single wedge by another route.
+   */
+  protected readonly showStructure = computed(() => {
+    if (this.store.scope() === 'resource') {
+      return false;
+    }
+    const rows = this.structureRows();
+    const field = this.structureDimension() === 'registry' ? 'platform' : 'type';
+    return new Set(rows.map((row) => row[field])).size > 1;
+  });
 
   /**
    * Useful replacement for the radial when a selected registry contains one resource kind.
@@ -267,7 +287,9 @@ export class Dashboard {
       .scopedSlices()
       .map((slice) => ({
         type: slice.type,
-        label: metricLabel(slice.type),
+        // Bare in the picker; the chart's own subtitle and legend still use `metricLabel`, so
+        // the window stays on screen wherever an actual figure is.
+        label: metricBaseLabel(slice.type),
         coverage: latestByResource(slice.readings).size,
       }))
       .filter((option) => option.coverage > 0)
@@ -421,7 +443,8 @@ export class Dashboard {
 
   protected readonly trendOptions = computed<readonly TrendMetricOption[]>(() => [
     { type: ALL_TREND_METRICS, label: 'All metrics' },
-    ...this.trendSections().map(({ type, label }) => ({ type, label })),
+    // `label` on a section is the qualified name the legend draws; the picker wants the bare one.
+    ...this.trendSections().map(({ type }) => ({ type, label: metricBaseLabel(type) })),
   ]);
 
   protected readonly selectedTrendSlot = computed(() =>

@@ -67,7 +67,7 @@
     <h2 id="dashboard-heading-headline" class="ins-eyebrow ins-section">Portfolio</h2>
     <div class="ins-headline" [class.ins-headline--profile-only]="visibleHeadlines().length === 0">
       @if (showStructure()) {
-        <app-structure-sunburst [rows]="structureRows()" />
+        <app-structure-sunburst [rows]="structureRows()" [dimension]="structureDimension()" />
       } @else {
         <app-scope-profile
           [heading]="scopeProfile().heading"

@@ -19,6 +19,7 @@ import { tooltip } from '@tanstack/charts/tooltip';
 import type { Platform } from '../../../core/api/models';
 import { compact, whole } from '../../../shared/format/formatters';
 import { platformLabel } from '../../../shared/format/labels';
+import { isAllTimeMetric } from '../../../core/api/insights-api';
 import { ChartFigure } from '../../../shared/charts/chart-figure';
 import { ChartPaletteService } from '../../../shared/charts/chart-palette';
 
@@ -64,8 +65,19 @@ const TOP_N = 10;
           [value]="metric()"
           (change)="onMetricChange($event)"
         >
-          @for (option of metricOptions(); track option.type) {
-            <option [value]="option.type">{{ option.label }}</option>
+          @if (windowedOptions().length > 0) {
+            <optgroup label="Latest window">
+              @for (option of windowedOptions(); track option.type) {
+                <option [value]="option.type">{{ option.label }}</option>
+              }
+            </optgroup>
+          }
+          @if (allTimeOptions().length > 0) {
+            <optgroup label="All time">
+              @for (option of allTimeOptions(); track option.type) {
+                <option [value]="option.type">{{ option.label }}</option>
+              }
+            </optgroup>
           }
         </select>
       </div>
@@ -129,6 +141,20 @@ const TOP_N = 10;
 export class TopResourcesChart {
   readonly rows = input.required<readonly ResourceReading[]>();
   readonly metricOptions = input.required<readonly { type: string; label: string }[]>();
+
+  /**
+   * Split so the option labels can be bare names.
+   *
+   * `downloads` and `downloadsAllTime` are both offered here, and stripping the qualifier off
+   * each would put two options reading "Downloads" in one list. The group heading carries the
+   * window instead, which is the same trade the registry pickers make.
+   */
+  protected readonly windowedOptions = computed(() =>
+    this.metricOptions().filter((option) => !isAllTimeMetric(option.type)),
+  );
+  protected readonly allTimeOptions = computed(() =>
+    this.metricOptions().filter((option) => isAllTimeMetric(option.type)),
+  );
   readonly metric = input.required<string>();
   readonly metricChange = output<string>();
 

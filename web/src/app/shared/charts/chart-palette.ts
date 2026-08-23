@@ -1,5 +1,7 @@
 import { DOCUMENT, Service, computed, inject } from '@angular/core';
 
+import type { Platform } from '../../core/api/models';
+import { PLATFORM_ORDER } from '../format/labels';
 import { ThemeStore } from '../../core/theme/theme-store';
 
 /** Concrete colours for one theme, resolved from the CSS custom properties in styles.css. */
@@ -13,6 +15,14 @@ export interface ChartPalette {
   readonly grid: string;
   readonly axis: string;
   readonly surface: string;
+  /**
+   * Registry identity colours, keyed by platform.
+   *
+   * Separate from `series` because a registry's colour follows the registry, not its rank in
+   * whatever chart is on screen — the same npm that is a bar in the scope picker must be the same
+   * hue as the npm slice in a donut beside it.
+   */
+  readonly platforms: Readonly<Record<Platform, string>>;
 }
 
 /** Names of the eight categorical slots, in the fixed order the ramp was validated in. */
@@ -53,6 +63,13 @@ const FALLBACK: ChartPalette = {
   grid: '#e1e0d9',
   axis: '#c3c2b7',
   surface: '#fcfcfb',
+  platforms: {
+    github: '#1baf7a',
+    ghcr: '#4a3aa7',
+    huggingface: '#eda100',
+    npm: '#e87ba4',
+    pypi: '#2a78d6',
+  },
 };
 
 /**
@@ -96,6 +113,12 @@ export class ChartPaletteService {
       grid: read('--ins-grid', FALLBACK.grid),
       axis: read('--ins-axis', FALLBACK.axis),
       surface: read('--ins-surface', FALLBACK.surface),
+      platforms: Object.fromEntries(
+        PLATFORM_ORDER.map((platform) => [
+          platform,
+          read(`--ins-platform-${platform}`, FALLBACK.platforms[platform]),
+        ]),
+      ) as Readonly<Record<Platform, string>>,
     };
   });
 }

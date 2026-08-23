@@ -29,6 +29,7 @@ import type { SeriesPoint } from '../../../core/analytics/metrics';
 import { compact, formatDate, whole } from '../../../shared/format/formatters';
 import { ChartFigure } from '../../../shared/charts/chart-figure';
 import { ChartPaletteService } from '../../../shared/charts/chart-palette';
+import { isAllTimeMetric } from '../../../core/api/insights-api';
 
 type TrendRange = 'thirtyDays' | 'sixMonths' | 'year' | 'yearToDate';
 
@@ -100,8 +101,22 @@ const RANGE_OPTIONS: readonly TrendRangeOption[] = [
             [value]="metric()"
             (change)="onMetricChange($event)"
           >
-            @for (option of metricOptions(); track option.type) {
+            @for (option of comparisonOptions(); track option.type) {
               <option [value]="option.type">{{ option.label }}</option>
+            }
+            @if (windowedOptions().length > 0) {
+              <optgroup label="Latest window">
+                @for (option of windowedOptions(); track option.type) {
+                  <option [value]="option.type">{{ option.label }}</option>
+                }
+              </optgroup>
+            }
+            @if (allTimeOptions().length > 0) {
+              <optgroup label="All time">
+                @for (option of allTimeOptions(); track option.type) {
+                  <option [value]="option.type">{{ option.label }}</option>
+                }
+              </optgroup>
             }
           </select>
         </div>
@@ -326,6 +341,25 @@ const RANGE_OPTIONS: readonly TrendRangeOption[] = [
 export class TrendChart {
   readonly series = input.required<readonly TrendSeries[]>();
   readonly metricOptions = input.required<readonly TrendMetricOption[]>();
+
+  /**
+   * Split so the option labels can be bare names.
+   *
+   * `downloads` and `downloadsAllTime` are both offered here, and stripping the qualifier off
+   * each would put two options reading "Downloads" in one list. The group heading carries the
+   * window instead. "All metrics" is not a metric, so it stays ungrouped at the top.
+   */
+  protected readonly comparisonOptions = computed(() =>
+    this.metricOptions().filter((option) => option.type === ALL_TREND_METRICS),
+  );
+  protected readonly windowedOptions = computed(() =>
+    this.metricOptions().filter(
+      (option) => option.type !== ALL_TREND_METRICS && !isAllTimeMetric(option.type),
+    ),
+  );
+  protected readonly allTimeOptions = computed(() =>
+    this.metricOptions().filter((option) => isAllTimeMetric(option.type)),
+  );
   readonly metric = input.required<string>();
   readonly metricChange = output<string>();
   /** Keeps an isolated metric on the same hue it has in the comparison view. */

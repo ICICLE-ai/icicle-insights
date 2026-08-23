@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { SessionStore } from '../../core/auth/session-store';
 import { TokenStore } from '../../core/auth/token-store';
-import { ExperimentStore } from '../../core/layout/experiment-store';
 import { AdminOverview } from './admin-overview';
 import { AdminStore, type AdminSnapshot } from './admin-store';
 
@@ -63,7 +62,6 @@ describe('AdminOverview watchlist', () => {
         },
         { provide: SessionStore, useValue: { username: signal('cguz109'), isAdmin: signal(true) } },
         { provide: TokenStore, useValue: { source: signal('cookie'), hasToken: signal(true) } },
-        { provide: ExperimentStore, useValue: { adminOverview: signal('status-first') } },
       ],
     }).compileComponents();
   });

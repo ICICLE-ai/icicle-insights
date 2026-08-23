@@ -154,17 +154,6 @@
   margin-top: 0.75rem;
 }
 
-/* Test Lab comparison: the data and components stay identical, only the reading order changes. */
-.ins-operations.is-triage-first .ins-operations__detail-grid {
-  order: 1;
-  margin-top: 0;
-  margin-bottom: 0.75rem;
-}
-
-.ins-operations.is-triage-first .ins-status-grid {
-  order: 2;
-}
-
 .ins-attention,
 .ins-admin-context {
   display: flex;

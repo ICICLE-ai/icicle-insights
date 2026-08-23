@@ -722,3 +722,36 @@ Known and deliberate, not yet done:
   its code is still bundled in a chunk nothing requests. It also holds the manual token paste
   used to sign in locally, so removing it costs that.
 - Catalog → Metrics is the one dialog not yet verified in a browser.
+
+## Phase 13 — Brand mark, dev-tool removal, and bare metric pickers (2026-08-23)
+
+- [x] **A/B Test Lab removed** — `DevTools`, `ExperimentPicker`, `DevSessionControl`, and
+      `ExperimentStore` are all deleted. It was `@if (devMode)`-gated and never rendered in
+      production, but its code was still bundled in a chunk nothing requested. The store's own
+      doc said it "exist[s] exclusively behind the development Test Lab", so with the Lab gone
+      `adminOverview()` could only ever return its default and the two `.is-triage-first` rules
+      were unreachable — removed with it. Note this also removes the manual token paste used to
+      sign in locally; a Tapis session now has to arrive the normal way.
+- [x] **Brand mark is the ICICLE glyph**, cropped out of the institute wordmark and drawn as a
+      CSS mask so it takes the surrounding ink colour and follows the theme — the source artwork
+      is white and an `img` of it would vanish on the light surface. The box is now a square
+      matching the theme button rather than sized to two lines of text, and the product name
+      moved to `aria-label`, since a mark with no visible text would otherwise leave the masthead
+      unlabelled.
+- [x] **The favicon was Angular's default logo.** `web/public/favicon.ico` carried the pink `A`
+      shield that ships with `ng new`; the ICICLE artwork the Leaf dashboard used (`assets/`,
+      md5 `2dca3fd…`) had been lost in the rewrite. Restored. It is a 1355×1187 PNG behind an
+      `.ico` name — which browsers accept and the old dashboard shipped — but it is worth
+      re-exporting as a real multi-size icon at some point.
+- [x] **Dashboard metric pickers show bare names**, extending the earlier form-only decision.
+      This could not be done by stripping labels alone: both pickers offer `downloads` *and*
+      `downloadsAllTime`, so two options would have read "Downloads" with nothing to separate
+      them. They are now grouped under "Latest window" and "All time" headings, the same trade
+      the registry pickers make — the heading carries the qualifier so the option does not have
+      to. `metricBaseLabel` now strips the `AllTime` suffix, and its spec pins the twin collapse
+      precisely because two pickers depend on the grouping to stay unambiguous.
+      - Chart legends and subtitles keep `metricLabel`. That is where the figures are, and where
+        both Downloads series appear at once, so the window has to be stated.
+
+Verified: `ng build`, `ng test` (**137 passing**), prettier, `swift build`, `just test` (**195
+passing**) — all exit 0. Both pickers and the brand mark checked in the browser in dark and light.

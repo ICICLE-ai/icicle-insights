@@ -28,3 +28,8 @@ Public/*
 
 # Personal design notes and presentation drafts.
 personal-notes/
+
+# Stray tool output: a session file from a tool handed ":memory:" as a path, and an empty
+# placeholder. Neither is referenced by anything.
+web/:memory:*.ses
+web/sas.json

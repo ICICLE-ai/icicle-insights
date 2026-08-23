@@ -218,13 +218,18 @@ export function metricLabel(type: string): string {
 }
 
 /**
- * The metric's bare name, with no collection window.
+ * The metric's bare name, with neither collection window nor all-time suffix.
  *
  * Only for pickers, where every option is a metric and the qualifier is repeated noise. Anywhere
  * a *reading* is shown — tables, charts, legends — use `metricLabel`, or a 30-day figure reads as
  * a lifetime total. Pair this with `metricWindowNote` so the window is still on screen.
+ *
+ * A twin pair reduces to the same string on purpose: `downloads` and `downloadsAllTime` are both
+ * "Downloads". Any picker offering both must therefore separate them itself — the dashboard ones
+ * group under "Latest window" and "All time" headings — or it will show the option twice.
  */
-export const metricBaseLabel = (type: string): string => titleCase(type);
+export const metricBaseLabel = (type: string): string =>
+  titleCase(type.endsWith(ALL_TIME_SUFFIX) ? type.slice(0, -ALL_TIME_SUFFIX.length) : type);
 
 /** Sentence describing a metric's collection window, or null when its name is already exact. */
 export function metricWindowNote(type: string): string | null {

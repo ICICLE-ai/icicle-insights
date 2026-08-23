@@ -11,6 +11,7 @@ import { ChartFigure } from '../../../shared/charts/chart-figure';
 import { ChartPaletteService } from '../../../shared/charts/chart-palette';
 import { whole } from '../../../shared/format/formatters';
 import {
+  PLATFORM_ORDER,
   RESOURCE_TYPE_ORDER,
   platformLabel,
   resourceTypeLabel,
@@ -23,8 +24,18 @@ export interface StructureRow {
   readonly count: number;
 }
 
-interface TypeSummary {
-  readonly type: ResourceType;
+/**
+ * Which dimension the ring divides on.
+ *
+ * A scope where every resource is the same kind — Packages, all of them `package` — has nothing
+ * to say about kinds, but plenty to say about which registry they live on. Rather than hide the
+ * radial there, the caller names the dimension that actually varies.
+ */
+export type StructureDimension = 'type' | 'registry';
+
+interface SegmentSummary {
+  /** `ResourceType` or `Platform`, depending on the dimension. */
+  readonly key: string;
   readonly label: string;
   readonly pluralLabel: string;
   readonly count: number;
@@ -38,7 +49,7 @@ interface CenterRow {
   readonly dy: number;
 }
 
-type TypeArc = PieDatum<TypeSummary>;
+type SegmentArc = PieDatum<SegmentSummary>;
 
 const TAU = Math.PI * 2;
 const GAP_ANGLE = (Math.PI / 180) * 3;
@@ -68,22 +79,22 @@ const PERCENT = new Intl.NumberFormat('en-US', {
   selector: 'app-structure-sunburst',
   imports: [Chart, ChartFigure],
   template: `
-    <app-chart-figure heading="What the institute publishes" [subtitle]="subtitle()">
+    <app-chart-figure [heading]="heading()" [subtitle]="subtitle()">
       <div chart class="ins-donut-layout">
         <tanstack-chart [options]="chartOptions()" />
 
-        <div class="ins-donut-legend" role="group" aria-label="Select a resource type">
-          @for (row of typeSummaries(); track row.type; let i = $index) {
+        <div class="ins-donut-legend" role="group" [attr.aria-label]="legendLabel()">
+          @for (row of segments(); track row.key) {
             <button
               type="button"
               class="ins-donut-legend__item"
-              [class.is-selected]="activeType() === row.type"
-              [attr.aria-pressed]="activeType() === row.type"
-              (click)="selectType(row.type)"
+              [class.is-selected]="activeKey() === row.key"
+              [attr.aria-pressed]="activeKey() === row.key"
+              (click)="selectSegment(row.key)"
             >
               <span
                 class="ins-donut-legend__swatch"
-                [style.background]="typeColor(row.type)"
+                [style.background]="segmentColor(row.key)"
                 aria-hidden="true"
               ></span>
               <span class="ins-donut-legend__label">{{ row.pluralLabel }}</span>
@@ -207,6 +218,8 @@ const PERCENT = new Intl.NumberFormat('en-US', {
 })
 export class StructureSunburst {
   readonly rows = input.required<readonly StructureRow[]>();
+  /** Defaults to resource kind, which is the question the portfolio view asks. */
+  readonly dimension = input<StructureDimension>('type');
 
   private readonly paletteService = inject(ChartPaletteService);
 
@@ -218,47 +231,62 @@ export class StructureSunburst {
     [...this.rows()].sort((a, b) => b.count - a.count || a.type.localeCompare(b.type)),
   );
 
-  protected readonly typeSummaries = computed<readonly TypeSummary[]>(() => {
-    const totals = new Map<ResourceType, number>();
+  /**
+   * Slice totals for whichever dimension the caller chose.
+   *
+   * Ties break on the dimension's canonical order rather than alphabetically, so two registries
+   * with equal counts keep the same relative position they hold everywhere else in the app.
+   */
+  protected readonly segments = computed<readonly SegmentSummary[]>(() => {
+    const registry = this.dimension() === 'registry';
+    const order: readonly string[] = registry ? PLATFORM_ORDER : RESOURCE_TYPE_ORDER;
+    const totals = new Map<string, number>();
+
     for (const row of this.rows()) {
-      totals.set(row.type, (totals.get(row.type) ?? 0) + row.count);
+      const key = registry ? row.platform : row.type;
+      totals.set(key, (totals.get(key) ?? 0) + row.count);
     }
 
-    return RESOURCE_TYPE_ORDER.filter((type) => totals.has(type))
-      .map((type) => ({
-        type,
-        label: resourceTypeLabel(type),
-        pluralLabel: TYPE_PLURALS[type],
-        count: totals.get(type) ?? 0,
+    return order
+      .filter((key) => totals.has(key))
+      .map((key) => ({
+        key,
+        label: registry ? platformLabel(key) : resourceTypeLabel(key),
+        // A registry name is already the noun; only resource kinds need pluralising.
+        pluralLabel: registry ? platformLabel(key) : TYPE_PLURALS[key as ResourceType],
+        count: totals.get(key) ?? 0,
       }))
-      .sort(
-        (a, b) =>
-          b.count - a.count ||
-          RESOURCE_TYPE_ORDER.indexOf(a.type) - RESOURCE_TYPE_ORDER.indexOf(b.type),
-      );
+      .sort((a, b) => b.count - a.count || order.indexOf(a.key) - order.indexOf(b.key));
   });
 
-  protected readonly activeType = linkedSignal<readonly TypeSummary[], ResourceType | null>({
-    source: this.typeSummaries,
+  protected readonly activeKey = linkedSignal<readonly SegmentSummary[], string | null>({
+    source: this.segments,
     computation: (rows, previous) => {
-      const previousType = previous?.value;
-      return previousType && rows.some((row) => row.type === previousType)
-        ? previousType
-        : (rows[0]?.type ?? null);
+      const previousKey = previous?.value;
+      return previousKey && rows.some((row) => row.key === previousKey)
+        ? previousKey
+        : (rows[0]?.key ?? null);
     },
   });
 
   private readonly activeSummary = computed(
-    () => this.typeSummaries().find((row) => row.type === this.activeType()) ?? null,
+    () => this.segments().find((row) => row.key === this.activeKey()) ?? null,
   );
 
-  private readonly total = computed(() =>
-    this.typeSummaries().reduce((sum, row) => sum + row.count, 0),
+  private readonly total = computed(() => this.segments().reduce((sum, row) => sum + row.count, 0));
+
+  protected readonly heading = computed(() =>
+    this.dimension() === 'registry' ? 'Where these are published' : 'What the institute publishes',
+  );
+
+  protected readonly legendLabel = computed(() =>
+    this.dimension() === 'registry' ? 'Select a registry' : 'Select a resource type',
   );
 
   protected readonly subtitle = computed(() => {
     const active = this.activeSummary();
-    const base = `${whole(this.total())} resources across ${this.typeSummaries().length} kinds`;
+    const unit = this.dimension() === 'registry' ? 'registries' : 'kinds';
+    const base = `${whole(this.total())} resources across ${this.segments().length} ${unit}`;
     return active
       ? `${base} · ${active.pluralLabel} account for ${this.share(active.count)}`
       : base;
@@ -266,7 +294,7 @@ export class StructureSunburst {
 
   protected readonly chartOptions = computed(() => {
     const palette = this.paletteService.palette();
-    const rows = this.typeSummaries();
+    const rows = this.segments();
     const active = this.activeSummary();
     const arcs = pie(rows, { value: 'count', gapAngle: GAP_ANGLE });
     const centerRows: readonly CenterRow[] = active
@@ -285,8 +313,8 @@ export class StructureSunburst {
             marks: [
               radialArc(arcs, {
                 id: 'resource-type-slices',
-                key: 'type',
-                color: 'type',
+                key: 'key',
+                color: 'key',
                 innerRadius: ({ radius }) => radius * 0.58,
                 cornerRadius: 8,
                 stroke: palette.surface,
@@ -328,8 +356,8 @@ export class StructureSunburst {
           ),
         ],
         color: {
-          domain: rows.map((row) => row.type),
-          range: rows.map((row) => this.typeColor(row.type)),
+          domain: rows.map((row) => row.key),
+          range: rows.map((row) => this.segmentColor(row.key)),
         },
         guides: false,
         margin: 0,
@@ -346,7 +374,10 @@ export class StructureSunburst {
 
     return {
       definition,
-      ariaLabel: 'Resource portfolio share by resource type',
+      ariaLabel:
+        this.dimension() === 'registry'
+          ? 'Resource share by registry'
+          : 'Resource portfolio share by resource type',
       ariaDescription: `${this.subtitle()}. Use arrow keys to inspect each slice.`,
       height: 320,
       onFocusChange: (point: ChartPoint<unknown, number, number> | null) =>
@@ -355,13 +386,22 @@ export class StructureSunburst {
     };
   });
 
-  protected selectType(type: ResourceType): void {
-    this.activeType.set(type);
+  protected selectSegment(key: string): void {
+    this.activeKey.set(key);
   }
 
-  protected typeColor(type: ResourceType): string {
+  /**
+   * Registry slices wear the registry palette, not a series slot.
+   *
+   * Colour follows the entity: the npm slice here has to be the same hue as the npm bar in the
+   * scope picker, or one registry is wearing two colours on one screen.
+   */
+  protected segmentColor(key: string): string {
     const palette = this.paletteService.palette();
-    return palette.series[RESOURCE_TYPE_ORDER.indexOf(type)] ?? palette.muted;
+    if (this.dimension() === 'registry') {
+      return palette.platforms[key as Platform] ?? palette.muted;
+    }
+    return palette.series[RESOURCE_TYPE_ORDER.indexOf(key as ResourceType)] ?? palette.muted;
   }
 
   protected share(count: number): string {
@@ -370,24 +410,24 @@ export class StructureSunburst {
   }
 
   private activatePoint(point: ChartPoint<unknown, number, number> | null): void {
-    if (isTypeArc(point?.datum)) {
-      this.activeType.set(point.datum.type);
+    if (isSegmentArc(point?.datum)) {
+      this.activeKey.set(point.datum.key);
     }
   }
 }
 
-function isTypeArc(value: unknown): value is TypeArc {
+function isSegmentArc(value: unknown): value is SegmentArc {
   return (
     typeof value === 'object' &&
     value !== null &&
-    'type' in value &&
-    RESOURCE_TYPE_ORDER.includes((value as { type: ResourceType }).type) &&
+    'key' in value &&
+    typeof (value as { key: unknown }).key === 'string' &&
     'count' in value
   );
 }
 
 function formatTooltip(point: ChartPoint<unknown>, total: number): string {
-  if (!isTypeArc(point.datum)) {
+  if (!isSegmentArc(point.datum)) {
     return '';
   }
 

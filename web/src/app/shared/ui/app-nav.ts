@@ -65,9 +65,8 @@ const ADMIN_SECTIONS: readonly NavSection[] = [
         <app-theme-picker />
       </div>
 
-      <span class="ins-nav__brand" aria-label="ICICLE Insights">
-        <span class="ins-nav__logo" aria-hidden="true">◆</span>
-        <span class="ins-nav__compact-title">ICICLE Insights</span>
+      <span class="ins-nav__brand" role="img" aria-label="ICICLE Insights">
+        <span class="ins-nav__logo"></span>
       </span>
     </div>
   `,
@@ -194,29 +193,30 @@ const ADMIN_SECTIONS: readonly NavSection[] = [
       flex: none;
     }
 
+    /* A square the same size as the theme button beside it. The old min-width sized the box to
+       two lines of wordmark; with only the mark left, that left it mostly empty. */
     .ins-nav__brand {
       display: inline-flex;
       flex: none;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 0.125rem;
-      min-width: 5.25rem;
-      padding: 0.25rem 0.5rem;
+      width: var(--ins-masthead-height);
+      min-width: 0;
+      padding: 0.25rem;
     }
 
+    /* The mark carries the identity alone, so the product name moves onto the brand element as
+       its accessible name — a decorative-only mark here would leave the masthead unlabelled.
+       Drawn as a mask rather than an img so it takes the surrounding ink colour and follows the
+       theme; the source artwork is white and would vanish on the light surface. */
     .ins-nav__logo {
-      color: var(--ins-series-1);
-      font-size: 1rem;
-      line-height: 1;
-    }
-
-    .ins-nav__compact-title {
-      font-size: var(--ins-text-micro);
-      font-weight: 650;
-      line-height: 1.1;
-      color: var(--ins-ink);
-      white-space: nowrap;
+      /* Fills the brand box: masthead height less its padding. The mark's own canvas is cropped
+         to the glyph, so the mask scales the artwork itself, not a mostly-empty frame. */
+      width: 2.75rem;
+      height: 2.75rem;
+      background: var(--ins-ink);
+      -webkit-mask: url('/icicle-mark.svg') center / contain no-repeat;
+      mask: url('/icicle-mark.svg') center / contain no-repeat;
     }
 
     @media (width < 48rem) {
