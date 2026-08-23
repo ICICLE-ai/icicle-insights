@@ -1,229 +1,372 @@
-# The local stack: Postgres, Valkey, and every process the service runs.
+# The full stack, with every container's environment written out in full.
 #
-#     Build images: docker compose build
-#        Start app: docker compose up app
-#   Start database: docker compose up db
-#   Run migrations: docker compose run migrate
-#    Start workers: docker compose up queues scheduled
-#    Sweep due now: docker compose run collect-now
-#         Stop all: docker compose down (add -v to wipe db)
+# Nothing is shared through YAML anchors on purpose: each service below lists
+# exactly what it needs, so one block maps onto one pod spec without having to
+# resolve a merge key first.
+#
+#     Build:      docker compose build
+#     Migrate:    docker compose run --rm migrate
+#     Run:        docker compose up app queues scheduled
+#     Sweep now:  docker compose run --rm collect-now
+#     Stop:       docker compose down          (-v also wipes the volumes)
 #
 # ---------------------------------------------------------------------------
-# Deploying
+# The five with no default
 # ---------------------------------------------------------------------------
-# This file defaults to development, because that is what it is for. A
-# deployment layers the production overrides on top rather than editing it:
+# `configure` throws when any of these is missing, and it runs for every command
+# — serve, the workers, the scheduler, the migrator. A gap stops the process at
+# boot rather than producing a half-configured one:
 #
-#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-#
-# See docker-compose.prod.yml for exactly what changes and why.
-#
-# What a deployment must supply. `configure` throws on a missing value, so
-# every process here — serve, workers, scheduler, migrator — dies at boot
-# without them rather than starting up half-configured:
-#
-#     TAPIS_BASE_URL   host and tenant must name the SAME tenant
-#     TAPIS_TENANT     "
-#     TAPIS_TOKEN      short-lived; unexplained vault failures usually mean expiry
-#     TAPIS_USER       scopes the vault path
+#     TAPIS_BASE_URL       host and tenant must name the SAME tenant
+#     TAPIS_TENANT         "
+#     TAPIS_TOKEN          short-lived; unexplained vault errors usually mean expiry
+#     TAPIS_USER           scopes the vault path
 #     ROOT_ADMIN_USERNAME  break-glass admin; a placeholder boots and matches nobody
 #
-# Everything else has a default in code. `.env.example` documents the full
-# surface with the reasoning behind each one; copy it to `.env` and fill in.
-# Compose passes only the variables it names below, so a variable present in
-# `.env` but absent from this file never reaches a container.
+# Everything else has a default in code. `.env.example` explains each one.
 #
-# Learn more: https://docs.docker.com/compose/reference/
+# ---------------------------------------------------------------------------
+# Which processes exist, and why
+# ---------------------------------------------------------------------------
+#   app        serves the API and the dashboard. Runs no jobs.
+#   queues     drains the `metrics` queue — the syncs that actually write data.
+#   scheduled  the clock. Its jobs only enqueue onto `metrics`; it also sends
+#              the credential-expiry warnings inline.
 #
+# All three are needed. Without `scheduled` nothing enqueues on a timer; without
+# `queues` the work piles up in Valkey and no metric is ever written, silently.
+# Scale `queues` when collection falls behind — never `scheduled`, which must
+# stay at one replica or every due resource is dispatched twice.
+#
+# ---------------------------------------------------------------------------
+# What a deployment changes
+# ---------------------------------------------------------------------------
+# The values below are the local ones. A real deployment differs here:
+#
+#   VAPOR_ENV=production   picks the database name and gates the ICICLE seed
+#                          migration, which must not run against real data
+#   DATABASE_TLS=require   the local Postgres has no certificate; a real one does
+#   REDIS_PASSWORD=…       set it, and start Valkey with --requirepass to match
+#   ports                  publish only the app, behind a TLS terminator; db and
+#                          valkey should not be reachable from outside
+#   restart                unless-stopped on the three long-lived services
 
 volumes:
   db_data:
   valkey_data:
 
-x-shared_environment: &shared_environment
-  LOG_LEVEL: ${LOG_LEVEL:-debug}
-  # Every process reads this, so all of them agree. Only `serve` used to be told its environment,
-  # via a --env flag on its command; the workers, scheduler, and migrator fell through to Vapor's
-  # default of development, leaving processes in one stack disagreeing about which environment
-  # they were in — and therefore about which database name to default to.
-  #
-  # development locally, because that is what this file is: the ICICLE seed migration registers
-  # only in development, so a fresh volume still comes up with a populated dashboard. Deployments
-  # set VAPOR_ENV=production once, here, rather than on eight command lines.
-  VAPOR_ENV: ${VAPOR_ENV:-development}
-  DATABASE_HOST: db
-  DATABASE_NAME: &db_name vapor_database
-  DATABASE_USERNAME: &db_username vapor_username
-  DATABASE_PASSWORD: &db_password vapor_password
-  DATABASE_TLS: disable
-  # Queue storage. The local server runs without auth, so REDIS_PASSWORD is left unset;
-  # deployments set it to the cache's generated password.
-  REDIS_HOST: valkey
-  REDIS_PORT: '6379'
-  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-  # Sync jobs resolve their platform tokens from Tapis Vault, and `configure` fails fast when
-  # any of these is missing — every service here aborts at boot without them, workers included.
-  SECRET_PROVIDER: ${SECRET_PROVIDER:-tapis}
-  TAPIS_BASE_URL: ${TAPIS_BASE_URL}
-  TAPIS_TOKEN: ${TAPIS_TOKEN}
-  TAPIS_USER: ${TAPIS_USER}
-  TAPIS_TENANT: ${TAPIS_TENANT}
-  # Slack incoming webhook for collections that have exhausted their retries. Unset, failures
-  # go to the log alone, which is the right setting for local work. The optional warnings
-  # webhook splits the recoverable failures off so the primary channel carries only the
-  # credential ones.
-  SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
-  SLACK_WEBHOOK_URL_WARNINGS: ${SLACK_WEBHOOK_URL_WARNINGS:-}
-  # Required, and deliberately without a default. `configure` throws when it is unset, so every
-  # service here dies at boot without it — which is how this file came to be unbootable once the
-  # variable was introduced: compose passes only what it names, so an unreferenced variable never
-  # reaches a container no matter what `.env` holds.
-  #
-  # No fallback value on purpose. A placeholder boots perfectly well and then matches nobody, so
-  # every write returns 403 with nothing in the log explaining it. Failing at boot is kinder.
-  ROOT_ADMIN_USERNAME: ${ROOT_ADMIN_USERNAME}
-  # The rest have defaults in code; named here so the full surface is visible in one place.
-  TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-insights-token-signing-key}
-  CORS_ORIGINS: ${CORS_ORIGINS:-}
-  FRAME_ANCESTORS: ${FRAME_ANCESTORS:-}
-  RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-300}
-  WEBHOOK_RATE_LIMIT_PER_MINUTE: ${WEBHOOK_RATE_LIMIT_PER_MINUTE:-60}
-
-
 services:
+  # ==========================================================================
+  # API and dashboard. Serves HTTP; processes no jobs.
+  # ==========================================================================
   app:
     image: insights:latest
     build:
       context: .
+    command: ["serve", "--hostname", "0.0.0.0", "--port", "8080"]
+    ports:
+      - '8080:8080'
     environment:
-      <<: *shared_environment
+      # -- required, no default ---------------------------------------------
+      TAPIS_BASE_URL: ${TAPIS_BASE_URL}
+      TAPIS_TENANT: ${TAPIS_TENANT}
+      TAPIS_TOKEN: ${TAPIS_TOKEN}
+      TAPIS_USER: ${TAPIS_USER}
+      ROOT_ADMIN_USERNAME: ${ROOT_ADMIN_USERNAME}
+      # -- runtime -----------------------------------------------------------
+      # No --env flag on the command above: it outranks VAPOR_ENV, which would
+      # pin this one process while its siblings followed the variable.
+      VAPOR_ENV: ${VAPOR_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      SECRET_PROVIDER: ${SECRET_PROVIDER:-tapis}
+      # -- postgres ----------------------------------------------------------
+      DATABASE_HOST: db
+      DATABASE_PORT: '5432'
+      DATABASE_NAME: vapor_database
+      DATABASE_USERNAME: vapor_username
+      DATABASE_PASSWORD: vapor_password
+      DATABASE_TLS: disable
+      # -- valkey ------------------------------------------------------------
+      REDIS_HOST: valkey
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # -- HTTP surface: this service only ------------------------------------
+      # Nothing else here serves requests, so these have no effect elsewhere.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      FRAME_ANCESTORS: ${FRAME_ANCESTORS:-}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-300}
+      WEBHOOK_RATE_LIMIT_PER_MINUTE: ${WEBHOOK_RATE_LIMIT_PER_MINUTE:-60}
+      # Verifies the webhook tokens deployed services post their metrics with.
+      TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-insights-token-signing-key}
     depends_on:
       db:
         condition: service_healthy
       valkey:
         condition: service_healthy
-    ports:
-      - '8080:8080'
-    # user: '0' # uncomment to run as root for testing purposes even though Dockerfile defines 'vapor' user.
-    # No --env: the flag outranks VAPOR_ENV in `Environment.detect`, so passing it here would pin
-    # this one process to production while every sibling followed the shared variable.
-    command: ["serve", "--hostname", "0.0.0.0", "--port", "8080"]
-    # /health is liveness only — it checks that the process is up and nothing else, so a brief
-    # database blip cannot get a recoverable container killed. /ready is the one that tests
-    # Postgres and Valkey, and belongs on a load balancer rather than here.
+    # /health is liveness: process up, nothing else checked, so a database blip
+    # cannot kill a container that would have recovered. /ready also tests
+    # Postgres and Valkey — that is a load balancer's probe, not this one.
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 20s
-  # Drains the `metrics` queue: the platform syncs themselves. `serve` does not process queued
-  # jobs, so without this nothing dispatched ever runs.
+
+  # ==========================================================================
+  # Queue worker. Runs the platform syncs. Scale this one freely.
+  # ==========================================================================
   queues:
     image: insights:latest
     build:
       context: .
+    command: ["queues", "--queue", "metrics"]
     environment:
-      <<: *shared_environment
+      # -- required, no default ---------------------------------------------
+      TAPIS_BASE_URL: ${TAPIS_BASE_URL}
+      TAPIS_TENANT: ${TAPIS_TENANT}
+      TAPIS_TOKEN: ${TAPIS_TOKEN}
+      TAPIS_USER: ${TAPIS_USER}
+      ROOT_ADMIN_USERNAME: ${ROOT_ADMIN_USERNAME}
+      # -- runtime -----------------------------------------------------------
+      VAPOR_ENV: ${VAPOR_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      SECRET_PROVIDER: ${SECRET_PROVIDER:-tapis}
+      # -- postgres ----------------------------------------------------------
+      DATABASE_HOST: db
+      DATABASE_PORT: '5432'
+      DATABASE_NAME: vapor_database
+      DATABASE_USERNAME: vapor_username
+      DATABASE_PASSWORD: vapor_password
+      DATABASE_TLS: disable
+      # -- valkey ------------------------------------------------------------
+      REDIS_HOST: valkey
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # -- alerting: the workers only -----------------------------------------
+      # Jobs fail here, so this is where the notifier fires. Unset, failures go
+      # to the log alone. The warnings hook takes the recoverable failures so
+      # the primary channel carries only the credential ones.
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      SLACK_WEBHOOK_URL_WARNINGS: ${SLACK_WEBHOOK_URL_WARNINGS:-}
     depends_on:
       db:
         condition: service_healthy
       valkey:
         condition: service_healthy
-    command: ["queues", "--queue", "metrics"]
-  # Runs the scheduled sweeps, which only enqueue work onto the queue above. Separate from
-  # `queues` so a long sync cannot hold up the next sweep, and single-replica because two
-  # schedulers would dispatch every due resource twice.
+
+  # ==========================================================================
+  # Scheduler. Exactly one replica, always — two dispatch everything twice.
+  # ==========================================================================
   scheduled:
     image: insights:latest
     build:
       context: .
+    command: ["queues", "--scheduled"]
+    deploy:
+      replicas: 1
     environment:
-      <<: *shared_environment
+      # -- required, no default ---------------------------------------------
+      TAPIS_BASE_URL: ${TAPIS_BASE_URL}
+      TAPIS_TENANT: ${TAPIS_TENANT}
+      TAPIS_TOKEN: ${TAPIS_TOKEN}
+      TAPIS_USER: ${TAPIS_USER}
+      ROOT_ADMIN_USERNAME: ${ROOT_ADMIN_USERNAME}
+      # -- runtime -----------------------------------------------------------
+      VAPOR_ENV: ${VAPOR_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      SECRET_PROVIDER: ${SECRET_PROVIDER:-tapis}
+      # -- postgres ----------------------------------------------------------
+      DATABASE_HOST: db
+      DATABASE_PORT: '5432'
+      DATABASE_NAME: vapor_database
+      DATABASE_USERNAME: vapor_username
+      DATABASE_PASSWORD: vapor_password
+      DATABASE_TLS: disable
+      # -- valkey ------------------------------------------------------------
+      REDIS_HOST: valkey
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # -- alerting ------------------------------------------------------------
+      # Also sends the daily credential-expiry warnings, which run inline here
+      # rather than being enqueued.
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      SLACK_WEBHOOK_URL_WARNINGS: ${SLACK_WEBHOOK_URL_WARNINGS:-}
     depends_on:
       db:
         condition: service_healthy
       valkey:
         condition: service_healthy
-    command: ["queues", "--scheduled"]
-    # Exactly one, always. Two schedulers dispatch every due resource twice, and the sweeps are
-    # what enqueue collection — so this is the one service here that must never be scaled.
-    # `queues` above scales freely and is the correct knob when collection falls behind.
-    deploy:
-      replicas: 1
+
+  # ==========================================================================
+  # One-shot commands — a Job or CronJob in a cluster, not a running pod.
+  # replicas: 0 keeps them out of `up`; reach them with `docker compose run`.
+  # ==========================================================================
+
+  # Run once before the first `up`, and after any deploy carrying a migration.
   migrate:
     image: insights:latest
     build:
       context: .
-    environment:
-      <<: *shared_environment
-    depends_on:
-      db:
-        condition: service_healthy
     command: ["migrate", "--yes"]
     deploy:
       replicas: 0
+    environment:
+      TAPIS_BASE_URL: ${TAPIS_BASE_URL}
+      TAPIS_TENANT: ${TAPIS_TENANT}
+      TAPIS_TOKEN: ${TAPIS_TOKEN}
+      TAPIS_USER: ${TAPIS_USER}
+      ROOT_ADMIN_USERNAME: ${ROOT_ADMIN_USERNAME}
+      VAPOR_ENV: ${VAPOR_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      SECRET_PROVIDER: ${SECRET_PROVIDER:-tapis}
+      DATABASE_HOST: db
+      DATABASE_PORT: '5432'
+      DATABASE_NAME: vapor_database
+      DATABASE_USERNAME: vapor_username
+      DATABASE_PASSWORD: vapor_password
+      DATABASE_TLS: disable
+      REDIS_HOST: valkey
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
   revert:
     image: insights:latest
     build:
       context: .
-    environment:
-      <<: *shared_environment
-    depends_on:
-      db:
-        condition: service_healthy
     command: ["migrate", "--revert", "--yes"]
     deploy:
       replicas: 0
-  # The sweeps the `scheduled` service runs on a timer, available on demand. Each only enqueues
-  # onto `metrics`, so `queues` has to be up for anything to actually collect. replicas: 0 keeps
-  # them out of `docker compose up`; reach them with `docker compose run <name>`.
+    environment:
+      TAPIS_BASE_URL: ${TAPIS_BASE_URL}
+      TAPIS_TENANT: ${TAPIS_TENANT}
+      TAPIS_TOKEN: ${TAPIS_TOKEN}
+      TAPIS_USER: ${TAPIS_USER}
+      ROOT_ADMIN_USERNAME: ${ROOT_ADMIN_USERNAME}
+      VAPOR_ENV: ${VAPOR_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      SECRET_PROVIDER: ${SECRET_PROVIDER:-tapis}
+      DATABASE_HOST: db
+      DATABASE_PORT: '5432'
+      DATABASE_NAME: vapor_database
+      DATABASE_USERNAME: vapor_username
+      DATABASE_PASSWORD: vapor_password
+      DATABASE_TLS: disable
+      REDIS_HOST: valkey
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # The scheduled sweeps, on demand. Each only enqueues onto `metrics`, so
+  # `queues` has to be up or nothing actually collects.
   collect-now:
     image: insights:latest
     build:
       context: .
+    command: ["collect-resources"]
+    deploy:
+      replicas: 0
     environment:
-      <<: *shared_environment
+      TAPIS_BASE_URL: ${TAPIS_BASE_URL}
+      TAPIS_TENANT: ${TAPIS_TENANT}
+      TAPIS_TOKEN: ${TAPIS_TOKEN}
+      TAPIS_USER: ${TAPIS_USER}
+      ROOT_ADMIN_USERNAME: ${ROOT_ADMIN_USERNAME}
+      VAPOR_ENV: ${VAPOR_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      SECRET_PROVIDER: ${SECRET_PROVIDER:-tapis}
+      DATABASE_HOST: db
+      DATABASE_PORT: '5432'
+      DATABASE_NAME: vapor_database
+      DATABASE_USERNAME: vapor_username
+      DATABASE_PASSWORD: vapor_password
+      DATABASE_TLS: disable
+      REDIS_HOST: valkey
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     depends_on:
       db:
         condition: service_healthy
       valkey:
         condition: service_healthy
-    command: ["collect-resources"]
-    deploy:
-      replicas: 0
-  # Ignores the schedule and dispatches every active resource. Dispatched resources still book
-  # their next collection, so this shifts the cadence forward rather than replaying it.
+
+  # Ignores the schedule and dispatches every active resource. Dispatched
+  # resources still book their next collection, so this shifts the cadence
+  # forward rather than replaying it.
   collect-all-now:
     image: insights:latest
     build:
       context: .
+    command: ["collect-resources", "--force"]
+    deploy:
+      replicas: 0
     environment:
-      <<: *shared_environment
+      TAPIS_BASE_URL: ${TAPIS_BASE_URL}
+      TAPIS_TENANT: ${TAPIS_TENANT}
+      TAPIS_TOKEN: ${TAPIS_TOKEN}
+      TAPIS_USER: ${TAPIS_USER}
+      ROOT_ADMIN_USERNAME: ${ROOT_ADMIN_USERNAME}
+      VAPOR_ENV: ${VAPOR_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      SECRET_PROVIDER: ${SECRET_PROVIDER:-tapis}
+      DATABASE_HOST: db
+      DATABASE_PORT: '5432'
+      DATABASE_NAME: vapor_database
+      DATABASE_USERNAME: vapor_username
+      DATABASE_PASSWORD: vapor_password
+      DATABASE_TLS: disable
+      REDIS_HOST: valkey
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     depends_on:
       db:
         condition: service_healthy
       valkey:
         condition: service_healthy
-    command: ["collect-resources", "--force"]
-    deploy:
-      replicas: 0
+
   collect-accounts-now:
     image: insights:latest
     build:
       context: .
+    command: ["collect-accounts"]
+    deploy:
+      replicas: 0
     environment:
-      <<: *shared_environment
+      TAPIS_BASE_URL: ${TAPIS_BASE_URL}
+      TAPIS_TENANT: ${TAPIS_TENANT}
+      TAPIS_TOKEN: ${TAPIS_TOKEN}
+      TAPIS_USER: ${TAPIS_USER}
+      ROOT_ADMIN_USERNAME: ${ROOT_ADMIN_USERNAME}
+      VAPOR_ENV: ${VAPOR_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      SECRET_PROVIDER: ${SECRET_PROVIDER:-tapis}
+      DATABASE_HOST: db
+      DATABASE_PORT: '5432'
+      DATABASE_NAME: vapor_database
+      DATABASE_USERNAME: vapor_username
+      DATABASE_PASSWORD: vapor_password
+      DATABASE_TLS: disable
+      REDIS_HOST: valkey
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     depends_on:
       db:
         condition: service_healthy
       valkey:
         condition: service_healthy
-    command: ["collect-accounts"]
-    deploy:
-      replicas: 0
-  # Job storage for the two workers above — Valkey, speaking the same protocol the Redis driver
-  # expects. Append-only so a restart does not drop whatever the scheduler had already enqueued.
+
+  # ==========================================================================
+  # Backing services
+  # ==========================================================================
+
+  # Job storage. Append-only so a restart does not drop what the scheduler
+  # already enqueued. A deployment adds --requirepass and sets REDIS_PASSWORD
+  # on every service above to match.
   valkey:
     image: valkey/valkey:9-alpine
     command: ["valkey-server", "--appendonly", "yes"]
@@ -236,19 +379,20 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
   db:
     image: postgres:18-alpine
     volumes:
       - db_data:/var/lib/postgresql
-    environment:
-      POSTGRES_USER: *db_username
-      POSTGRES_PASSWORD: *db_password
-      POSTGRES_DB: *db_name
     ports:
       - '5432:5432'
-    # Named user and database, not a bare `pg_isready`: the server accepts connections briefly
-    # while still running its own init scripts, and a migrator that wins that race fails on a
-    # database it can see but cannot yet use.
+    environment:
+      POSTGRES_USER: vapor_username
+      POSTGRES_PASSWORD: vapor_password
+      POSTGRES_DB: vapor_database
+    # Named user and database, not a bare pg_isready: the server accepts
+    # connections briefly while still running its init scripts, and a migrator
+    # that wins that race fails against a database it can see but cannot use.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
