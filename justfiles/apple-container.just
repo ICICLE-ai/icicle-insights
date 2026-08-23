@@ -152,7 +152,8 @@ start: build
         --network '{{container_network}}' \
         --publish 127.0.0.1:{{container_host_port}}:{{container_app_port}} \
         {{container_app_env}} \
-        '{{container_image}}' serve --hostname 0.0.0.0 --port '{{container_app_port}}'
+        --env SERVER_PORT='{{container_app_port}}' \
+        '{{container_image}}' serve
 
 # Drain the metrics queue.
 queues: build

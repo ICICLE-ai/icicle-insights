@@ -113,6 +113,8 @@ USER vapor:vapor
 # Let Docker bind to port 8080
 EXPOSE 8080
 
-# Start the Vapor service when the image is run, default to listening on 8080 in production environment
+# No --hostname/--port here, for the same reason VAPOR_ENV above carries no --env: the flag
+# outranks the variable, so baking one into the image makes SERVER_HOSTNAME and SERVER_PORT
+# unsettable at deploy time. `configure` reads both and defaults to 0.0.0.0:8080, matching EXPOSE.
 ENTRYPOINT ["./Insights"]
-CMD ["serve", "--hostname", "0.0.0.0", "--port", "8080"]
+CMD ["serve"]

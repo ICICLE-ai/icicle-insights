@@ -63,7 +63,7 @@ services:
     image: insights:latest
     build:
       context: .
-    command: ["serve", "--hostname", "0.0.0.0", "--port", "8080"]
+    command: ["serve"]
     ports:
       - '8080:8080'
     environment:
@@ -92,6 +92,12 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       # -- HTTP surface: this service only ------------------------------------
       # Nothing else here serves requests, so these have no effect elsewhere.
+      # No --hostname/--port on the command above, for the same reason VAPOR_ENV
+      # carries no --env: a flag outranks the variable. 0.0.0.0 accepts on every
+      # interface, which is what makes the published port reachable; Vapor's own
+      # default of 127.0.0.1 would answer only inside the container.
+      SERVER_HOSTNAME: ${SERVER_HOSTNAME:-0.0.0.0}
+      SERVER_PORT: ${SERVER_PORT:-8080}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       FRAME_ANCESTORS: ${FRAME_ANCESTORS:-}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-300}
