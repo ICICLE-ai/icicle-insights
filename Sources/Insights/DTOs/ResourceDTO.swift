@@ -38,6 +38,25 @@ extension Resource {
     }
   }
 
+  /// Partial request body for editing a collectable resource's own fields.
+  ///
+  /// Excludes `accountID`: moving a resource between accounts is a different, riskier operation
+  /// than correcting its name, kind, or cadence, and nothing in the admin UI asks for it.
+  struct Update: Content, WithExample {
+    /// Provider-specific resource name or path.
+    var name: String?
+    /// Catalog classification of the resource.
+    var type: ResourceType?
+    /// Days between syncs, still bounded by the owning account's platform on save.
+    var collectionIntervalDays: Int?
+
+    enum CodingKeys: String, CodingKey {
+      case name, type, collectionIntervalDays
+    }
+
+    static let example = Update(name: "insights", type: .model, collectionIntervalDays: 7)
+  }
+
   /// Public resource representation returned by the API.
   struct Public: Content {
     var id: UUID?

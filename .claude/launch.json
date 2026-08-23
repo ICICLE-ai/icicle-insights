@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "insights-api",
+      "runtimeExecutable": "just",
+      "runtimeArgs": ["run"],
+      "port": 8080
+    },
+    {
+      "name": "insights-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "Dashboard", "start"],
+      "port": 4200,
+      "url": "http://localhost:4200"
+    }
+  ]
+}

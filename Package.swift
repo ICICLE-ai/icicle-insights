@@ -17,8 +17,6 @@ let package = Package(
     .package(url: "https://github.com/vapor/queues-redis-driver.git", from: "1.1.1"),
     // 📮 The queuing system itself. Direct, not just transitive, for XCTQueues' test driver.
     .package(url: "https://github.com/vapor/queues.git", from: "1.18.0"),
-    // 🍃 An expressive, performant, and extensible templating language built for Swift.
-    .package(url: "https://github.com/vapor/leaf.git", from: "4.5.1"),
     // 🔵 Non-blocking, event-driven networking for Swift. Used for custom executors
     .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.0"),
     // 📖 Code-first OpenAPI generation from Vapor routes.
@@ -39,7 +37,6 @@ let package = Package(
         .product(name: "Fluent", package: "fluent"),
         .product(name: "FluentPostgresDriver", package: "fluent-postgres-driver"),
         .product(name: "QueuesRedisDriver", package: "queues-redis-driver"),
-        .product(name: "Leaf", package: "leaf"),
         .product(name: "Vapor", package: "vapor"),
         .product(name: "NIOCore", package: "swift-nio"),
         .product(name: "NIOPosix", package: "swift-nio"),

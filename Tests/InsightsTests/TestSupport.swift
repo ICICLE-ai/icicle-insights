@@ -33,6 +33,10 @@ func withInsightsApp(
     try await configure(app)
     try await installTestCredentials(on: app)
     try await setUp(app)
+    // Match the production lifecycle before a test reaches Redis-backed middleware or jobs.
+    // Redis creates its event-loop-bound pools during boot; accessing it earlier is a fatal
+    // programmer error rather than a throwable connection failure.
+    try await app.asyncBoot()
     try await app.autoMigrate()
     try await test(app)
     try await app.autoRevert()

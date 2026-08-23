@@ -31,6 +31,14 @@ struct ResourceController: RouteCollection {
           summary: "Get resource by ID",
           response: .type(Resource.Public.self),
         )
+      resource.grouped(Require.admin).patch(use: update)
+        .openAPI(
+          tags: "Resources",
+          summary: "Update resource",
+          body: .type(Resource.Update.self),
+          response: .type(Resource.Public.self),
+          auth: .bearer(),
+        )
       resource.grouped(Require.admin).delete(use: delete)
         .openAPI(
           tags: "Resources",
@@ -88,6 +96,44 @@ struct ResourceController: RouteCollection {
     guard let resource = try await Resource.find(req.parameters.get("resourceID"), on: req.db)
     else {
       throw Abort(.notFound)
+    }
+
+    return resource.toPublic()
+  }
+
+  @Sendable
+  /// Updates a resource's own catalog fields, re-validating cadence against its account's
+  /// platform the same way `create` does.
+  func update(req: Request) async throws -> Resource.Public {
+    guard let resource = try await Resource.find(req.parameters.get("resourceID"), on: req.db)
+    else {
+      throw Abort(.notFound)
+    }
+
+    let newValues = try req.content.decode(Resource.Update.self)
+
+    if let name = newValues.name {
+      resource.name = try requireNonBlank(name, "name").lowercased()
+    }
+    if let type = newValues.type {
+      resource.type = type
+    }
+    if let collectionIntervalDays = newValues.collectionIntervalDays {
+      guard let account = try await Account.find(resource.$account.id, on: req.db)
+      else {
+        throw Abort(.badRequest, reason: "Account with ID: \(resource.$account.id), not found.")
+      }
+      resource.collectionIntervalDays = try requireInRange(
+        collectionIntervalDays,
+        1...account.platform.maxCollectionIntervalDays,
+        "collectionIntervalDays",
+      )
+    }
+
+    try await conflictOnConstraintFailure(
+      "A \(resource.type.rawValue) named '\(resource.name)' already exists for this account.",
+    ) {
+      try await resource.save(on: req.db)
     }
 
     return resource.toPublic()

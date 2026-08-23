@@ -10,11 +10,10 @@ struct VaultControllerTests {
   /// Writes and destroys a real secret, so it needs live Tapis credentials. Skipped rather
   /// than failed when none are configured — see `hasLiveTapisCredentials`.
   @Test(.enabled(if: hasLiveTapisCredentials))
-  func `Create lowercases the name`() async throws {
+  func `Create derives the name from platform and account`() async throws {
     try await withInsightsApp { app in
-      let account = try await makeAccount(on: app.db)
+      let account = try await makeAccount(on: app.db, name: "Octo Cat", platform: .github)
       let payload = Vault.Create(
-        name: "GitHub-Token",
         token: "ghp_example",
         accountID: try account.requireID(),
         expires: futureExpires(),
@@ -28,7 +27,9 @@ struct VaultControllerTests {
         afterResponse: { res async throws in
           #expect(res.status == .created)
           let returned = try res.content.decode(Vault.Public.self)
-          #expect(returned.name == "github-token")
+          // The account itself lowercases and trims on create, so "Octo Cat" is already
+          // "octo cat" by the time the vault name is derived from it.
+          #expect(returned.name == "insights-github-octo-cat")
           #expect(returned.accountID == account.id)
         },
       )
@@ -39,7 +40,6 @@ struct VaultControllerTests {
   func `Create with missing account is a bad request`() async throws {
     try await withInsightsApp { app in
       let payload = Vault.Create(
-        name: "github-token",
         token: "ghp_example",
         accountID: UUID(),
         expires: futureExpires(),
@@ -65,7 +65,6 @@ struct VaultControllerTests {
       stubTapis(on: app, status: .serviceUnavailable)
       let account = try await makeAccount(on: app.db)
       let payload = Vault.Create(
-        name: "github-token",
         token: "ghp_example",
         accountID: try account.requireID(),
         expires: Vault.Expires(day: 31, month: 12, year: 2026),
@@ -89,7 +88,6 @@ struct VaultControllerTests {
       stubTapis(on: app, status: .unauthorized)
       let account = try await makeAccount(on: app.db)
       let payload = Vault.Create(
-        name: "github-token",
         token: "ghp_example",
         accountID: try account.requireID(),
         expires: Vault.Expires(day: 31, month: 12, year: 2026),
@@ -113,7 +111,6 @@ struct VaultControllerTests {
       stubTapis(on: app, status: .serviceUnavailable)
       let account = try await makeAccount(on: app.db)
       let payload = Vault.Create(
-        name: "github-token",
         token: "ghp_example",
         accountID: try account.requireID(),
         expires: Vault.Expires(day: 31, month: 12, year: 2026),
@@ -204,36 +201,10 @@ struct VaultControllerTests {
   }
 
   @Test
-  func `Create rejects a blank name`() async throws {
-    try await withInsightsApp { app in
-      let account = try await makeAccount(on: app.db)
-      let payload = Vault.Create(
-        name: "   ",
-        token: "ghp_example",
-        accountID: try account.requireID(),
-        expires: futureExpires(),
-      )
-
-      try await app.testing().test(
-        .POST,
-        "api/vaults",
-        headers: app.adminAuth,
-        beforeRequest: { req in try req.content.encode(payload) },
-        afterResponse: { res async throws in
-          #expect(res.status == .badRequest)
-          let count = try await Vault.query(on: app.db).count()
-          #expect(count == 0)
-        },
-      )
-    }
-  }
-
-  @Test
   func `Create rejects a blank token`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let payload = Vault.Create(
-        name: "github-token",
         token: "",
         accountID: try account.requireID(),
         expires: futureExpires(),
@@ -258,7 +229,6 @@ struct VaultControllerTests {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let payload = Vault.Create(
-        name: "github-token",
         token: "ghp_example",
         accountID: try account.requireID(),
         expires: Vault.Expires(day: 32, month: 12, year: 2099),
@@ -283,7 +253,6 @@ struct VaultControllerTests {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
       let payload = Vault.Create(
-        name: "github-token",
         token: "ghp_example",
         accountID: try account.requireID(),
         expires: Vault.Expires(day: 1, month: 1, year: 1999),
@@ -304,13 +273,16 @@ struct VaultControllerTests {
   }
 
   @Test
-  func `Create rejects a duplicate name for the same account`() async throws {
+  func `Create rejects a second vault for the same account`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      _ = try await makeVault(on: app.db, accountID: try account.requireID(), name: "github-token")
+      // The derived name is deterministic per account, so a pre-existing vault for the same
+      // account always collides — there is no longer a distinct "name" to vary.
+      _ = try await makeVault(
+        on: app.db, accountID: try account.requireID(),
+        name: Vault.credentialName(platform: account.platform, accountName: account.name))
 
       let payload = Vault.Create(
-        name: "github-token",
         token: "ghp_example",
         accountID: try account.requireID(),
         expires: futureExpires(),

@@ -162,6 +162,38 @@ rather than passed through, because a policy the browser rejects wholesale fails
 Setting it omits `X-Frame-Options` entirely, since that header has no allowlist form and could then
 only contradict the CSP.
 
+The matching Tapis Pods networking entry keeps anonymous reads public and lets the application
+perform its own admin authentication. Replace the example origins with the exact TapisUI origin;
+do not use `*` for an embedded admin surface.
+
+```json
+{
+  "networking": {
+    "default": {
+      "protocol": "http",
+      "port": 8080,
+      "tapis_auth": false,
+      "cors_allow_origins": ["https://icicleai.tapis.io"],
+      "cors_allow_methods": ["GET", "POST", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+      "cors_allow_headers": [
+        "authorization",
+        "content-type",
+        "x-request-id",
+        "x-tapis-token"
+      ],
+      "cors_allow_credentials": false,
+      "tapis_ui_uri": "/",
+      "tapis_ui_uri_redirect": false,
+      "tapis_ui_uri_description": "ICICLE software impact and operations dashboard"
+    }
+  }
+}
+```
+
+Use `https://icicleai.staging.tapis.io` in staging. Set the same origin in the container's
+`FRAME_ANCESTORS`; set `CORS_ORIGINS` only when the parent or another approved browser origin calls
+the API directly. The iframe's ordinary `/api` calls are same-origin with its pod and need no CORS.
+
 ## What to monitor
 
 - **Scheduler liveness.** A stopped scheduler is silent — collection just stops.
@@ -170,8 +202,10 @@ only contradict the CSP.
 - **Provider rate limits.** GitHub and Hugging Face both throttle.
 
 Failures that exhaust their retries reach Slack when `SLACK_WEBHOOK_URL` is set; unset, they stay
-in the log. `SLACK_WEBHOOK_URL_WARNINGS` optionally splits lower-severity failures into a second
-channel so the primary stays quiet enough to act on.
+in the log and are also persisted in `job_failures` for the admin console. The console reads
+`/api/admin/queues`, `/api/admin/watermarks`, and `/api/admin/failures`; all three routes require an
+administrator bearer token. `SLACK_WEBHOOK_URL_WARNINGS` optionally splits lower-severity failures
+into a second channel so the primary stays quiet enough to act on.
 
 ## Request correlation
 
@@ -191,8 +225,8 @@ turn the job red for reasons unrelated to the change under test.
 
 ## Known gaps
 
-- **No CSP beyond `frame-ancestors`.** A full policy waits on the frontend's asset origins. The
-  Leaf dashboard and the Scalar API reference both load scripts from jsdelivr, which a policy will
-  need to allow or which should be vendored.
+- **No CSP beyond `frame-ancestors`.** The Angular application is fully bundled, but the Scalar API
+  reference still loads from jsdelivr. Vendor it or allow that origin explicitly before extending
+  CSP beyond `frame-ancestors`.
 
 #icicle-insights# #operations# #deployment# #developer-documentation#

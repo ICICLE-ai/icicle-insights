@@ -1,0 +1,219 @@
+<section class="ins-operations" aria-labelledby="operations-title">
+  <header class="ins-operations__header">
+    <div>
+      <p class="ins-eyebrow">System status</p>
+      <h2 id="operations-title">Operational readiness</h2>
+      <p>Scheduler, queue, collection progress, and credential runway across Insights.</p>
+    </div>
+
+    @if (loadedAtLabel()) {
+      <p class="ins-operations__snapshot ins-mono">Checked {{ loadedAtLabel() }}</p>
+    }
+  </header>
+
+  <p class="ins-visually-hidden" role="status" aria-live="polite">
+    @if (store.isLoading()) {
+      Loading administration status.
+    } @else if (store.error()) {
+      Administration status failed to load.
+    } @else {
+      Administration status loaded. {{ summary().attention.length }} items need attention.
+    }
+  </p>
+
+  @if (store.error(); as failure) {
+    <app-error-notice [error]="failure" (retry)="store.reload()" />
+  } @else if (store.isLoading()) {
+    <div class="ins-operations__skeleton" aria-hidden="true">
+      @for (placeholder of [1, 2, 3, 4]; track placeholder) {
+        <span></span>
+      }
+    </div>
+  } @else {
+    <div class="ins-status-grid" aria-label="Operational status summary">
+      @for (card of cards(); track card.label) {
+        <article
+          class="ins-status-card"
+          [class.is-good]="card.tone === 'good'"
+          [class.is-notice]="card.tone === 'notice'"
+          [class.is-warning]="card.tone === 'warning'"
+          [class.is-critical]="card.tone === 'critical'"
+        >
+          <div class="ins-status-card__heading">
+            <h3>{{ card.label }}</h3>
+            <span class="ins-status-card__state">
+              <span aria-hidden="true">{{
+                card.tone === 'good' ? '✓' : card.tone === 'notice' ? '•' : '!'
+              }}</span>
+              {{ card.state }}
+            </span>
+          </div>
+          <p class="ins-status-card__value ins-mono">{{ card.value }}</p>
+          <p class="ins-status-card__context">{{ card.context }}</p>
+        </article>
+      }
+    </div>
+
+    <div class="ins-operations__detail-grid">
+      <section class="ins-attention" aria-labelledby="attention-title">
+        <header class="ins-panel-heading">
+          <div>
+            <p class="ins-eyebrow">Prioritized by urgency</p>
+            <h3 id="attention-title">Operational watchlist</h3>
+          </div>
+          <span class="ins-panel-heading__count ins-mono">{{ summary().attention.length }}</span>
+        </header>
+
+        @if (summary().attention.length === 0) {
+          <div class="ins-attention__clear">
+            <span aria-hidden="true">✓</span>
+            <p>
+              <strong>No items require review.</strong> Collections, recent jobs, and credentials
+              are clear.
+            </p>
+          </div>
+        } @else {
+          <div class="ins-attention__filters">
+            <div class="ins-attention__filter">
+              <label class="ins-eyebrow" for="attention-priority">Priority</label>
+              <select
+                id="attention-priority"
+                [value]="severityFilter()"
+                (change)="selectSeverityFilter($event)"
+              >
+                <option value="">All priorities</option>
+                <option value="critical">{{ severityLabel('critical') }}</option>
+                <option value="warning">{{ severityLabel('warning') }}</option>
+                <option value="notice">{{ severityLabel('notice') }}</option>
+              </select>
+            </div>
+            <div class="ins-attention__filter">
+              <label class="ins-eyebrow" for="attention-asset">Affected asset</label>
+              <select
+                id="attention-asset"
+                [value]="assetFilter()"
+                (change)="selectAssetFilter($event)"
+              >
+                <option value="">All assets</option>
+                @for (asset of attentionAssets(); track asset) {
+                  <option [value]="asset">{{ asset }}</option>
+                }
+              </select>
+            </div>
+          </div>
+        }
+
+        @if (summary().attention.length > 0 && filteredAttention().length === 0) {
+          <div class="ins-attention__clear is-filtered">
+            <span aria-hidden="true">⌕</span>
+            <p>
+              <strong>No items match the selected filters.</strong> Widen the priority or asset
+              filter to see the remaining {{ summary().attention.length }} items.
+            </p>
+          </div>
+        } @else if (filteredAttention().length > 0) {
+          <div class="ins-attention__table-wrap">
+            <table class="ins-attention__table">
+              <caption class="ins-visually-hidden">
+                Operational issues ordered by severity and deadline
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Priority</th>
+                  <th scope="col">Area</th>
+                  <th scope="col">Affected asset</th>
+                  <th scope="col">Timing</th>
+                  <th scope="col"><span class="ins-visually-hidden">Reason</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (item of pagedAttention(); track item.id) {
+                  <tr>
+                    <td>
+                      <span
+                        class="ins-priority"
+                        [class.is-notice]="item.severity === 'notice'"
+                        [class.is-warning]="item.severity === 'warning'"
+                        [class.is-critical]="item.severity === 'critical'"
+                      >
+                        {{ severityLabel(item.severity) }}
+                      </span>
+                    </td>
+                    <td>{{ item.area }}</td>
+                    <th scope="row" class="ins-mono">{{ item.asset }}</th>
+                    <td>{{ item.deadline }}</td>
+                    <td>
+                      <button
+                        type="button"
+                        class="ins-attention__why"
+                        [attr.aria-expanded]="expandedAttentionID() === item.id"
+                        [attr.aria-controls]="'attention-reason-' + item.id"
+                        (click)="toggleAttentionReason(item.id)"
+                      >
+                        {{ expandedAttentionID() === item.id ? 'Hide' : 'Why?' }}
+                      </button>
+                    </td>
+                  </tr>
+                  @if (expandedAttentionID() === item.id) {
+                    <tr [id]="'attention-reason-' + item.id" class="ins-attention__reason-row">
+                      <td colspan="5">{{ item.reason }}</td>
+                    </tr>
+                  }
+                }
+              </tbody>
+            </table>
+          </div>
+          <app-paginator
+            label="Operational watchlist"
+            [total]="filteredAttention().length"
+            [pageSize]="attentionPageSize"
+            [(page)]="attentionPage"
+          />
+        }
+      </section>
+
+      <aside class="ins-admin-context" aria-labelledby="context-title">
+        <header class="ins-panel-heading">
+          <div>
+            <p class="ins-eyebrow">Current session</p>
+            <h3 id="context-title">Administrator context</h3>
+          </div>
+        </header>
+
+        <dl class="ins-admin-context__list">
+          <div>
+            <dt>Identity</dt>
+            <dd class="ins-mono">{{ session.username() || 'Tapis administrator' }}</dd>
+          </div>
+          <div>
+            <dt>Token source</dt>
+            <dd>{{ tokens.source() }}</dd>
+          </div>
+          <div>
+            <dt>Scheduler</dt>
+            <dd>{{ schedulerContextLabel() }}</dd>
+          </div>
+          <div>
+            <dt>Metric watermarks</dt>
+            <dd class="ins-mono">{{ store.snapshot().watermarks.length }}</dd>
+          </div>
+          <div>
+            <dt>Recent job failures</dt>
+            <dd class="ins-mono">{{ summary().jobFailures.recent }}</dd>
+          </div>
+          <div>
+            <dt>Administrators</dt>
+            <dd class="ins-mono">
+              {{ summary().admins.total }} · {{ summary().admins.roots }} root
+            </dd>
+          </div>
+        </dl>
+
+        <p class="ins-admin-context__note">
+          Access is confirmed by the API, never inferred from token claims. Credentials are
+          represented by metadata only; secret values are not returned here.
+        </p>
+      </aside>
+    </div>
+  }
+</section>

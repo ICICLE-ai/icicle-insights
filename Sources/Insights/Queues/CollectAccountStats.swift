@@ -10,6 +10,7 @@ import Vapor
 struct CollectAccountStats: AsyncScheduledJob {
   /// Dispatches one organization-statistics job for every GitHub account.
   func run(context: QueueContext) async throws {
+    await context.recordSchedulerHeartbeat(job: "CollectAccountStats")
     let accounts = try await Account.query(on: context.application.db)
       .filter(\.$platform == .github)
       .all()

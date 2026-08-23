@@ -15,19 +15,21 @@ default.profraw
 .memsearch
 data/
 
-# Angular frontend. Built output goes to Public/ and is never committed — see the negations
-# below, which keep only the legacy Leaf dashboard's assets and disappear along with it.
-web/node_modules/
-web/dist/
-web/.angular/
+# Angular frontend. Built output goes to Public/ and is never committed; Docker produces it in a
+# dedicated Node stage so a host build never becomes part of the image accidentally.
+Dashboard/node_modules/
+Dashboard/dist/
+Dashboard/.angular/
 Public/*
 !Public/.gitkeep
-!Public/dashboard.css
-!Public/dashboard.js
-!Public/favicon.ico
 
 # Postgres data bind-mounted by the `just db` container recipe.
 .container/
 
 # Personal design notes and presentation drafts.
 personal-notes/
+
+# Stray tool output: a session file from a tool handed ":memory:" as a path, and an empty
+# placeholder. Neither is referenced by anything.
+Dashboard/:memory:*.ses
+Dashboard/sas.json

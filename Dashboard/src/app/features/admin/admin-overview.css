@@ -1,0 +1,399 @@
+:host {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ins-operations {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ins-operations__header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.875rem;
+}
+
+.ins-operations__header h2,
+.ins-operations__header p,
+.ins-panel-heading h3,
+.ins-panel-heading p {
+  margin: 0;
+}
+
+.ins-operations__header h2 {
+  margin-top: 0.125rem;
+  font-size: 1.125rem;
+  line-height: 1.25;
+}
+
+.ins-operations__header > div > p:last-child {
+  margin-top: 0.25rem;
+  color: var(--ins-ink-muted);
+  font-size: var(--ins-text-small);
+}
+
+.ins-operations__snapshot {
+  flex: none;
+  color: var(--ins-ink-muted);
+  font-size: var(--ins-text-micro);
+}
+
+.ins-operations__skeleton,
+.ins-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.ins-operations__skeleton span {
+  height: 8.25rem;
+  background: var(--ins-surface);
+  border: 1px solid var(--ins-border);
+  border-radius: var(--ins-radius);
+  animation: ins-admin-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes ins-admin-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.ins-status-card {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 1rem;
+  overflow: hidden;
+  background: var(--ins-surface);
+  border: 1px solid var(--ins-border);
+  border-radius: var(--ins-radius);
+}
+
+.ins-status-card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0.25rem;
+  content: '';
+  background: var(--status-color, var(--ins-series-1));
+}
+
+.ins-status-card.is-good {
+  --status-color: var(--ins-good);
+}
+
+.ins-status-card.is-warning {
+  --status-color: var(--ins-warning);
+}
+
+.ins-status-card.is-critical {
+  --status-color: var(--ins-critical);
+}
+
+.ins-status-card__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ins-status-card h3 {
+  margin: 0;
+  font-size: var(--ins-text-small);
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.ins-status-card__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
+  color: var(--ins-ink-secondary);
+  font-size: var(--ins-text-micro);
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ins-status-card__state > span {
+  color: var(--status-color, var(--ins-series-1));
+}
+
+.ins-status-card__value {
+  margin: 0.125rem 0 0;
+  font-size: 1.75rem;
+  font-weight: 680;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.ins-status-card__context {
+  margin: 0;
+  color: var(--ins-ink-muted);
+  font-size: var(--ins-text-micro);
+  line-height: 1.45;
+}
+
+.ins-operations__detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(17rem, 0.8fr);
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+  margin-top: 0.75rem;
+}
+
+.ins-attention,
+.ins-admin-context {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 1rem;
+  background: var(--ins-surface);
+  border: 1px solid var(--ins-border);
+  border-radius: var(--ins-radius);
+}
+
+.ins-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.ins-panel-heading h3 {
+  margin-top: 0.125rem;
+  font-size: 0.9375rem;
+}
+
+.ins-panel-heading__count {
+  display: grid;
+  place-items: center;
+  min-width: 2rem;
+  height: 2rem;
+  color: var(--ins-ink);
+  background: var(--ins-raised);
+  border: 1px solid var(--ins-border);
+  border-radius: 50%;
+  font-size: var(--ins-text-small);
+}
+
+/* Matches `.ins-release-panel__filter` on the dashboard value for value, so the two filtered
+   tables in the app present the same control. */
+.ins-attention__filters {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.ins-attention__filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.ins-attention__filter select {
+  min-width: 0;
+  min-height: 2.375rem;
+  padding: 0.3125rem 1.75rem 0.3125rem 0.5rem;
+  color: var(--ins-ink);
+  background: var(--ins-surface);
+  border: 1px solid var(--ins-border);
+  border-radius: var(--ins-radius-sm);
+  font: inherit;
+  font-size: var(--ins-text-small);
+}
+
+.ins-attention__table-wrap {
+  min-height: 0;
+  overflow: auto;
+}
+
+.ins-attention__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ins-text-small);
+}
+
+.ins-attention__table th,
+.ins-attention__table td {
+  padding: 0.625rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--ins-border);
+}
+
+.ins-attention__table thead th {
+  color: var(--ins-ink-muted);
+  font-size: var(--ins-text-micro);
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ins-attention__table tbody th {
+  color: var(--ins-ink);
+  font-weight: 550;
+}
+
+.ins-attention__table tbody td {
+  color: var(--ins-ink-secondary);
+}
+
+.ins-priority {
+  display: inline-flex;
+  padding: 0.1875rem 0.4375rem;
+  color: var(--ins-ink-secondary);
+  background: var(--ins-raised);
+  border: 1px solid var(--ins-border);
+  border-left: 3px solid var(--ins-series-1);
+  border-radius: var(--ins-radius-sm);
+  font-size: var(--ins-text-micro);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.ins-priority.is-critical {
+  border-left-color: var(--ins-critical);
+}
+
+.ins-priority.is-warning {
+  border-left-color: var(--ins-warning);
+}
+
+.ins-attention__why {
+  min-height: 1.75rem;
+  padding: 0.1875rem 0.5rem;
+  color: var(--ins-ink-secondary);
+  background: transparent;
+  border: 1px solid var(--ins-border);
+  border-radius: var(--ins-radius-sm);
+  font: inherit;
+  font-size: var(--ins-text-micro);
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ins-attention__why:hover {
+  color: var(--ins-ink);
+  background: var(--ins-raised);
+}
+
+.ins-attention__why[aria-expanded='true'] {
+  color: var(--ins-ink);
+  background: var(--ins-raised);
+  border-color: var(--ins-border-strong);
+}
+
+.ins-attention__reason-row td {
+  color: var(--ins-ink-secondary);
+  background: var(--ins-raised);
+  font-size: var(--ins-text-small);
+  line-height: 1.5;
+}
+
+.ins-attention__clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 9rem;
+  color: var(--ins-ink-secondary);
+}
+
+.ins-attention__clear > span {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  color: var(--ins-good);
+  border: 1px solid var(--ins-good);
+  border-radius: 50%;
+}
+
+/* "Nothing matched your filter" is not the same news as "nothing needs attention". The neutral
+   ring keeps the reassuring green reserved for the genuinely clear board. */
+.ins-attention__clear.is-filtered > span {
+  color: var(--ins-ink-muted);
+  border-color: var(--ins-border-strong);
+}
+
+.ins-attention__clear p {
+  margin: 0;
+  font-size: var(--ins-text-small);
+}
+
+.ins-admin-context__list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.ins-admin-context__list > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid var(--ins-border);
+}
+
+.ins-admin-context dt {
+  color: var(--ins-ink-muted);
+  font-size: var(--ins-text-small);
+}
+
+.ins-admin-context dd {
+  margin: 0;
+  color: var(--ins-ink);
+  font-size: var(--ins-text-small);
+  text-align: right;
+}
+
+.ins-admin-context__note {
+  margin: auto 0 0;
+  padding-top: 1rem;
+  color: var(--ins-ink-muted);
+  font-size: var(--ins-text-micro);
+  line-height: 1.55;
+}
+
+@media (width < 68rem) {
+  .ins-status-grid,
+  .ins-operations__skeleton {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ins-operations__detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (width < 40rem) {
+  .ins-operations__header {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .ins-status-grid,
+  .ins-operations__skeleton {
+    grid-template-columns: 1fr;
+  }
+}

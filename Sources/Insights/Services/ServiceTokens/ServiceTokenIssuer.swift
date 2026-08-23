@@ -34,7 +34,8 @@ struct ServiceTokenIssuer: Sendable {
   /// Any live token already held by that resource is revoked in the same transaction, so a
   /// resource never has two working credentials and a replaced token cannot be left behind.
   ///
-  /// - Throws: `Abort(.badRequest)` when the resource does not exist or the label is blank.
+  /// - Throws: `Abort(.badRequest)` when the resource does not exist, is not a service, or the
+  ///   label is blank.
   func mint(
     resourceID: Resource.IDValue,
     label: String,
@@ -54,8 +55,14 @@ struct ServiceTokenIssuer: Sendable {
     let days = try requireInRange(
       lifetimeInDays ?? Self.defaultLifetimeInDays, 1...365, "expiresInDays")
 
-    guard try await Resource.find(resourceID, on: db) != nil else {
+    guard let resource = try await Resource.find(resourceID, on: db) else {
       throw Abort(.badRequest, reason: "Resource with ID: \(resourceID), not found.")
+    }
+    guard resource.type == .service else {
+      throw Abort(
+        .badRequest,
+        reason: "Service tokens can only be minted for resources of type 'service'.",
+      )
     }
 
     let jti = UUID()

@@ -94,8 +94,16 @@ build: builder
     mkdir -p "$build_root/.container"
     build_context="$(mktemp -d "$build_root/.container/build-context.XXXXXX")"
     trap 'rm -rf -- "$build_context"' EXIT
-    cp Dockerfile Package.swift Package.resolved "$build_context/"
+    cp Dockerfile .dockerignore Package.swift Package.resolved "$build_context/"
     cp -R Sources Tests Resources Public "$build_context/"
+    # The frontend stage compiles the dashboard from source, so `Dashboard/` has to be in the
+    # context — without it the build fails on `COPY Dashboard/package.json` before Swift starts.
+    # node_modules is the wrong platform's binaries and ~300 MB; dist and .angular are stale
+    # output. `.dockerignore` names the same three and is copied above so the builder applies it,
+    # but the copy still has to skip them or the cost lands before the builder ever reads it.
+    mkdir -p "$build_context/Dashboard"
+    tar -cf - -C Dashboard --exclude=node_modules --exclude=dist --exclude=.angular . \
+      | tar -xf - -C "$build_context/Dashboard"
     cd "$build_context"
     container build --dns '{{container_build_dns_primary}}' --dns '{{container_build_dns_secondary}}' --tag '{{container_image}}' --file Dockerfile .
 
@@ -144,7 +152,8 @@ start: build
         --network '{{container_network}}' \
         --publish 127.0.0.1:{{container_host_port}}:{{container_app_port}} \
         {{container_app_env}} \
-        '{{container_image}}' serve --hostname 0.0.0.0 --port '{{container_app_port}}'
+        --env SERVER_PORT='{{container_app_port}}' \
+        '{{container_image}}' serve
 
 # Drain the metrics queue.
 queues: build

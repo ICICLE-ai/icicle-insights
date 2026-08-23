@@ -53,6 +53,13 @@ extension QueueContext {
     let subject = resource.map { "\($0.account.name)/\($0.name)" }
     report(error, job: job, subject: subject, metadata: metadata)
     await alert(error, job: job, subject: subject ?? resourceID.uuidString)
+    await persistFailure(
+      error,
+      job: job,
+      subject: subject ?? resourceID.uuidString,
+      resourceID: resourceID,
+      accountID: resource?.$account.id
+    )
 
     guard error.isCredentialFailure, let resource else { return }
 
@@ -87,6 +94,12 @@ extension QueueContext {
 
     report(error, job: job, subject: account?.name, metadata: metadata)
     await alert(error, job: job, subject: account?.name ?? accountID.uuidString)
+    await persistFailure(
+      error,
+      job: job,
+      subject: account?.name ?? accountID.uuidString,
+      accountID: accountID
+    )
   }
 
   /// Logs the failure with keys a log search can filter on rather than prose it would have to
@@ -122,6 +135,41 @@ extension QueueContext {
         identifier: error.alertIdentifier,
         details: error.alertDetails,
       ))
+  }
+
+  /// Persists operational history on a best-effort basis.
+  ///
+  /// This must never throw. QueueWorker awaits the job's error callback before clearing the job;
+  /// propagating a database failure from here strands the failed job and can stop the worker.
+  private func persistFailure(
+    _ error: any Error,
+    job: String,
+    subject: String,
+    resourceID: UUID? = nil,
+    accountID: UUID? = nil
+  ) async {
+    let failure = JobFailure(
+      resourceID: resourceID,
+      accountID: accountID,
+      job: job,
+      subject: subject,
+      identifier: error.alertIdentifier,
+      details: error.alertDetails,
+      severity: error.isCredentialFailure ? "critical" : "warning"
+    )
+
+    do {
+      try await failure.create(on: application.db)
+    } catch {
+      logger.error(
+        "Could not persist exhausted job failure; worker will continue.",
+        metadata: [
+          "job": .string(job),
+          "subject": .string(subject),
+          "error": .string(String(reflecting: error)),
+        ]
+      )
+    }
   }
 }
 

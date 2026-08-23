@@ -40,6 +40,22 @@ extension Release {
     }
   }
 
+  /// Partial request body for correcting a recorded release.
+  struct Update: Content, WithExample {
+    /// Human-readable release or version identifier.
+    var version: String?
+    /// One-based release month, required together with `year` when either is supplied.
+    var month: Int?
+    /// Four-digit release year supported by the API.
+    var year: Int?
+
+    enum CodingKeys: String, CodingKey {
+      case version, month, year
+    }
+
+    static let example = Update(version: "1.0.1", month: 8, year: 2026)
+  }
+
   /// Public release representation returned by the API.
   struct Public: Content {
     var id: UUID?

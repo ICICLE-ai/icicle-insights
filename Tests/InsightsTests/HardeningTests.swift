@@ -134,6 +134,29 @@ struct HardeningTests {
     }
   }
 
+  @Test
+  func `CORS preflight permits frontend correlation and Tapis headers`() async throws {
+    setenv("CORS_ORIGINS", "https://icicle.example.org", 1)
+    defer { unsetenv("CORS_ORIGINS") }
+
+    try await withInsightsApp { app in
+      try await app.testing().test(
+        .OPTIONS,
+        "api/resources",
+        headers: [
+          "Origin": "https://icicle.example.org",
+          "Access-Control-Request-Method": "GET",
+          "Access-Control-Request-Headers": "X-Request-ID, X-Tapis-Token",
+        ],
+        afterResponse: { response async throws in
+          let allowed = response.headers.first(name: "Access-Control-Allow-Headers") ?? ""
+          #expect(allowed.localizedCaseInsensitiveContains("x-request-id"))
+          #expect(allowed.localizedCaseInsensitiveContains("x-tapis-token"))
+        },
+      )
+    }
+  }
+
   // MARK: - Rate limiting
 
   @Test
@@ -143,7 +166,8 @@ struct HardeningTests {
 
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let resourceID = try resource.requireID()
       let issued = try await issueWebhookToken(on: app, resourceID: resourceID)
 
@@ -164,8 +188,11 @@ struct HardeningTests {
         )
       }
 
-      // Refused, not silently dropped: two readings landed, the third did not.
-      #expect(try await Metric.query(on: app.db).count() == 2)
+      // Refused, not silently dropped: two readings landed, the third did not. Counts the
+      // posted type rather than every row — an accepted reading also maintains the resource's
+      // `downloadsAllTime` total, which is not one of the readings under test here.
+      let landed = try await Metric.query(on: app.db).filter(\.$type == .downloads).count()
+      #expect(landed == 2)
     }
   }
 
@@ -176,9 +203,10 @@ struct HardeningTests {
 
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let first = try await makeResource(on: app.db, accountID: try account.requireID())
+      let first = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let second = try await makeResource(
-        on: app.db, accountID: try account.requireID(), name: "other")
+        on: app.db, accountID: try account.requireID(), name: "other", type: .service)
 
       let one = try await issueWebhookToken(on: app, resourceID: try first.requireID())
       let two = try await issueWebhookToken(on: app, resourceID: try second.requireID())
@@ -207,7 +235,8 @@ struct HardeningTests {
       app.redis.configuration = try RedisConfiguration(hostname: "127.0.0.1", port: 6399)
     }) { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let resourceID = try resource.requireID()
       let issued = try await issueWebhookToken(on: app, resourceID: resourceID)
 
@@ -278,7 +307,8 @@ struct HardeningTests {
   func `Webhook tokens authenticate nobody while the keyset is empty`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let resourceID = try resource.requireID()
 
       // Minted against a real keyset, then the application restarts without one.
@@ -314,7 +344,8 @@ struct HardeningTests {
       try await app.loadServiceTokenKeys(from: secrets)
 
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let resourceID = try resource.requireID()
 
       let before = try await issueWebhookToken(on: app, resourceID: resourceID, label: "before")
@@ -700,6 +731,90 @@ struct HardeningTests {
       #expect(seen.count == 2)
       #expect(seen[0] != seen[1])
     }
+  }
+
+  // MARK: - Angular application hosting
+
+  @Test
+  func `SPA catchall accepts client routes but rejects API and file paths`() {
+    #expect(SPAController.shouldServeIndex(for: ["admin", "catalog"]))
+    #expect(SPAController.shouldServeIndex(for: ["resource", "abc-123"]))
+    #expect(!SPAController.shouldServeIndex(for: ["api", "not-a-route"]))
+    #expect(!SPAController.shouldServeIndex(for: ["missing-DEADBEEF.js"]))
+    #expect(!SPAController.shouldServeIndex(for: ["openapi.json"]))
+  }
+
+  @Test
+  func `Hashed Angular assets are recognized without caching stable filenames forever`() {
+    #expect(StaticAssetCacheMiddleware.isHashedAssetPath("/main-2FKR5L8P.js"))
+    #expect(StaticAssetCacheMiddleware.isHashedAssetPath("/chunk--tVH333U.js"))
+    #expect(StaticAssetCacheMiddleware.isHashedAssetPath("/styles-NWDLCJDJ.css"))
+    #expect(!StaticAssetCacheMiddleware.isHashedAssetPath("/index.html"))
+    #expect(!StaticAssetCacheMiddleware.isHashedAssetPath("/favicon.ico"))
+  }
+
+  @Test
+  func `SPA deep links stream index without caching it`() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appending(path: "insights-spa-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try Data("<html><body>angular-test-entry</body></html>".utf8)
+      .write(to: directory.appending(path: "index.html"))
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    try await withInsightsApp(
+      setUp: { app in
+        app.directory.publicDirectory = directory.path + "/"
+      },
+      { app in
+        try await app.testing().test(
+          .GET,
+          "admin/catalog",
+          afterResponse: { response async throws in
+            #expect(response.status == .ok)
+            #expect(response.headers.first(name: .cacheControl) == "no-cache")
+            #expect(response.body.string.contains("angular-test-entry"))
+          },
+        )
+
+        // Unknown API paths must stay machine-readable 404s. Returning Angular here is the
+        // production version of the dev proxy's misleading "200 with HTML" failure.
+        try await app.testing().test(
+          .GET,
+          "api/not-a-route",
+          afterResponse: { response async throws in
+            #expect(response.status == .notFound)
+            #expect(!response.body.string.contains("angular-test-entry"))
+          },
+        )
+      }
+    )
+  }
+
+  @Test
+  func `Hashed asset responses receive an immutable cache policy`() async throws {
+    try await withInsightsApp(
+      setUp: { app in
+        app.get("main-2FKR5L8P.js") { _ in
+          Response(
+            status: .ok,
+            headers: ["Content-Type": "application/javascript"],
+            body: .init(string: "export {}")
+          )
+        }
+      },
+      { app in
+        try await app.testing().test(
+          .GET,
+          "main-2FKR5L8P.js",
+          afterResponse: { response async throws in
+            #expect(
+              response.headers.first(name: .cacheControl)
+                == "public, max-age=31536000, immutable")
+          },
+        )
+      }
+    )
   }
 
   // MARK: - Health probes

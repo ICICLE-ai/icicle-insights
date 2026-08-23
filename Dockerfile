@@ -1,5 +1,19 @@
 # ================================
-# Build image
+# Frontend build image
+# ================================
+FROM node:24-bookworm-slim AS frontend-build
+
+WORKDIR /web
+
+# Dependency metadata first so source edits do not invalidate npm's install layer.
+COPY Dashboard/package.json Dashboard/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+COPY Dashboard/ ./
+RUN npm run build -- --output-path=/web-dist
+
+# ================================
+# Server build image
 # ================================
 FROM swift:6.3-noble AS build
 
@@ -22,6 +36,12 @@ RUN swift package resolve \
 
 # Copy entire repo into container
 COPY . .
+
+# Replace the retired Leaf assets with the Angular production output. The application builder
+# emits browser artifacts in a nested directory; Vapor continues to serve the stable /Public
+# path, so the runtime stage and deployment topology do not change.
+RUN rm -rf /build/Public && mkdir /build/Public
+COPY --from=frontend-build /web-dist/browser/ /build/Public/
 
 RUN mkdir /staging
 
@@ -80,12 +100,21 @@ COPY --from=build --chown=vapor:vapor /staging /app
 # Provide configuration needed by the built-in crash reporter and some sensible default behaviors.
 ENV SWIFT_BACKTRACE=enable=yes,sanitize=yes,threads=all,images=all,interactive=no,swift-backtrace=./swift-backtrace-static
 
+# The image defaults to production, as a variable rather than a `--env` flag on CMD. `--env`
+# outranks VAPOR_ENV in `Environment.detect`, so pinning it on the command line would make this
+# image ignore the variable every other process in the stack reads — `docker-compose.yml` and the
+# container justfile both avoid the flag for exactly this reason. A deployment overrides this the
+# ordinary way, with `-e VAPOR_ENV=…`.
+ENV VAPOR_ENV=production
+
 # Ensure all further commands run as the vapor user
 USER vapor:vapor
 
 # Let Docker bind to port 8080
 EXPOSE 8080
 
-# Start the Vapor service when the image is run, default to listening on 8080 in production environment
+# No --hostname/--port here, for the same reason VAPOR_ENV above carries no --env: the flag
+# outranks the variable, so baking one into the image makes SERVER_HOSTNAME and SERVER_PORT
+# unsettable at deploy time. `configure` reads both and defaults to 0.0.0.0:8080, matching EXPOSE.
 ENTRYPOINT ["./Insights"]
-CMD ["serve", "--env", "production", "--hostname", "0.0.0.0", "--port", "8080"]
+CMD ["serve"]

@@ -1,7 +1,6 @@
 import Fluent
 import FluentPostgresDriver
 import JWT
-import Leaf
 import NIOSSL
 import Queues
 import QueuesRedisDriver
@@ -16,6 +15,19 @@ import Vapor
 /// - Parameter app: The Vapor application being prepared for execution.
 /// - Throws: A configuration, migration registration, service, route, or queue setup error.
 func configure(_ app: Application) async throws {
+  // Where `serve` binds, read from the environment rather than passed as `--hostname`/`--port`.
+  // Same reasoning as VAPOR_ENV: a flag on the command line outranks the variable, so pinning it
+  // on one process is how a stack ends up disagreeing with itself. Setting the configuration here
+  // means `serve` needs no flags at all, and every process reads its address the same way.
+  //
+  // 0.0.0.0 rather than Vapor's own default of 127.0.0.1, which listens only on the loopback
+  // interface and leaves a container unreachable from outside itself. A hostname resolves to an
+  // address that must already be on a local interface — a public domain belongs at the ingress,
+  // not here; this value only chooses which interfaces to accept connections on.
+  app.http.server.configuration.hostname = Environment.get("SERVER_HOSTNAME") ?? "0.0.0.0"
+  app.http.server.configuration.port =
+    Environment.get("SERVER_PORT").flatMap(Int.init(_:)) ?? 8080
+
   // All three stamp *response* headers, which are applied on the way back out — so they must sit
   // ahead of `ErrorMiddleware`, or an error response leaves without them. A 4xx with no CORS
   // headers is unreadable to the browser that caused it, which is exactly when reading it
@@ -35,9 +47,14 @@ func configure(_ app: Application) async throws {
 
   app.middleware.use(RequestIDMiddleware(), at: .beginning)
 
+  // The bind address is logged with the rest of the HTTP surface because getting it wrong is
+  // silent from the inside: the process starts and answers on loopback while every request from
+  // outside the container is refused with nothing written to explain it.
   app.logger.notice(
     "HTTP middleware configured.",
     metadata: [
+      "bind": .string(
+        "\(app.http.server.configuration.hostname):\(app.http.server.configuration.port)"),
       "cors_origins": .string(
         corsOrigins.isEmpty ? "disabled" : corsOrigins.joined(separator: ",")),
       "frame_ancestors": .string(
@@ -46,7 +63,11 @@ func configure(_ app: Application) async throws {
     ]
   )
 
-  // Serve static assets (dashboard CSS/JS) from the /Public folder.
+  // Both policies sit outside FileMiddleware in the chain so they can classify the response it
+  // returns. Hashed Angular assets are immutable; index.html and SPA deep links revalidate.
+  app.middleware.use(StaticAssetCacheMiddleware(), at: .beginning)
+
+  // Serve the Angular artifacts produced into /Public by the Docker frontend stage.
   app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
 
   // Postgres serves its image's self-signed `CN=localhost` cert, which no CA can vouch
@@ -81,6 +102,7 @@ func configure(_ app: Application) async throws {
   app.migrations.add(RecurringCollection())
   app.migrations.add(ServiceTokens())
   app.migrations.add(Admins())
+  app.migrations.add(JobFailures())
 
   // Development-only seed data so the dashboard has something to render. Only ever
   // registered in `.development`, so it targets `dev` and never the `test` database.
@@ -89,8 +111,6 @@ func configure(_ app: Application) async throws {
   if app.environment == .development {
     app.migrations.add(ICICLESnapshotJuly2026())
   }
-
-  app.views.use(.leaf)
 
   // Jobs live in Redis rather than Postgres: the worker's poll is a blocking pop instead of a
   // table scan on every tick. Assembled from parts rather than a `redis://` URL so a generated
@@ -270,6 +290,13 @@ private func corsMiddleware(origins: [String]) -> CORSMiddleware? {
       allowedMethods: [.GET, .POST, .PATCH, .DELETE, .OPTIONS],
       // `.authorization` is not optional here: without it a browser refuses to send the Tapis
       // token, and every cross-origin call from the dashboard arrives anonymous.
-      allowedHeaders: [.accept, .authorization, .contentType, .origin],
+      allowedHeaders: [
+        .accept,
+        .authorization,
+        .contentType,
+        .origin,
+        .init("X-Request-ID"),
+        .init("X-Tapis-Token"),
+      ],
     ))
 }

@@ -192,6 +192,12 @@ struct JobFailureTests {
       #expect(alert.subject == "icicle-ai/insights")
       // `.long` format, so the alert carries the fix and the log does not have to.
       #expect(alert.details.contains("vault entry"))
+
+      let persisted = try #require(try await JobFailure.query(on: app.db).first())
+      #expect(persisted.$resource.id == resource.id)
+      #expect(persisted.identifier == "missing_token")
+      #expect(persisted.severity == "critical")
+      #expect(persisted.subject == "icicle-ai/insights")
     }
   }
 
@@ -305,6 +311,10 @@ struct JobFailureTests {
       #expect(alert.severity == .critical)
       #expect(alert.subject == "icicle-ai")
       #expect(alert.job == "SyncGitHubOrgStats")
+
+      let persisted = try #require(try await JobFailure.query(on: app.db).first())
+      #expect(persisted.$account.id == accountID)
+      #expect(persisted.$resource.id == nil)
     }
   }
 }

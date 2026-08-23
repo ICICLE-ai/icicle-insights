@@ -1,0 +1,435 @@
+.ins-masthead {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(5.25rem, 1fr);
+  align-items: stretch;
+  column-gap: 1rem;
+  min-height: var(--ins-masthead-height);
+  margin-bottom: 0.875rem;
+}
+
+.ins-masthead__scope-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.75rem;
+  min-height: var(--ins-masthead-height);
+  min-width: 0;
+}
+
+@media (width < 48rem) {
+  .ins-masthead {
+    column-gap: 0.75rem;
+  }
+}
+
+/* Section headings share the eyebrow treatment from styles.css; this only spaces them. The rule
+   sits above each group as a quiet divider rather than a heavier heading. */
+.ins-section {
+  display: block;
+  margin: 0.25rem 0 0.75rem;
+  padding-top: 0.625rem;
+  border-top: 1px solid var(--ins-border);
+}
+
+.ins-dashboard-section[hidden] {
+  display: none;
+}
+
+/* The active analytical view fills the space between the navigator and footer. Closed data
+   disclosures therefore look complete on tall screens; opening one reveals detail rather than
+   being needed to prop up the composition. */
+:host {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.ins-dashboard-section:not([hidden]) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ins-dashboard-section:not([hidden]) > :last-child {
+  flex: 1;
+  min-height: 0;
+}
+
+.ins-reach {
+  display: flex;
+}
+
+.ins-reach > app-top-resources-chart,
+.ins-dashboard-section > app-trend-chart {
+  width: 100%;
+}
+
+/* The trend figure is the only analytical panel in its view. Making its host a flex container
+   gives the responsive chart a definite height to fill instead of leaving the section's spare
+   presentation space as an empty band above the footer. */
+.ins-dashboard-section > app-trend-chart {
+  display: flex;
+}
+
+.ins-reach > app-top-resources-chart {
+  display: flex;
+  flex: 1;
+}
+
+.ins-section-nav {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+  padding: 0.25rem;
+  overflow-x: auto;
+  background: var(--ins-surface);
+  border: 1px solid var(--ins-border);
+  border-radius: var(--ins-radius);
+}
+
+.ins-section-nav__item {
+  min-width: 8.5rem;
+  min-height: var(--ins-section-nav-height);
+  padding: 0.375rem 0.75rem;
+  font: inherit;
+  font-size: var(--ins-text-small);
+  font-weight: 650;
+  color: var(--ins-ink-muted);
+  white-space: nowrap;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--ins-radius-sm);
+  cursor: pointer;
+}
+
+.ins-section-nav__item:hover {
+  color: var(--ins-ink);
+  background: var(--ins-raised);
+}
+
+.ins-section-nav__item[aria-current='page'] {
+  color: var(--ins-ink);
+  background: var(--ins-raised);
+  border-color: var(--ins-border-strong);
+  box-shadow: inset 0 -3px 0 var(--ins-series-1);
+}
+
+.ins-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+/* The composition view and cumulative KPIs form one headline story. The radial needs enough
+   width for its legend; the four tiles deliberately stay a 2 × 2 block rather than stretching
+   into a row of tiny cards. */
+.ins-headline {
+  display: grid;
+  grid-template-columns: minmax(32rem, 1.2fr) minmax(24rem, 0.8fr);
+  align-items: stretch;
+  gap: 0.75rem;
+}
+
+.ins-headline__tiles {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.ins-headline.ins-headline--profile-only {
+  grid-template-columns: 1fr;
+}
+
+.ins-reach {
+  min-width: 0;
+}
+
+/* Skeletons are aria-hidden in the template; the live region carries the loading state, so this
+   is purely a visual placeholder holding the layout steady. */
+.ins-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.75rem;
+}
+
+.ins-skeleton {
+  height: 7rem;
+  background: var(--ins-surface);
+  border: 1px solid var(--ins-border);
+  border-radius: var(--ins-radius);
+  animation: ins-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes ins-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.ins-empty {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  background: var(--ins-surface);
+  border: 1px dashed var(--ins-border-strong);
+  border-radius: var(--ins-radius);
+}
+
+.ins-empty__title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--ins-ink);
+}
+
+.ins-empty__hint {
+  margin: 0.375rem 0 0;
+  font-size: var(--ins-text-small);
+  color: var(--ins-ink-muted);
+}
+
+.ins-notice {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 1rem;
+  font-size: var(--ins-text-small);
+  color: var(--ins-ink-secondary);
+  background: var(--ins-surface);
+  border: 1px solid var(--ins-border);
+  border-left: 3px solid var(--ins-warning);
+  border-radius: var(--ins-radius-sm);
+}
+
+.ins-notice__icon {
+  color: var(--ins-ink-muted);
+}
+
+.ins-release-resource {
+  display: inline-flex;
+  align-items: baseline;
+  padding: 0;
+  font: inherit;
+  font-family: var(--ins-font-mono);
+  color: var(--ins-series-1);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ins-release-resource-list {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.ins-release-resource__separator {
+  margin-right: 0.25rem;
+  color: var(--ins-ink-secondary);
+}
+
+.ins-release-resource__name {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentcolor 45%, transparent);
+  text-underline-offset: 0.15em;
+}
+
+.ins-release-resource:hover {
+  color: var(--ins-ink);
+}
+
+.ins-release-resource:hover .ins-release-resource__name {
+  text-decoration-color: currentcolor;
+}
+
+/* Gives the cadence table the same card chrome as the trend, reach, and lineage panels — a
+   bordered surface with its heading and subtitle inside it — rather than a bare table sitting
+   under a header outside any card. */
+.ins-release-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  background: var(--ins-surface);
+  border: 1px solid var(--ins-border);
+  border-radius: var(--ins-radius);
+}
+
+.ins-release-panel__caption {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ins-release-panel__title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 650;
+  color: var(--ins-ink);
+}
+
+.ins-release-panel__subtitle {
+  margin: 0;
+  color: var(--ins-ink-muted);
+  font-size: var(--ins-text-small);
+}
+
+.ins-release-panel__filter {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ins-release-panel__filter select {
+  min-height: 2.375rem;
+  padding: 0.3125rem 1.75rem 0.3125rem 0.5rem;
+  color: var(--ins-ink);
+  background: var(--ins-surface);
+  border: 1px solid var(--ins-border);
+  border-radius: var(--ins-radius-sm);
+  font: inherit;
+  font-size: var(--ins-text-small);
+}
+
+@media (width < 40rem) {
+  .ins-release-panel__caption {
+    flex-direction: column;
+  }
+}
+
+/* Same scrollable-row-area treatment as `.ins-admin-panel` in the admin catalog — a plain
+   `<table>`, the same technology every other paired data table in this app already uses, rather
+   than a second widget library's own table with its own chrome to reconcile by hand. */
+.ins-release-panel__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Matches `.ins-admin-table` (features/admin/admin-records.css) value for value — same padding,
+   same header weight and tracking, same hover — rather than the lighter `.ins-chart-table`
+   treatment the other dashboard panels use, per direct request to make this one look like the
+   Administration tables specifically. */
+.ins-release-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ins-text-small);
+}
+
+.ins-release-table th,
+.ins-release-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--ins-border);
+  vertical-align: middle;
+}
+
+.ins-release-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: var(--ins-ink-muted);
+  background: var(--ins-surface);
+  font-size: var(--ins-text-micro);
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ins-release-table tbody td {
+  color: var(--ins-ink-secondary);
+}
+
+.ins-release-table tbody tr:hover {
+  background: var(--ins-raised);
+}
+
+.ins-release-table__number {
+  text-align: right;
+}
+
+/* The release month itself, called out bolder than the admin row-header weight (550) it would
+   otherwise inherit — each month is the row's identifying value here, the same role a name plays
+   in an admin table's first column, so it earns the heavier weight on request. */
+.ins-release-table__month {
+  color: var(--ins-ink);
+  font-weight: 700;
+}
+
+.ins-release-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ins-release-heading h2 {
+  margin: 0;
+}
+
+.ins-release-views {
+  display: inline-flex;
+  gap: 0.1875rem;
+  padding: 0.1875rem;
+  background: var(--ins-surface);
+  border: 1px solid var(--ins-border);
+  border-radius: var(--ins-radius-sm);
+}
+
+.ins-release-views__item {
+  min-height: 2rem;
+  min-width: 4.75rem;
+  padding: 0.375rem 0.625rem;
+  font: inherit;
+  font-size: var(--ins-text-micro);
+  font-weight: 650;
+  color: var(--ins-ink-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: calc(var(--ins-radius-sm) - 0.1875rem);
+  cursor: pointer;
+}
+
+.ins-release-views__item:hover {
+  color: var(--ins-ink);
+  background: var(--ins-raised);
+}
+
+.ins-release-views__item[aria-pressed='true'] {
+  color: var(--ins-ink);
+  background: var(--ins-raised);
+  border-color: var(--ins-border-strong);
+  box-shadow: inset 0 -2px 0 var(--ins-series-1);
+}
+
+.ins-section {
+  margin-top: 0;
+}
+
+@media (width < 64rem) {
+  .ins-headline {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (width < 54rem) {
+  .ins-section-nav {
+    grid-template-columns: none;
+    grid-auto-columns: max-content;
+    grid-auto-flow: column;
+  }
+}
+
+@media (width < 40rem) {
+  .ins-tiles,
+  .ins-headline__tiles {
+    grid-template-columns: 1fr;
+  }
+
+  .ins-release-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

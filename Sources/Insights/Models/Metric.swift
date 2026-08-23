@@ -23,6 +23,14 @@ enum MetricType: String, Codable, CaseIterable {
     case .forks, .likes, .stars, .subscribers: nil
     }
   }
+
+  /// Whether this type is a derived running total rather than a collected observation.
+  ///
+  /// Derived from `allTime` rather than listed separately: a case is its own all-time
+  /// counterpart exactly when it *is* the counterpart, so a future pair added to that switch
+  /// cannot forget to appear here. These are the types the API refuses to be handed directly —
+  /// see `MetricController`, which folds accepted readings into them instead.
+  var isAllTime: Bool { allTime == self }
 }
 
 /// A timestamped numeric reading associated with one resource.

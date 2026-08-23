@@ -1,7 +1,7 @@
 # Frontend contract
 
-What a browser client can rely on. Written ahead of the Angular application, so treat the
-serving-side sections as the plan and the API sections as current behaviour.
+What a browser client can rely on. The Angular and serving-side sections describe the current
+implementation; the OpenAPI document remains the source of truth for individual routes.
 
 ## Shape
 
@@ -27,7 +27,15 @@ Cookies are deliberately not consulted. Two reasons:
 
 ### Obtaining a token when embedded
 
-An iframe cannot read its parent's cookies across origins. The parent hands the token down:
+The frontend resolves a token into memory in this order:
+
+1. `postMessage` from an allowed parent origin;
+2. a readable `X-Tapis-Token` cookie on the Insights document;
+3. manual paste in the recovery/development control.
+
+An iframe cannot generally read its parent's cookies across origins. A cookie can still be visible
+to Insights when Tapis sets a shared-domain, non-`HttpOnly` cookie that covers the pod hostname,
+but that deployment detail must not be the only path. The parent handoff is explicit:
 
 ```js
 // Parent (the embedding application)
@@ -41,6 +49,7 @@ window.addEventListener('message', (event) => {
 ```
 
 Hold it in memory. `localStorage` survives the tab and is readable by any script that achieves XSS.
+The server still accepts only the resulting bearer header; it never authenticates from cookies.
 
 Embedding also requires the server to permit it — see `FRAME_ANCESTORS` in
 [operations](operations.md). Unset, the browser refuses the frame regardless of what the token
@@ -100,8 +109,6 @@ else is replaced.
 
 ## Serving the built application
 
-Planned, not yet implemented.
-
 **SPA fallback.** A catchall serves `index.html` for non-`/api` deep links. Safe because Vapor's
 router prefers constant path components, so `/api/*`, `/docs`, `/openapi.json`, `/health`, and
 `/ready` continue to win.
@@ -112,8 +119,9 @@ Without the latter, clients pin to a stale entry point referencing chunks that n
 **Build.** A Node stage in the `Dockerfile` emits into `Public/`. The runtime image already stages
 `/build/Public`, so nothing downstream changes.
 
-**Root route.** `routes.swift` currently renders the Leaf dashboard at `/`, which is exactly where
-`index.html` must go. That collision gets resolved when the frontend lands.
+**Root route.** The Leaf route and assets have been retired. `SPAController` streams Angular's
+`index.html` at `/` and extension-free client routes. Unknown `/api/*` and file-like paths stay
+real 404 responses rather than becoming misleading HTML 200s.
 
 ## Development loop
 
@@ -134,9 +142,8 @@ same-origin and no CORS middleware is needed.
 Only `frame-ancestors` ships today. A fuller policy waits on the bundle's asset origins, because a
 wrong `script-src` breaks the application rather than degrading it.
 
-When that policy is written, note that the Leaf dashboard loads daisyUI and ApexCharts from
-jsdelivr and the Scalar API reference loads from jsdelivr too. Vendoring them into `Public/` is
-preferable to allowlisting a CDN — it removes both the CSP exception and an unpinned third-party
-script running with full page privileges.
+The Angular application vendors its runtime and chart dependencies into the production bundles.
+The Scalar API reference at `/docs` still loads from jsdelivr; either vendor it or account for it
+explicitly before extending CSP beyond `frame-ancestors`.
 
 #icicle-insights# #frontend# #angular# #api# #developer-documentation#

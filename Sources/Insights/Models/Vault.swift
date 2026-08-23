@@ -48,4 +48,28 @@ final class Vault: Model, @unchecked Sendable {
     self.createdAt = createdAt
     self.updatedAt = updatedAt
   }
+
+  /// Canonical Tapis Vault secret name: `insights-<platform>-<account>`.
+  ///
+  /// The platform prefix is what disambiguates accounts that share a name across registries —
+  /// an "icicle-ai" org can exist on GitHub, npm, and PyPI at once, and a bare account name
+  /// gave an admin no way to tell which vault they were about to create. Deriving the name here
+  /// instead of accepting it from the client also makes the convention impossible to violate.
+  static func credentialName(platform: Platform, accountName: String) -> String {
+    var sanitized = ""
+    for character in accountName.lowercased() {
+      if character.isLetter || character.isNumber {
+        sanitized.append(character)
+      } else if sanitized.last != "-" {
+        sanitized.append("-")
+      }
+    }
+    while sanitized.hasPrefix("-") {
+      sanitized.removeFirst()
+    }
+    while sanitized.hasSuffix("-") {
+      sanitized.removeLast()
+    }
+    return "insights-\(platform.rawValue)-\(sanitized)"
+  }
 }

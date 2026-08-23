@@ -168,7 +168,8 @@ struct AuthenticationTests {
   func `Scoped token posts metrics for its own resource`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let resourceID = try resource.requireID()
       let issued = try await issueWebhookToken(on: app, resourceID: resourceID)
 
@@ -193,7 +194,8 @@ struct AuthenticationTests {
   func `Scoped token cannot post to another resource`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let mine = try await makeResource(on: app.db, accountID: try account.requireID())
+      let mine = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let theirs = try await makeResource(
         on: app.db, accountID: try account.requireID(), name: "other")
       let issued = try await issueWebhookToken(on: app, resourceID: try mine.requireID())
@@ -219,7 +221,8 @@ struct AuthenticationTests {
   func `Revoked token is refused with 401`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let resourceID = try resource.requireID()
       let issued = try await issueWebhookToken(on: app, resourceID: resourceID)
 
@@ -377,7 +380,8 @@ struct AuthenticationTests {
   func `Webhook token on an admin route is 403 rather than 401`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let issued = try await issueWebhookToken(on: app, resourceID: try resource.requireID())
 
       // The distinction matters: the caller is genuinely authenticated, and reporting 401 would
@@ -397,7 +401,8 @@ struct AuthenticationTests {
   func `Webhook token cannot delete metrics`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let resourceID = try resource.requireID()
       let metric = try await makeMetric(on: app.db, resourceID: resourceID)
       let issued = try await issueWebhookToken(on: app, resourceID: resourceID)
@@ -421,7 +426,8 @@ struct AuthenticationTests {
   func `Minting revokes the resource's previous token`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       let resourceID = try resource.requireID()
 
       let first = try await issueWebhookToken(on: app, resourceID: resourceID, label: "old")
@@ -472,7 +478,8 @@ struct AuthenticationTests {
   func `Deleting a resource takes its tokens with it`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
-      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), type: .service)
       _ = try await issueWebhookToken(on: app, resourceID: try resource.requireID())
 
       #expect(try await ServiceToken.query(on: app.db).count() == 1)

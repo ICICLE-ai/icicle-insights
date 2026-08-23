@@ -10,6 +10,7 @@ import Vapor
 struct CollectDueResources: AsyncScheduledJob {
   /// Dispatches every currently due resource and advances successfully queued due dates.
   func run(context: QueueContext) async throws {
+    await context.recordSchedulerHeartbeat(job: "CollectDueResources")
     let now = Date()
     let due = try await Resource.query(on: context.application.db)
       .filter(\.$nextCollectionAt <= now)

@@ -50,6 +50,26 @@ func requireInRange(_ value: Int, _ range: ClosedRange<Int>, _ field: String) th
   return value
 }
 
+/// Validates that a metric type is one a client may write.
+///
+/// The `*AllTime` types are derived: `MetricController` folds every accepted reading into its
+/// counterpart, so a client writing one directly would be competing with the server for the same
+/// row. The next sweep then either overwrites the hand-entered figure or accumulates on top of
+/// it, and the divergence is silent — the total simply reads wrong forever.
+/// - Returns: The unchanged recordable type.
+/// - Throws: `Abort(.unprocessableEntity)` when the type is a derived all-time total.
+func requireRecordable(_ type: MetricType) throws -> MetricType {
+  guard !type.isAllTime else {
+    throw Abort(
+      .unprocessableEntity,
+      reason:
+        "'\(type.rawValue)' is a derived total maintained by the server. Record its collected "
+        + "counterpart instead; the all-time figure updates automatically.",
+    )
+  }
+  return type
+}
+
 /// Constructs a strict UTC calendar date and rejects normalized invalid dates.
 ///
 /// `DateComponents.isValidDate` round-trips through the calendar, which is what rejects

@@ -30,6 +30,14 @@ struct ReleaseController: RouteCollection {
           summary: "Get release by ID",
           response: .type(Release.Public.self),
         )
+      release.grouped(Require.admin).patch(use: update)
+        .openAPI(
+          tags: "Releases",
+          summary: "Update release",
+          body: .type(Release.Update.self),
+          response: .type(Release.Public.self),
+          auth: .bearer(),
+        )
       release.grouped(Require.admin).delete(use: delete)
         .openAPI(
           tags: "Releases",
@@ -68,6 +76,37 @@ struct ReleaseController: RouteCollection {
       throw Abort(.notFound)
     }
 
+    return release.toPublic()
+  }
+
+  @Sendable
+  /// Corrects a release's version identifier or release month.
+  func update(req: Request) async throws -> Release.Public {
+    guard let release = try await Release.find(req.parameters.get("releaseID"), on: req.db)
+    else {
+      throw Abort(.notFound)
+    }
+
+    let newValues = try req.content.decode(Release.Update.self)
+
+    if let version = newValues.version {
+      release.version = try requireNonBlank(version, "version")
+    }
+
+    switch (newValues.month, newValues.year) {
+    case (nil, nil):
+      break
+    case (.some(let month), .some(let year)):
+      release.releasedAt = try requireCalendarDate(
+        year: requireInRange(year, supportedYears, "year"),
+        month: requireInRange(month, 1...12, "month"),
+        "releasedAt",
+      )
+    default:
+      throw Abort(.badRequest, reason: "'month' and 'year' must be supplied together.")
+    }
+
+    try await release.save(on: req.db)
     return release.toPublic()
   }
 
