@@ -68,7 +68,7 @@
           <span class="ins-panel-heading__count ins-mono">{{ summary().attention.length }}</span>
         </header>
 
-        @if (topAttention().length === 0) {
+        @if (summary().attention.length === 0) {
           <div class="ins-attention__clear">
             <span aria-hidden="true">✓</span>
             <p>
@@ -77,6 +77,45 @@
             </p>
           </div>
         } @else {
+          <div class="ins-attention__filters">
+            <div class="ins-attention__filter">
+              <label class="ins-eyebrow" for="attention-priority">Priority</label>
+              <select
+                id="attention-priority"
+                [value]="severityFilter()"
+                (change)="selectSeverityFilter($event)"
+              >
+                <option value="">All priorities</option>
+                <option value="critical">{{ severityLabel('critical') }}</option>
+                <option value="warning">{{ severityLabel('warning') }}</option>
+                <option value="notice">{{ severityLabel('notice') }}</option>
+              </select>
+            </div>
+            <div class="ins-attention__filter">
+              <label class="ins-eyebrow" for="attention-asset">Affected asset</label>
+              <select
+                id="attention-asset"
+                [value]="assetFilter()"
+                (change)="selectAssetFilter($event)"
+              >
+                <option value="">All assets</option>
+                @for (asset of attentionAssets(); track asset) {
+                  <option [value]="asset">{{ asset }}</option>
+                }
+              </select>
+            </div>
+          </div>
+        }
+
+        @if (summary().attention.length > 0 && filteredAttention().length === 0) {
+          <div class="ins-attention__clear is-filtered">
+            <span aria-hidden="true">⌕</span>
+            <p>
+              <strong>No items match the selected filters.</strong> Widen the priority or asset
+              filter to see the remaining {{ summary().attention.length }} items.
+            </p>
+          </div>
+        } @else if (filteredAttention().length > 0) {
           <div class="ins-attention__table-wrap">
             <table class="ins-attention__table">
               <caption class="ins-visually-hidden">
@@ -88,10 +127,11 @@
                   <th scope="col">Area</th>
                   <th scope="col">Affected asset</th>
                   <th scope="col">Timing</th>
+                  <th scope="col"><span class="ins-visually-hidden">Reason</span></th>
                 </tr>
               </thead>
               <tbody>
-                @for (item of topAttention(); track item.id) {
+                @for (item of pagedAttention(); track item.id) {
                   <tr>
                     <td>
                       <span
@@ -106,16 +146,33 @@
                     <td>{{ item.area }}</td>
                     <th scope="row" class="ins-mono">{{ item.asset }}</th>
                     <td>{{ item.deadline }}</td>
+                    <td>
+                      <button
+                        type="button"
+                        class="ins-attention__why"
+                        [attr.aria-expanded]="expandedAttentionID() === item.id"
+                        [attr.aria-controls]="'attention-reason-' + item.id"
+                        (click)="toggleAttentionReason(item.id)"
+                      >
+                        {{ expandedAttentionID() === item.id ? 'Hide' : 'Why?' }}
+                      </button>
+                    </td>
                   </tr>
+                  @if (expandedAttentionID() === item.id) {
+                    <tr [id]="'attention-reason-' + item.id" class="ins-attention__reason-row">
+                      <td colspan="5">{{ item.reason }}</td>
+                    </tr>
+                  }
                 }
               </tbody>
             </table>
           </div>
-          @if (hiddenAttentionCount() > 0) {
-            <p class="ins-attention__more">
-              {{ hiddenAttentionCount() }} additional items are included in the totals above.
-            </p>
-          }
+          <app-paginator
+            label="Operational watchlist"
+            [total]="filteredAttention().length"
+            [pageSize]="attentionPageSize"
+            [(page)]="attentionPage"
+          />
         }
       </section>
 

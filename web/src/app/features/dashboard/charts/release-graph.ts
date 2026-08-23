@@ -10,14 +10,17 @@ import {
   output,
   signal,
 } from '@angular/core';
-import { defineChart, dot, link, text, type ChartPoint } from '@tanstack/charts';
-import { Chart } from '@tanstack/charts/angular';
 import {
-  treeLayout,
-  type TreeLayoutLink,
-  type TreeLayoutNode,
-} from '@tanstack/charts/hierarchy/tree';
+  defineChart,
+  dot,
+  link,
+  text,
+  type ChartPoint,
+  type ChartTooltipContent,
+} from '@tanstack/charts';
+import { Chart } from '@tanstack/charts/angular';
 import { decorative } from '@tanstack/charts/mark/decorative';
+import { forceLayout } from '@tanstack/charts/network/force';
 import { scaleLinear } from '@tanstack/charts/scales/linear';
 import { tooltip } from '@tanstack/charts/tooltip';
 
@@ -25,64 +28,95 @@ import type { Release, Resource } from '../../../core/api/models';
 import { ChartFigure } from '../../../shared/charts/chart-figure';
 import { formatDate } from '../../../shared/format/formatters';
 import { ChartPaletteService } from '../../../shared/charts/chart-palette';
-import { parseReleaseVersion } from '../../releases/release-version';
 
-interface ReleaseGraphNode {
+/** One vertex in a release-period cluster: either the period hub or one resource in it. */
+export interface ReleaseGraphVertex {
   readonly id: string;
-  readonly parentId: string | null;
+  readonly kind: 'period' | 'resource';
+  readonly isHub: boolean;
   readonly label: string;
   readonly resourceID: string | null;
-  readonly kind: 'portfolio' | 'resource' | 'release';
-  readonly group: string;
   readonly version: string | null;
   readonly releasedAt: string | null;
+  readonly lines: readonly string[];
+  readonly width: number;
+  readonly height: number;
+  /** Radius of the circle that exactly circumscribes the wrapped-text block — the block's own
+   * corners touch the circle, so text sized against `width`/`height` is guaranteed to fit. */
+  readonly radius: number;
 }
 
-interface ReleaseGraphLink {
+export interface ReleaseGraphEdge {
   readonly source: string;
   readonly target: string;
+  readonly distanceHint: number;
 }
 
-const MAX_RESOURCES = 10;
-const MAX_RELEASES_PER_RESOURCE = 6;
-const DAY = 24 * 60 * 60 * 1_000;
-
-interface LineageNode extends TreeLayoutNode<ReleaseGraphNode> {
+/** A vertex after layout: adds the settled centre point the `dot` mark needs. */
+interface PlacedVertex extends ReleaseGraphVertex {
   readonly x: number;
+  readonly y: number;
 }
 
-interface LineageLink extends TreeLayoutLink<ReleaseGraphNode> {
+interface PlacedEdge {
+  readonly id: string;
   readonly x1: number;
+  readonly y1: number;
   readonly x2: number;
+  readonly y2: number;
 }
 
-/** Time-scaled release lineage over a bounded set of resources and releases. */
+interface LayoutResult {
+  readonly vertices: readonly PlacedVertex[];
+  readonly edges: readonly PlacedEdge[];
+  readonly xDomain: readonly [number, number];
+  readonly yDomain: readonly [number, number];
+}
+
+const MAX_CLUSTER_NODES = 10;
+const MIN_NODES_FOR_FORCE = 3;
+const MAX_LABEL_LINES = 3;
+const LINE_HEIGHT_RATIO = 1.2;
+
+const HUB_SIZE = { width: 140, fontSize: 15, fontWeight: 700, paddingX: 14, paddingY: 10 };
+const PEER_SIZE = { width: 118, fontSize: 12, fontWeight: 650, paddingX: 12, paddingY: 8 };
+
+/**
+ * Who shipped in the same release period: pick a period (`YYYY-MM`), see every resource that
+ * released something in it, clustered around a hub for that period rather than around any one
+ * of the resources — a period has no natural "lead" resource, so nothing should look like one.
+ *
+ * Position is physics-only here — `forceLayout` settles a one-shot d3-force simulation with no
+ * quantitative meaning in the result. "When" already lives in the hub's own label and, per
+ * resource, in the hover tooltip and the paired table.
+ */
 @Component({
   selector: 'app-release-graph',
   imports: [Chart, ChartFigure],
   template: `
-    <app-chart-figure heading="Release lineage" [subtitle]="subtitle()">
+    <app-chart-figure heading="Release cluster" [subtitle]="subtitle()">
       <div actions class="ins-release-graph__controls">
-        <label class="ins-eyebrow" for="release-graph-resource">Resource</label>
+        <label class="ins-eyebrow" for="release-graph-period">Release</label>
         <select
-          id="release-graph-resource"
-          [value]="resourceFilter()"
-          (change)="selectGraphResource($event)"
+          id="release-graph-period"
+          [value]="selectedPeriod()"
+          (change)="selectPeriod($event)"
         >
-          <option value="all">Released resources</option>
-          @for (resource of releasedResources(); track resource.id) {
-            <option [value]="resource.id">{{ resource.name }}</option>
+          @for (period of periodOptions(); track period) {
+            <option [value]="period">{{ period }}</option>
           }
         </select>
-        <span class="ins-release-graph__hint">Select a node to focus its resource</span>
+        <span class="ins-release-graph__hint">Select a resource to view its dashboard</span>
       </div>
 
       <tanstack-chart chart [options]="chartOptions()" />
 
       <table table class="ins-chart-table">
         <caption class="ins-visually-hidden">
-          Release nodes represented in the graph, newest first. Selecting a resource name scopes the
-          full dashboard to it.
+          Every release from
+          {{
+            selectedPeriod()
+          }}, newest first. Selecting a resource name scopes the full dashboard to it.
         </caption>
         <thead>
           <tr>
@@ -130,7 +164,7 @@ interface LineageLink extends TreeLayoutLink<ReleaseGraphNode> {
     }
 
     .ins-release-graph__controls select {
-      max-width: 17rem;
+      max-width: 22rem;
       min-height: 2.375rem;
       padding: 0.3125rem 1.75rem 0.3125rem 0.5rem;
       color: var(--ins-ink);
@@ -171,203 +205,52 @@ export class ReleaseGraph {
     value ? formatDate(value) : 'Unknown date';
   protected readonly chartHeight = signal(420);
 
-  protected readonly releasedResources = computed(() => {
-    const released = new Set(this.releases().map((release) => release.resourceID));
-    return this.resources()
-      .flatMap((resource) =>
-        resource.id && released.has(resource.id)
-          ? [{ id: resource.id, name: resource.name ?? resource.id }]
-          : [],
-      )
-      .sort((a, b) => a.name.localeCompare(b.name));
+  protected readonly periodOptions = computed(() => {
+    const periods = new Set<string>();
+    for (const release of this.releases()) {
+      const time = Date.parse(release.releasedAt ?? '');
+      if (release.resourceID && Number.isFinite(time)) {
+        periods.add(monthKey(time));
+      }
+    }
+    return [...periods].sort((a, b) => b.localeCompare(a));
   });
 
-  protected readonly resourceFilter = linkedSignal<readonly string[], string | 'all'>({
-    source: () => this.releasedResources().map((resource) => resource.id),
-    computation: (resourceIDs, previous) =>
-      previous && (previous.value === 'all' || resourceIDs.includes(previous.value))
-        ? previous.value
-        : 'all',
+  protected readonly selectedPeriod = linkedSignal<readonly string[], string>({
+    source: () => this.periodOptions(),
+    computation: (periods, previous) =>
+      previous && periods.includes(previous.value) ? previous.value : (periods[0] ?? ''),
   });
 
-  protected readonly tableReleases = computed(() => {
-    const selected = this.resourceFilter();
-    return [...this.releases()]
-      .filter((release) => selected === 'all' || release.resourceID === selected)
-      .sort((a, b) => Date.parse(b.releasedAt ?? '') - Date.parse(a.releasedAt ?? ''));
-  });
+  private readonly cluster = computed(() =>
+    buildReleaseCluster(this.releases(), this.resources(), this.selectedPeriod()),
+  );
 
-  private readonly topology = computed(() =>
-    buildReleaseTopology(this.tableReleases(), this.resources(), this.resourceFilter()),
+  protected readonly tableReleases = computed(() =>
+    [...this.cluster().periodReleases].sort(
+      (a, b) => Date.parse(b.releasedAt ?? '') - Date.parse(a.releasedAt ?? ''),
+    ),
   );
 
   protected readonly subtitle = computed(() => {
-    const topology = this.topology();
-    const omitted = this.tableReleases().length - topology.releaseCount;
-    const suffix = omitted > 0 ? ` · ${omitted} older releases remain in the data table` : '';
-    return `${topology.resourceCount} ${topology.resourceCount === 1 ? 'resource' : 'resources'} · ${topology.releaseCount} ${topology.releaseCount === 1 ? 'release node' : 'release nodes'}${suffix}`;
+    const cluster = this.cluster();
+    const count = cluster.vertices.filter((vertex) => vertex.kind === 'resource').length;
+    if (count === 0) {
+      return 'No releases recorded for this selection.';
+    }
+    const suffix =
+      cluster.omittedCount > 0
+        ? ` · ${cluster.omittedCount} more from ${this.selectedPeriod()} in the data table`
+        : '';
+    return `${count} ${count === 1 ? 'resource' : 'resources'} · ${this.selectedPeriod()}${suffix}`;
   });
 
   protected readonly chartOptions = computed(() => {
     const palette = this.paletteService.palette();
-    const topology = this.topology();
-    const colors = palette.series;
-
-    const hierarchy = treeLayout(topology.nodes, {
-      id: 'id',
-      parentId: 'parentId',
-      orientation: 'left',
-      nodeSize: [1, 1],
-      sort: (a, b) => a.name.localeCompare(b.name),
-    });
-
-    const dated = dateLineage(hierarchy.nodes, hierarchy.links);
-    const nodes = dated.nodes.filter((node) => node.data?.kind !== 'portfolio');
-    const visibleNodeIDs = new Set(nodes.map((node) => node.id));
-    const links = dated.links.filter(
-      (edge) => visibleNodeIDs.has(edge.source) && visibleNodeIDs.has(edge.target),
-    );
-    return this.definitionForTree(nodes, links, colors);
+    const { vertices, edges } = this.cluster();
+    const layout = layoutCluster(vertices, edges);
+    return definitionForCluster(layout, palette, this.chartHeight(), this.selectPoint.bind(this));
   });
-
-  protected selectGraphResource(event: Event): void {
-    this.resourceFilter.set((event.target as HTMLSelectElement).value);
-  }
-
-  protected selectDashboardResource(resourceID: string | undefined): void {
-    if (resourceID) {
-      this.resourceSelect.emit(resourceID);
-    }
-  }
-
-  protected resourceName(resourceID: string | undefined): string {
-    return (
-      this.resources().find((resource) => resource.id === resourceID)?.name ?? 'Unknown resource'
-    );
-  }
-
-  private definitionForTree(
-    nodes: readonly LineageNode[],
-    links: readonly LineageLink[],
-    colors: readonly string[],
-  ) {
-    const palette = this.paletteService.palette();
-    const singleResource =
-      new Set(nodes.flatMap((node) => (node.data?.resourceID ? [node.data.resourceID] : [])))
-        .size === 1;
-    const releaseCount = nodes.filter((node) => node.data?.kind === 'release').length;
-    const compactSingle = singleResource && releaseCount === 1;
-    const plottedNodes = singleResource ? nodes.map((node) => ({ ...node, y: 0 })) : nodes;
-    const plottedLinks = singleResource ? links.map((edge) => ({ ...edge, y1: 0, y2: 0 })) : links;
-    const yValues = plottedNodes.map((node) => node.y);
-    const yMinimum = Math.min(...yValues);
-    const yMaximum = Math.max(...yValues);
-    const yPadding = yMinimum === yMaximum ? 1 : Math.max(0.55, (yMaximum - yMinimum) * 0.08);
-    const xValues = nodes.map((node) => node.x);
-    const xMinimum = Math.min(...xValues);
-    const xMaximum = Math.max(...xValues);
-    const xSpan = Math.max(xMaximum - xMinimum, DAY);
-    const xPadding = compactSingle
-      ? Math.max(xSpan * 1.25, 21 * DAY)
-      : Math.max(xSpan * 0.035, 7 * DAY);
-    const nodeRadius = (node: LineageNode): number => {
-      if (singleResource) {
-        return node.data?.kind === 'resource' ? 13 : 10;
-      }
-      return node.data?.kind === 'resource' ? 9 : 7;
-    };
-
-    return {
-      definition: defineChart(
-        {
-          marks: [
-            decorative(
-              link(plottedLinks, {
-                id: 'release-lineage-links',
-                x1: 'x1',
-                y1: 'y1',
-                x2: 'x2',
-                y2: 'y2',
-                key: 'id',
-                stroke: palette.axis,
-                strokeOpacity: singleResource ? 0.75 : 0.6,
-                strokeWidth: singleResource ? 2.6 : 1.9,
-              }),
-            ),
-            dot(plottedNodes, {
-              id: 'release-lineage-nodes',
-              x: 'x',
-              y: 'y',
-              key: 'id',
-              color: (node) => node.data?.group ?? 'portfolio',
-              r: nodeRadius,
-              stroke: palette.surface,
-              strokeWidth: singleResource ? 3 : 2.5,
-              states: [
-                {
-                  when: { focus: 'group' },
-                  style: { r: singleResource ? 14 : 10, strokeWidth: 3.25 },
-                },
-                {
-                  when: { focus: 'primary' },
-                  style: { r: singleResource ? 15 : 11, strokeWidth: 3.75 },
-                },
-              ],
-            }),
-            decorative(
-              text(plottedNodes, {
-                id: 'release-lineage-labels',
-                x: 'x',
-                y: 'y',
-                key: 'id',
-                text: (node) => graphLabel(node.data, this.resourceFilter(), compactSingle),
-                dx: singleResource ? 12 : 9,
-                dy: (node) => (singleResource || node.data?.kind === 'resource' ? -15 : 0),
-                anchor: 'start',
-                fill: palette.ink,
-                fontSize: singleResource ? 15 : 12,
-                fontWeight: singleResource ? 700 : 600,
-              }),
-            ),
-          ],
-          x: {
-            scale: scaleLinear().domain([xMinimum - xPadding, xMaximum + xPadding]),
-            axis: compactSingle
-              ? false
-              : {
-                  line: false,
-                  ticks: { count: 5, size: 0, padding: 8, format: formatGraphDate },
-                },
-            grid: !compactSingle,
-          },
-          y: {
-            scale: scaleLinear().domain([yMinimum - yPadding, yMaximum + yPadding]),
-            axis: false,
-            grid: false,
-          },
-          color: { range: colors },
-          theme: {
-            background: 'transparent',
-            foreground: palette.inkSecondary,
-            muted: palette.muted,
-            grid: palette.grid,
-            palette: colors,
-          },
-          margin: {
-            top: singleResource ? 32 : 20,
-            right: singleResource ? 150 : 110,
-            bottom: compactSingle ? 20 : 38,
-            left: 18,
-          },
-        },
-        this.interactions(),
-      ),
-      ariaLabel: 'Release lineage tree',
-      ariaDescription: `${this.subtitle()}. Use arrow keys to inspect nodes and Enter to focus the lineage on that resource.`,
-      height: this.chartHeight(),
-      onSelect: (point: ChartPoint<unknown> | null) => this.selectPoint(point),
-    };
-  }
 
   constructor() {
     afterNextRender(() => {
@@ -417,211 +300,468 @@ export class ReleaseGraph {
     }
   }
 
-  private interactions() {
-    return {
-      keyboard: true,
-      focus: 'nearest' as const,
-      focusRing: false,
-      maxFocusDistance: Number.POSITIVE_INFINITY,
-      tooltip: {
-        use: tooltip,
-        format: (point: ChartPoint<unknown>) =>
-          this.releaseNodeTooltip(releaseNodeFromPoint(point.datum)),
-      },
-    };
+  protected selectPeriod(event: Event): void {
+    this.selectedPeriod.set((event.target as HTMLSelectElement).value);
   }
 
+  protected selectDashboardResource(resourceID: string | undefined): void {
+    if (resourceID) {
+      this.resourceSelect.emit(resourceID);
+    }
+  }
+
+  protected resourceName(resourceID: string | undefined): string {
+    return (
+      this.resources().find((resource) => resource.id === resourceID)?.name ?? 'Unknown resource'
+    );
+  }
+
+  /** A click/Enter on a resource vertex scopes the whole dashboard to it — the same action as
+   * the paired table's resource-name link. The hub represents the period itself, not a
+   * resource, so it has nothing to navigate to. */
   private selectPoint(point: ChartPoint<unknown> | null): void {
-    const datum = releaseNodeFromPoint(point?.datum);
-    if (datum?.resourceID) {
-      this.resourceFilter.set(datum.resourceID);
+    const vertex = releaseVertexFromPoint(point?.datum);
+    if (vertex && vertex.kind === 'resource' && vertex.resourceID) {
+      this.resourceSelect.emit(vertex.resourceID);
     }
-  }
-
-  private releaseNodeTooltip(node: ReleaseGraphNode | null): string {
-    if (!node) {
-      return 'Release lineage';
-    }
-    if (node.kind === 'resource') {
-      return `${node.label} · Select to focus this resource`;
-    }
-
-    const resource = node.resourceID ? this.resourceName(node.resourceID) : 'Unknown resource';
-    const date = node.releasedAt ? ` · ${formatDate(node.releasedAt)}` : '';
-    return `${resource} · ${node.label}${date}`;
   }
 }
 
-function buildReleaseTopology(
+/** UTC calendar-month key in `YYYY-MM` form, matching `dashboard.ts`'s `releaseMonths` grouping
+ * exactly so this view and the Cadence tab agree on what a "period" is. */
+function monthKey(time: number): string {
+  const date = new Date(time);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Every distinct resource that released something in the selected period, capped so the graph
+ * stays a legible cluster around its hub rather than the whole portfolio. */
+export function buildReleaseCluster(
   releases: readonly Release[],
   resources: readonly Resource[],
-  selected: string | 'all',
+  selectedPeriod: string,
 ): {
-  readonly nodes: readonly ReleaseGraphNode[];
-  readonly links: readonly ReleaseGraphLink[];
-  readonly resourceCount: number;
-  readonly releaseCount: number;
+  readonly vertices: readonly ReleaseGraphVertex[];
+  readonly edges: readonly ReleaseGraphEdge[];
+  readonly periodReleases: readonly Release[];
+  readonly omittedCount: number;
 } {
+  const empty = { vertices: [], edges: [], periodReleases: [], omittedCount: 0 };
+  if (!selectedPeriod) {
+    return empty;
+  }
+
   const names = new Map(
     resources.flatMap((resource) =>
       resource.id ? [[resource.id, resource.name ?? resource.id] as const] : [],
     ),
   );
-  const byResource = new Map<string, Release[]>();
-  for (const release of releases) {
-    if (!release.resourceID || (selected !== 'all' && release.resourceID !== selected)) {
+
+  const periodEntries = releases.flatMap((release) => {
+    const time = Date.parse(release.releasedAt ?? '');
+    return release.resourceID && Number.isFinite(time) && monthKey(time) === selectedPeriod
+      ? [{ release, time }]
+      : [];
+  });
+  if (periodEntries.length === 0) {
+    return empty;
+  }
+
+  // One entry per resource: that resource's latest release within the period, if it shipped
+  // more than once. Kept in a stable, anchor-free order — nothing here is "closer" to anything.
+  const byResource = new Map<string, { release: Release; time: number }>();
+  for (const entry of periodEntries) {
+    const resourceID = entry.release.resourceID;
+    if (!resourceID) {
       continue;
     }
-    const group = byResource.get(release.resourceID) ?? [];
-    group.push(release);
-    byResource.set(release.resourceID, group);
-  }
-
-  const resourceGroups = [...byResource]
-    .map(([resourceID, rows]) => ({
-      resourceID,
-      rows: rows.sort((a, b) => Date.parse(a.releasedAt ?? '') - Date.parse(b.releasedAt ?? '')),
-      latest: Math.max(...rows.map((row) => Date.parse(row.releasedAt ?? '') || 0)),
-    }))
-    .sort((a, b) => b.latest - a.latest)
-    .slice(0, selected === 'all' ? MAX_RESOURCES : 1);
-
-  const nodes: ReleaseGraphNode[] = [
-    {
-      id: 'release-portfolio',
-      parentId: null,
-      label: '',
-      resourceID: null,
-      kind: 'portfolio',
-      group: 'portfolio',
-      version: null,
-      releasedAt: null,
-    },
-  ];
-  const links: ReleaseGraphLink[] = [];
-  let releaseCount = 0;
-
-  for (const group of resourceGroups) {
-    const resourceNodeID = `resource-${group.resourceID}`;
-    nodes.push({
-      id: resourceNodeID,
-      parentId: 'release-portfolio',
-      label: names.get(group.resourceID) ?? group.resourceID,
-      resourceID: group.resourceID,
-      kind: 'resource',
-      group: group.resourceID,
-      version: null,
-      releasedAt: null,
-    });
-    links.push({ source: 'release-portfolio', target: resourceNodeID });
-
-    let parentId = resourceNodeID;
-    const visibleRows = group.rows.slice(-MAX_RELEASES_PER_RESOURCE);
-    for (const [index, release] of visibleRows.entries()) {
-      const id = `release-${release.id ?? `${group.resourceID}-${index}`}`;
-      const parsed = parseReleaseVersion(release.version);
-      nodes.push({
-        id,
-        parentId,
-        label: release.version ?? 'Unlabelled',
-        resourceID: group.resourceID,
-        kind: 'release',
-        group: parsed.kind === 'semver' ? `major-${parsed.major}` : group.resourceID,
-        version: release.version ?? null,
-        releasedAt: release.releasedAt ?? null,
-      });
-      links.push({ source: parentId, target: id });
-      parentId = id;
-      releaseCount += 1;
+    const existing = byResource.get(resourceID);
+    if (!existing || entry.time > existing.time) {
+      byResource.set(resourceID, entry);
     }
   }
 
-  return { nodes, links, resourceCount: resourceGroups.length, releaseCount };
-}
+  const candidates = [...byResource.values()].sort((a, b) =>
+    (names.get(a.release.resourceID ?? '') ?? '').localeCompare(
+      names.get(b.release.resourceID ?? '') ?? '',
+    ),
+  );
+  const kept = candidates.slice(0, MAX_CLUSTER_NODES);
+  const omittedCount = candidates.length - kept.length;
 
-/**
- * Keeps the tidy tree's stable vertical lanes while replacing its depth coordinate with time.
- *
- * A plain tidy tree gives every release the same horizontal step, which would make a two-day
- * gap look identical to a two-year gap. The transformed x coordinate preserves the hierarchy
- * on y and makes publication date the quantitative x-axis. Resource and portfolio anchors sit
- * just before the earliest visible release so their connector lines remain legible.
- */
-function dateLineage(
-  nodes: readonly TreeLayoutNode<ReleaseGraphNode>[],
-  links: readonly TreeLayoutLink<ReleaseGraphNode>[],
-): { readonly nodes: readonly LineageNode[]; readonly links: readonly LineageLink[] } {
-  const dates = nodes.flatMap((node) => {
-    const time = Date.parse(node.data?.releasedAt ?? '');
-    return Number.isFinite(time) ? [time] : [];
-  });
-  const minimum = dates.length > 0 ? Math.min(...dates) : Date.UTC(2000, 0, 1);
-  const maximum = dates.length > 0 ? Math.max(...dates) : minimum;
-  const anchorStep = Math.max((maximum - minimum) * 0.06, 21 * DAY);
+  const hubLines = wrapResourceLabel(
+    selectedPeriod,
+    HUB_SIZE.width - HUB_SIZE.paddingX * 2,
+    HUB_SIZE.fontSize,
+    MAX_LABEL_LINES,
+  );
+  const hubHeight = HUB_SIZE.paddingY * 2 + hubLines.length * HUB_SIZE.fontSize * LINE_HEIGHT_RATIO;
+  const hub: ReleaseGraphVertex = {
+    id: `period-${selectedPeriod}`,
+    kind: 'period',
+    isHub: true,
+    label: selectedPeriod,
+    resourceID: null,
+    version: null,
+    releasedAt: null,
+    lines: hubLines,
+    width: HUB_SIZE.width,
+    height: hubHeight,
+    radius: Math.hypot(HUB_SIZE.width / 2, hubHeight / 2),
+  };
 
-  const datedNodes = nodes.map((node): LineageNode => {
-    const releaseTime = Date.parse(node.data?.releasedAt ?? '');
-    const x =
-      node.data?.kind === 'release' && Number.isFinite(releaseTime)
-        ? releaseTime
-        : node.data?.kind === 'resource'
-          ? minimum - anchorStep
-          : minimum - anchorStep * 2;
-    return { ...node, x };
+  const peers: ReleaseGraphVertex[] = kept.map(({ release }) => {
+    const resourceID = release.resourceID ?? '';
+    const resourceName = names.get(resourceID) ?? resourceID;
+    const lines = wrapResourceLabel(
+      resourceName,
+      PEER_SIZE.width - PEER_SIZE.paddingX * 2,
+      PEER_SIZE.fontSize,
+      MAX_LABEL_LINES,
+    );
+    const height = PEER_SIZE.paddingY * 2 + lines.length * PEER_SIZE.fontSize * LINE_HEIGHT_RATIO;
+    return {
+      id: release.id ?? `${resourceID}-${selectedPeriod}`,
+      kind: 'resource',
+      isHub: false,
+      label: resourceName,
+      resourceID,
+      version: release.version ?? null,
+      releasedAt: release.releasedAt ?? null,
+      lines,
+      width: PEER_SIZE.width,
+      height,
+      radius: Math.hypot(PEER_SIZE.width / 2, height / 2),
+    };
   });
-  const xByID = new Map(datedNodes.map((node) => [node.id, node.x] as const));
-  const datedLinks = links.map((edge): LineageLink => ({
-    ...edge,
-    x1: xByID.get(edge.source) ?? edge.x1,
-    x2: xByID.get(edge.target) ?? edge.x2,
+
+  const edges: ReleaseGraphEdge[] = peers.map((peer) => ({
+    source: hub.id,
+    target: peer.id,
+    distanceHint: hub.radius + peer.radius + 40,
   }));
 
-  return { nodes: datedNodes, links: datedLinks };
+  return {
+    vertices: [hub, ...peers],
+    edges,
+    periodReleases: periodEntries.map((entry) => entry.release),
+    omittedCount,
+  };
 }
 
-function graphLabel(
-  node: ReleaseGraphNode | null | undefined,
-  selected: string | 'all',
-  showReleaseDate: boolean,
-): string {
-  if (!node) {
-    return '';
+/** Places a hub with 0–1 peers deterministically (a "simulation" over that few nodes just settles
+ * into an arbitrary position), or hands off to `forceLayout` for a real cluster. */
+function layoutCluster(
+  vertices: readonly ReleaseGraphVertex[],
+  edges: readonly ReleaseGraphEdge[],
+): LayoutResult {
+  if (vertices.length === 0) {
+    return { vertices: [], edges: [], xDomain: [-1, 1], yDomain: [-1, 1] };
   }
-  if (node.kind === 'portfolio') {
-    return '';
+
+  if (vertices.length < MIN_NODES_FOR_FORCE) {
+    const placed =
+      vertices.length === 1
+        ? [placeVertex(vertices[0], 0, 0)]
+        : [placeVertex(vertices[0], 0, 0), placeVertex(vertices[1], 140, 0)];
+    const byID = new Map(placed.map((vertex) => [vertex.id, vertex] as const));
+    const placedEdges: PlacedEdge[] = edges.flatMap((edge) => {
+      const source = byID.get(edge.source);
+      const target = byID.get(edge.target);
+      return source && target
+        ? [
+            {
+              id: `${edge.source}->${edge.target}`,
+              x1: source.x,
+              y1: source.y,
+              x2: target.x,
+              y2: target.y,
+            },
+          ]
+        : [];
+    });
+    const maxRadius = Math.max(...placed.map((vertex) => vertex.radius), 40);
+    return {
+      vertices: placed,
+      edges: placedEdges,
+      xDomain: [-maxRadius - 20, 140 + maxRadius + 20],
+      yDomain: [-maxRadius - 20, maxRadius + 20],
+    };
   }
-  if (node.kind === 'resource') {
-    return node.label;
-  }
-  if (selected !== 'all') {
-    return showReleaseDate && node.releasedAt
-      ? `${node.label} · ${formatDate(node.releasedAt)}`
-      : node.label;
-  }
-  return '';
+
+  const graph = forceLayout(vertices, edges, {
+    nodeKey: 'id',
+    source: 'source',
+    target: 'target',
+    iterations: 400,
+    domainPadding: 0.35,
+    forces: [
+      { type: 'link', distance: (edge) => edge.distanceHint, strength: 0.55 },
+      { type: 'manyBody', strength: -820 },
+      { type: 'center', x: 0, y: 0 },
+      // Exact rather than approximate now that vertices are circles: two circles just touch
+      // when their centres are `radius` apart plus this gap, with no diagonal-vs-edge slop.
+      { type: 'collide', radius: (node) => node.radius + 8, strength: 0.9 },
+      { type: 'x', x: 0, strength: (node) => (node.isHub ? 0.5 : 0.03) },
+      { type: 'y', y: 0, strength: (node) => (node.isHub ? 0.5 : 0.03) },
+    ],
+  });
+
+  return {
+    vertices: graph.nodes.map((node) => placeVertex(node, node.x, node.y)),
+    edges: graph.links.map((edge) => ({
+      id: `${edge.source}->${edge.target}`,
+      x1: edge.x1,
+      y1: edge.y1,
+      x2: edge.x2,
+      y2: edge.y2,
+    })),
+    xDomain: graph.xDomain,
+    yDomain: graph.yDomain,
+  };
 }
 
-function releaseNodeFromPoint(datum: unknown): ReleaseGraphNode | null {
-  if (typeof datum !== 'object' || datum === null) {
-    return null;
-  }
-  if ('data' in datum) {
-    const data = (datum as { data?: unknown }).data;
-    return isReleaseGraphNode(data) ? data : null;
-  }
-  return isReleaseGraphNode(datum) ? datum : null;
+function placeVertex(vertex: ReleaseGraphVertex, x: number, y: number): PlacedVertex {
+  return { ...vertex, x, y };
 }
 
-function isReleaseGraphNode(value: unknown): value is ReleaseGraphNode {
-  return typeof value === 'object' && value !== null && 'kind' in value && 'label' in value;
+function definitionForCluster(
+  layout: LayoutResult,
+  palette: ReturnType<ChartPaletteService['palette']>,
+  chartHeight: number,
+  onSelect: (point: ChartPoint<unknown> | null) => void,
+) {
+  const { vertices, edges, xDomain, yDomain } = layout;
+  const peers = vertices.filter((vertex) => !vertex.isHub);
+  const hub = vertices.filter((vertex) => vertex.isHub);
+
+  return {
+    definition: defineChart(
+      {
+        marks: [
+          decorative(
+            link(edges, {
+              id: 'release-graph-links',
+              x1: 'x1',
+              y1: 'y1',
+              x2: 'x2',
+              y2: 'y2',
+              key: 'id',
+              stroke: palette.axis,
+              strokeOpacity: 0.6,
+              strokeWidth: 1.75,
+            }),
+          ),
+          dot(peers, {
+            id: 'release-graph-peer-nodes',
+            x: 'x',
+            y: 'y',
+            r: 'radius',
+            key: 'id',
+            fill: palette.grid,
+            stroke: palette.axis,
+            strokeWidth: 1.25,
+            states: [
+              { when: { focus: 'group' }, style: { strokeWidth: 2.25 } },
+              { when: { focus: 'primary' }, style: { strokeWidth: 2.75 } },
+            ],
+          }),
+          ...buildLabelMarks(peers, PEER_SIZE, palette.ink, 'release-graph-peer-label'),
+          dot(hub, {
+            id: 'release-graph-hub-node',
+            x: 'x',
+            y: 'y',
+            r: 'radius',
+            key: 'id',
+            fill: palette.ranked[0],
+            stroke: palette.ranked[0],
+            strokeWidth: 2,
+            states: [
+              { when: { focus: 'group' }, style: { strokeWidth: 3 } },
+              { when: { focus: 'primary' }, style: { strokeWidth: 3.5 } },
+            ],
+          }),
+          ...buildLabelMarks(hub, HUB_SIZE, palette.rankedInk, 'release-graph-hub-label'),
+        ],
+        x: { scale: scaleLinear().domain(xDomain), axis: false, grid: false },
+        y: { scale: scaleLinear().domain(yDomain), axis: false, grid: false },
+        guides: false,
+        theme: {
+          background: 'transparent',
+          foreground: palette.inkSecondary,
+          muted: palette.muted,
+          grid: palette.grid,
+        },
+        margin: { top: 24, right: 24, bottom: 24, left: 24 },
+      },
+      {
+        keyboard: true,
+        focus: 'nearest',
+        focusRing: false,
+        maxFocusDistance: Number.POSITIVE_INFINITY,
+        tooltip: {
+          use: tooltip,
+          content: (points: readonly ChartPoint<unknown>[]) =>
+            releaseVertexTooltipContent(releaseVertexFromPoint(points[0]?.datum)),
+        },
+      },
+    ),
+    ariaLabel: 'Release graph',
+    ariaDescription:
+      'A period at the centre, surrounded by every resource that released something in it. ' +
+      'Use arrow keys to move between them and Enter to open a resource.',
+    height: chartHeight,
+    onSelect,
+  };
 }
 
-const GRAPH_DATE = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
+/** One mark call per label line, since `text`'s `fontSize`/`fontWeight` are constants, not
+ * per-datum channels — splitting hub vs. peer vertices into separate calls (their own,
+ * differently-sized groups) is what lets each group have its own type scale. */
+function buildLabelMarks(
+  vertices: readonly PlacedVertex[],
+  size: typeof HUB_SIZE | typeof PEER_SIZE,
+  fill: string,
+  idPrefix: string,
+) {
+  const lineHeight = size.fontSize * LINE_HEIGHT_RATIO;
+  return Array.from({ length: MAX_LABEL_LINES }, (_, lineIndex) =>
+    decorative(
+      text(vertices, {
+        id: `${idPrefix}-${lineIndex}`,
+        x: 'x',
+        y: 'y',
+        key: 'id',
+        text: (vertex: PlacedVertex) => vertex.lines[lineIndex] ?? '',
+        dy: (vertex: PlacedVertex) => (lineIndex - (vertex.lines.length - 1) / 2) * lineHeight,
+        anchor: 'middle',
+        fill,
+        fontSize: size.fontSize,
+        fontWeight: size.fontWeight,
+      }),
+    ),
+  );
+}
 
-function formatGraphDate(value: number): string {
-  return GRAPH_DATE.format(new Date(value));
+/** Estimated width at a 12px reference size, scaled linearly to `fontSizePx` — the same
+ * character-class heuristic `top-resources-chart.ts` uses for its own label-fit check. */
+function estimateTextWidth(value: string, fontSizePx: number): number {
+  const base = [...value].reduce((width, character) => {
+    if (/[MW@#%]/u.test(character)) {
+      return width + 9;
+    }
+    if (/[ilI1|.,'`]/u.test(character)) {
+      return width + 4;
+    }
+    return width + 7;
+  }, 0);
+  return base * (fontSizePx / 12);
+}
+
+/** Splits on whitespace and on `-`/`_`/`.` boundaries, keeping the delimiter attached to the
+ * token before it — "food-access-model" has break points there; "gnnfoodflowportal" has none. */
+function tokenizeLabel(value: string): readonly string[] {
+  const tokens: string[] = [];
+  let current = '';
+  for (const character of value) {
+    current += character;
+    if (character === ' ' || character === '-' || character === '_' || character === '.') {
+      tokens.push(current);
+      current = '';
+    }
+  }
+  if (current.length > 0) {
+    tokens.push(current);
+  }
+  return tokens;
+}
+
+/** Greedy word-wrap sized against a target box width, hard-breaking a single token that alone
+ * exceeds the width, and ellipsizing whatever still doesn't fit after `maxLines`. */
+export function wrapResourceLabel(
+  name: string,
+  maxWidthPx: number,
+  fontSizePx: number,
+  maxLines: number,
+): readonly string[] {
+  const tokens = tokenizeLabel(name.trim());
+  const lines: string[] = [];
+  let current = '';
+
+  const flush = (): void => {
+    if (current.length > 0) {
+      lines.push(current);
+      current = '';
+    }
+  };
+
+  for (const token of tokens) {
+    if (lines.length > maxLines) {
+      break;
+    }
+
+    if (estimateTextWidth(current + token, fontSizePx) <= maxWidthPx) {
+      current += token;
+      continue;
+    }
+
+    flush();
+    if (estimateTextWidth(token, fontSizePx) <= maxWidthPx) {
+      current = token;
+      continue;
+    }
+
+    // A single token wider than the box on its own: hard-break it character by character.
+    for (const character of token) {
+      if (estimateTextWidth(current + character, fontSizePx) > maxWidthPx) {
+        flush();
+      }
+      current += character;
+    }
+  }
+  flush();
+
+  if (lines.length <= maxLines) {
+    return lines.map((line) => line.trim());
+  }
+
+  const kept = lines.slice(0, maxLines).map((line) => line.trim());
+  kept[maxLines - 1] = ellipsize(kept[maxLines - 1], maxWidthPx, fontSizePx);
+  return kept;
+}
+
+function ellipsize(line: string, maxWidthPx: number, fontSizePx: number): string {
+  let text = line;
+  while (text.length > 1 && estimateTextWidth(`${text}…`, fontSizePx) > maxWidthPx) {
+    text = text.slice(0, -1);
+  }
+  return `${text}…`;
+}
+
+function releaseVertexFromPoint(datum: unknown): PlacedVertex | null {
+  return isPlacedVertex(datum) ? datum : null;
+}
+
+function isPlacedVertex(value: unknown): value is PlacedVertex {
+  return typeof value === 'object' && value !== null && 'kind' in value && 'isHub' in value;
+}
+
+/** A two-row mini table — Version, then Release in `YYYY-MM` — for a resource vertex; just the
+ * period name for the hub, which has no version or single release date of its own. */
+function releaseVertexTooltipContent(vertex: PlacedVertex | null): ChartTooltipContent {
+  if (!vertex) {
+    return { rows: [] };
+  }
+  if (vertex.kind === 'period') {
+    return { title: vertex.label, rows: [] };
+  }
+
+  const releaseMonth = vertex.releasedAt ? monthKey(Date.parse(vertex.releasedAt)) : '—';
+  return {
+    title: vertex.label,
+    rows: [
+      { label: 'Version', value: vertex.version ?? 'Unlabelled' },
+      { label: 'Release', value: releaseMonth },
+    ],
+  };
 }

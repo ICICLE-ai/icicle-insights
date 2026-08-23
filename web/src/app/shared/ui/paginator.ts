@@ -1,8 +1,32 @@
 import { Component, computed, input, model } from '@angular/core';
 
-/** Compact, keyboard-native paging for the administrative record tables. */
+/** Rows per page unless a table says otherwise. */
+export const DEFAULT_PAGE_SIZE = 10;
+
+/**
+ * The rows belonging on `page`, clamped to the last page that exists.
+ *
+ * Lives beside `Paginator` because the two must clamp identically: the component decides which
+ * page *number* to show and this decides which rows go with it, and a table whose slice
+ * disagreed with its own pager would report "Page 2 of 1" over an empty body. Every paged table
+ * in the app calls this rather than repeating the arithmetic.
+ *
+ * Clamping rather than returning empty is what makes a shrinking list safe — filter a table
+ * while parked on page 5 and it lands on the new last page instead of on nothing.
+ */
+export function pageSlice<T>(
+  items: readonly T[],
+  page: number,
+  pageSize: number = DEFAULT_PAGE_SIZE,
+): readonly T[] {
+  const lastPage = Math.max(0, Math.ceil(items.length / pageSize) - 1);
+  const current = Math.min(Math.max(0, page), lastPage);
+  return items.slice(current * pageSize, current * pageSize + pageSize);
+}
+
+/** Compact, keyboard-native paging for any record table in the app. */
 @Component({
-  selector: 'app-admin-paginator',
+  selector: 'app-paginator',
   template: `
     @if (total() > pageSize()) {
       <nav class="ins-admin-pager" [attr.aria-label]="label() + ' pages'">
@@ -84,10 +108,10 @@ import { Component, computed, input, model } from '@angular/core';
     }
   `,
 })
-export class AdminPaginator {
+export class Paginator {
   readonly total = input.required<number>();
   readonly label = input.required<string>();
-  readonly pageSize = input(10);
+  readonly pageSize = input(DEFAULT_PAGE_SIZE);
   readonly page = model(0);
 
   protected readonly totalPages = computed(() =>

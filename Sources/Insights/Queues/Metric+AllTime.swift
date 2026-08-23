@@ -3,10 +3,60 @@ import Foundation
 import SQLKit
 
 extension Metric {
+  /// Serializes concurrent read-modify-writes of one resource's all-time total.
+  ///
+  /// The fold is a read-modify-write, and FluentKit exposes no row locking — nor would a row
+  /// lock cover the first sweep, where no total row exists yet. `hashtext` rather than Swift's
+  /// `hashValue`, which is seeded per process and so differs across workers.
+  ///
+  /// Keyed on the *base* type so that an API write and a sweep folding the same series contend
+  /// on the same lock. Callers must already be inside a transaction; the lock is held to its
+  /// end.
+  private static func lockAllTime(
+    on db: any Database,
+    resourceID: Resource.IDValue,
+    type: MetricType
+  ) async throws {
+    guard let sql = db as? any SQLDatabase else { return }
+    try await sql.raw(
+      "SELECT pg_advisory_xact_lock(hashtext(\(bind: "\(resourceID):\(type.rawValue)")))"
+    ).run()
+  }
+
+  /// Applies a signed delta to the all-time total. Assumes the caller holds the lock above.
+  private static func applyAllTimeDelta(
+    on db: any Database,
+    resourceID: Resource.IDValue,
+    allTimeType: MetricType,
+    delta: Double
+  ) async throws {
+    guard
+      let total = try await Metric.query(on: db)
+        .filter(\.$resource.$id == resourceID)
+        .filter(\.$type == allTimeType)
+        .first()
+    else {
+      // A missing row is created only for a positive delta: subtracting from a total that was
+      // never accumulated would invent a negative one out of nothing.
+      guard delta > 0 else { return }
+      try await Metric(resourceID: resourceID, reading: delta, type: allTimeType).create(on: db)
+      return
+    }
+
+    // Floors at zero. `reading` is validated nonnegative everywhere it enters, so a total driven
+    // below zero means the deltas disagree with history — a lifetime count of -40 is not a
+    // number any caller can interpret, and clamping keeps the series readable while it is fixed.
+    total.reading = max(0, total.reading + delta)
+    try await total.save(on: db)
+  }
+
   /// Folds `reading` into the resource's running all-time total, creating the row on first
   /// sight. Does nothing for metrics that have no all-time counterpart.
   ///
   /// Only safe for genuine deltas. Rolling-window readings must use `foldDailyIntoAllTime`.
+  ///
+  /// Takes no lock of its own: every caller reaches it from inside `foldDailyIntoAllTime`'s
+  /// transaction, which already holds one.
   static func addToAllTime(
     on db: any Database,
     resourceID: Resource.IDValue,
@@ -14,19 +64,32 @@ extension Metric {
     reading: Double
   ) async throws {
     guard let allTimeType = type.allTime else { return }
+    try await applyAllTimeDelta(
+      on: db, resourceID: resourceID, allTimeType: allTimeType, delta: reading)
+  }
 
-    guard
-      let total = try await Metric.query(on: db)
-        .filter(\.$resource.$id == resourceID)
-        .filter(\.$type == allTimeType)
-        .first()
-    else {
-      try await Metric(resourceID: resourceID, reading: reading, type: allTimeType).create(on: db)
-      return
+  /// Applies a signed delta to the resource's all-time total, under its own lock.
+  ///
+  /// The correction path for a hand-recorded reading: creating one adds it, editing one applies
+  /// the difference, deleting one subtracts it. Does nothing for metrics with no all-time
+  /// counterpart.
+  ///
+  /// Unlike `addToAllTime` this opens its own transaction, because API writes arrive outside
+  /// any sweep. It takes the same lock `foldDailyIntoAllTime` does, so a request and a
+  /// concurrent sweep serialize rather than racing to read-modify-write the same row.
+  static func adjustAllTime(
+    on db: any Database,
+    resourceID: Resource.IDValue,
+    type: MetricType,
+    delta: Double
+  ) async throws {
+    guard let allTimeType = type.allTime, delta != 0 else { return }
+
+    try await db.transaction { db in
+      try await lockAllTime(on: db, resourceID: resourceID, type: type)
+      try await applyAllTimeDelta(
+        on: db, resourceID: resourceID, allTimeType: allTimeType, delta: delta)
     }
-
-    total.reading += reading
-    try await total.save(on: db)
   }
 
   /// Replaces the all-time total outright, for platforms that report the lifetime figure
@@ -76,14 +139,7 @@ extension Metric {
     let today = utc.startOfDay(for: now)
 
     try await db.transaction { db in
-      // The fold is a read-modify-write, and FluentKit exposes no row locking — nor would a
-      // row lock cover the first sweep, where no watermark row exists yet. `hashtext` rather
-      // than Swift's `hashValue`, which is seeded per process and so differs across workers.
-      if let sql = db as? any SQLDatabase {
-        try await sql.raw(
-          "SELECT pg_advisory_xact_lock(hashtext(\(bind: "\(resourceID):\(type.rawValue)")))"
-        ).run()
-      }
+      try await lockAllTime(on: db, resourceID: resourceID, type: type)
 
       let watermark = try await MetricWatermark.query(on: db)
         .filter(\.$resource.$id == resourceID)

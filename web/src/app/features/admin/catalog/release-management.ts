@@ -2,26 +2,36 @@ import { Component, computed, inject, resource, signal } from '@angular/core';
 import { FormField, form, required } from '@angular/forms/signals';
 import { ConfirmationService, MessageService } from '@openng/optimus-ui/api';
 import { DialogModule } from '@openng/optimus-ui/dialog';
+import { InputTextModule } from '@openng/optimus-ui/inputtext';
 
 import { toApiError, type ApiError } from '../../../core/api/api-error';
 import type { Release } from '../../../core/api/models';
 import { ErrorNotice } from '../../../shared/ui/error-notice';
 import { AdminApi } from '../admin-api';
-import { formatAdminDate } from '../admin-format';
-import { AdminPaginator } from '../admin-paginator';
+import { formatAdminDate, formatAdminMonth } from '../admin-format';
+import { Paginator, pageSlice } from '../../../shared/ui/paginator';
 import { AdminStore } from '../admin-store';
+import { groupResourcesByPlatform } from '../option-groups';
 import { CatalogTabs } from './catalog-tabs';
+import { MONTH_OPTIONS, currentYearMonth, releaseYearOptions, toYearMonth } from './release-month';
 
 interface ReleaseFormModel {
   readonly version: string;
   readonly resourceID: string;
+  readonly releaseYear: string;
+  readonly releaseMonth: string;
+}
+
+interface ReleaseEditModel {
+  readonly version: string;
+  readonly releaseYear: string;
   readonly releaseMonth: string;
 }
 
 /** Monthly release-record editor; free-form version strings remain intentionally supported. */
 @Component({
   selector: 'app-release-management',
-  imports: [AdminPaginator, CatalogTabs, DialogModule, ErrorNotice, FormField],
+  imports: [Paginator, CatalogTabs, DialogModule, ErrorNotice, FormField, InputTextModule],
   template: `
     <section class="ins-admin-page" aria-labelledby="releases-title">
       <header class="ins-admin-page__header">
@@ -66,9 +76,17 @@ interface ReleaseFormModel {
                 <tr>
                   <th scope="row" class="ins-mono">{{ release.version || 'Unnamed release' }}</th>
                   <td class="ins-mono">{{ resourceName(release.resourceID) }}</td>
-                  <td>{{ formatDate(release.releasedAt) }}</td>
+                  <td>{{ formatMonth(release.releasedAt) }}</td>
                   <td>
                     <div class="ins-admin-table__actions">
+                      <button
+                        type="button"
+                        class="ins-admin-action is-secondary"
+                        [disabled]="!release.id"
+                        (click)="openEdit(release)"
+                      >
+                        Edit
+                      </button>
                       <button
                         type="button"
                         class="ins-admin-action is-danger"
@@ -83,7 +101,7 @@ interface ReleaseFormModel {
               }
             </tbody>
           </table>
-          <app-admin-paginator
+          <app-paginator
             label="Software release history"
             [total]="releases().length"
             [(page)]="releasePage"
@@ -106,10 +124,16 @@ interface ReleaseFormModel {
       (onHide)="resetForm()"
     >
       <form class="ins-admin-form" (submit)="createRelease($event)">
+        <p class="ins-admin-secret-notice">
+          Release time is stored as a calendar month, not a day — the dashboard's cadence view
+          counts releases per month. The version string itself is free text.
+        </p>
+
         <div class="ins-admin-form__field">
           <label for="release-version">Version or release identifier</label>
           <input
             id="release-version"
+            pInputText
             type="text"
             autocomplete="off"
             placeholder="v1.2.3, latest, or 2026-08"
@@ -120,23 +144,46 @@ interface ReleaseFormModel {
         <div class="ins-admin-form__field">
           <label for="release-resource">Resource</label>
           <select id="release-resource" [formField]="releaseForm.resourceID">
-            @for (resource of sortedResources(); track resource.id ?? resource.name) {
-              @if (resource.id) {
-                <option [value]="resource.id">{{ resource.name || resource.id }}</option>
-              }
+            @for (group of resourcesByPlatform(); track group.label) {
+              <optgroup [label]="group.label">
+                @for (option of group.options; track option.item.id) {
+                  <option [value]="option.item.id">{{ option.label }}</option>
+                }
+              </optgroup>
             }
           </select>
+          <p class="ins-admin-form__hint">
+            Grouped by registry scope, matching the dashboard. Inside a scope that covers more than
+            one registry — Packages — each option names its own.
+          </p>
         </div>
 
         <div class="ins-admin-form__field">
-          <label for="release-month">Release month</label>
-          <input id="release-month" type="month" [formField]="releaseForm.releaseMonth" />
+          <span id="release-month-label">Release month</span>
+          <div class="ins-admin-form__row" role="group" aria-labelledby="release-month-label">
+            <select
+              id="release-month"
+              aria-label="Release month"
+              [formField]="releaseForm.releaseMonth"
+            >
+              @for (month of monthOptions; track month.value) {
+                <option [value]="month.value">{{ month.label }}</option>
+              }
+            </select>
+            <select
+              id="release-year"
+              aria-label="Release year"
+              [formField]="releaseForm.releaseYear"
+            >
+              @for (year of createYearOptions(); track year) {
+                <option [value]="year">{{ year }}</option>
+              }
+            </select>
+          </div>
         </div>
 
         @if (releaseForm().touched() && !formReady()) {
-          <p class="ins-admin-form__hint" role="alert">
-            Enter a version, choose a resource, and provide a valid release month.
-          </p>
+          <p class="ins-admin-form__hint" role="alert">Enter a version and choose a resource.</p>
         }
 
         @if (formError(); as failure) {
@@ -159,6 +206,92 @@ interface ReleaseFormModel {
         </div>
       </form>
     </p-dialog>
+
+    <p-dialog
+      header="Edit release"
+      closeAriaLabel="Close release editor"
+      [modal]="true"
+      [draggable]="false"
+      [resizable]="false"
+      [dismissableMask]="true"
+      [blockScroll]="true"
+      [style]="dialogStyle"
+      [visible]="editOpen()"
+      (visibleChange)="editOpen.set($event)"
+      (onHide)="resetEditForm()"
+    >
+      <form class="ins-admin-form" (submit)="confirmEdit($event)">
+        <p class="ins-admin-secret-notice">
+          Saving overwrites the recorded version and release month. Moving a release to a different
+          resource is not supported here — delete it and record it again.
+        </p>
+
+        <div class="ins-admin-form__field">
+          <span>Resource</span>
+          <p class="ins-admin-form__hint">
+            {{ resourceName(editingRelease()?.resourceID) }} — not editable here.
+          </p>
+        </div>
+
+        <div class="ins-admin-form__field">
+          <label for="release-edit-version">Version or release identifier</label>
+          <input
+            id="release-edit-version"
+            pInputText
+            type="text"
+            autocomplete="off"
+            [formField]="editForm.version"
+          />
+        </div>
+
+        <div class="ins-admin-form__field">
+          <span id="release-edit-month-label">Release month</span>
+          <div class="ins-admin-form__row" role="group" aria-labelledby="release-edit-month-label">
+            <select
+              id="release-edit-month"
+              aria-label="Release month"
+              [formField]="editForm.releaseMonth"
+            >
+              @for (month of monthOptions; track month.value) {
+                <option [value]="month.value">{{ month.label }}</option>
+              }
+            </select>
+            <select
+              id="release-edit-year"
+              aria-label="Release year"
+              [formField]="editForm.releaseYear"
+            >
+              @for (year of editYearOptions(); track year) {
+                <option [value]="year">{{ year }}</option>
+              }
+            </select>
+          </div>
+        </div>
+
+        @if (editForm().touched() && !editFormReady()) {
+          <p class="ins-admin-form__hint" role="alert">Enter a version.</p>
+        }
+
+        @if (formError(); as failure) {
+          <p class="ins-admin-form-error" role="alert">
+            {{ failure.detail || failure.message }}
+            @if (failure.requestID) {
+              Request ID <code>{{ failure.requestID }}</code
+              >.
+            }
+          </p>
+        }
+
+        <div class="ins-admin-form__actions">
+          <button type="button" class="ins-admin-action is-secondary" (click)="closeEdit()">
+            Cancel
+          </button>
+          <button type="submit" class="ins-admin-action" [disabled]="!editFormReady() || saving()">
+            {{ saving() ? 'Saving…' : 'Save changes' }}
+          </button>
+        </div>
+      </form>
+    </p-dialog>
   `,
   styleUrl: '../admin-records.css',
 })
@@ -173,11 +306,13 @@ export class ReleaseManagement {
   protected readonly releasePage = signal(0);
   protected readonly saving = signal(false);
   protected readonly formError = signal<ApiError | null>(null);
+  protected readonly monthOptions = MONTH_OPTIONS;
   protected readonly releaseModel = signal<ReleaseFormModel>(emptyReleaseModel());
+  // Year and month are `<select>`s over a closed list, so neither can be empty or malformed —
+  // the validators that guarded the old free-text month input have nothing left to catch.
   protected readonly releaseForm = form(this.releaseModel, (path) => {
     required(path.version, { message: 'Enter a release identifier.' });
     required(path.resourceID, { message: 'Choose a resource.' });
-    required(path.releaseMonth, { message: 'Choose a release month.' });
   });
   protected readonly releaseData = resource({ loader: () => this.api.loadReleases() });
   protected readonly releases = computed(() =>
@@ -185,19 +320,114 @@ export class ReleaseManagement {
       (a, b) => Date.parse(b.releasedAt ?? '') - Date.parse(a.releasedAt ?? ''),
     ),
   );
-  protected readonly pagedReleases = computed(() => {
-    const releases = this.releases();
-    const page = Math.min(this.releasePage(), Math.max(0, Math.ceil(releases.length / 10) - 1));
-    return releases.slice(page * 10, page * 10 + 10);
-  });
+  protected readonly pagedReleases = computed(() => pageSlice(this.releases(), this.releasePage()));
   protected readonly sortedResources = computed(() =>
     [...this.store.snapshot().resources].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '')),
   );
-  protected readonly formReady = computed(
-    () =>
-      this.releaseForm().valid() && parseReleaseMonth(this.releaseModel().releaseMonth) !== null,
+  protected readonly resourcesByPlatform = computed(() =>
+    groupResourcesByPlatform(this.store.snapshot().resources, this.store.snapshot().accounts),
   );
+  protected readonly formReady = computed(() => this.releaseForm().valid());
   protected readonly formatDate = formatAdminDate;
+  /** The column is "Release month"; the stored day is an artifact, so do not show one. */
+  protected readonly formatMonth = formatAdminMonth;
+  protected readonly createYearOptions = computed(() => releaseYearOptions());
+
+  protected readonly editOpen = signal(false);
+  protected readonly editingRelease = signal<Release | null>(null);
+  protected readonly editModel = signal<ReleaseEditModel>(emptyReleaseEditModel());
+  protected readonly editForm = form(this.editModel, (path) => {
+    required(path.version, { message: 'Enter a release identifier.' });
+  });
+  protected readonly editFormReady = computed(() => this.editForm().valid());
+
+  /**
+   * The standard range plus whatever year the edited release actually carries.
+   *
+   * Seeded history predates 2023, and a `<select>` bound to a value with no matching option
+   * renders blank — so editing an old release would silently offer to move it into range.
+   */
+  protected readonly editYearOptions = computed(() =>
+    releaseYearOptions(this.editModel().releaseYear),
+  );
+
+  protected openEdit(release: Release): void {
+    const recorded = toYearMonth(release.releasedAt);
+    this.editingRelease.set(release);
+    this.editModel.set({
+      version: release.version ?? '',
+      releaseYear: recorded.year,
+      releaseMonth: recorded.month,
+    });
+    this.formError.set(null);
+    this.editOpen.set(true);
+  }
+
+  protected closeEdit(): void {
+    this.editOpen.set(false);
+    this.resetEditForm();
+  }
+
+  protected resetEditForm(): void {
+    this.editingRelease.set(null);
+    this.editModel.set(emptyReleaseEditModel());
+    this.formError.set(null);
+  }
+
+  protected confirmEdit(event: SubmitEvent): void {
+    event.preventDefault();
+    this.editForm().markAsTouched();
+    const release = this.editingRelease();
+    const model = this.editModel();
+    const month = { year: Number(model.releaseYear), month: Number(model.releaseMonth) };
+    if (!release?.id || !this.editFormReady() || this.saving()) {
+      return;
+    }
+
+    this.confirmations.confirm({
+      target: event.currentTarget as EventTarget,
+      header: 'Save changes to this release?',
+      message: 'This overwrites the recorded version and release month.',
+      rejectLabel: 'Keep editing',
+      acceptLabel: 'Save changes',
+      acceptButtonProps: { severity: 'warn' },
+      rejectButtonProps: { severity: 'secondary', outlined: true },
+      accept: () => void this.saveEdit(release, month),
+    });
+  }
+
+  private async saveEdit(
+    release: Release,
+    month: { readonly year: number; readonly month: number },
+  ): Promise<void> {
+    if (!release.id) {
+      return;
+    }
+
+    const model = this.editModel();
+    this.saving.set(true);
+    this.formError.set(null);
+    try {
+      await this.api.updateRelease(release.id, {
+        version: model.version.trim(),
+        year: month.year,
+        month: month.month,
+      });
+      this.messages.add({
+        severity: 'success',
+        summary: 'Release updated',
+        detail: `${model.version.trim()} was saved.`,
+        life: 3500,
+      });
+      this.editOpen.set(false);
+      this.resetEditForm();
+      this.releaseData.reload();
+    } catch (error) {
+      this.formError.set(toApiError(error));
+    } finally {
+      this.saving.set(false);
+    }
+  }
 
   protected openCreate(): void {
     const resourceID = this.sortedResources().find((resource) => resource.id)?.id ?? '';
@@ -220,8 +450,7 @@ export class ReleaseManagement {
     event.preventDefault();
     this.releaseForm().markAsTouched();
     const model = this.releaseModel();
-    const month = parseReleaseMonth(model.releaseMonth);
-    if (!this.formReady() || !month || this.saving()) {
+    if (!this.formReady() || this.saving()) {
       return;
     }
 
@@ -231,8 +460,8 @@ export class ReleaseManagement {
       await this.api.createRelease({
         version: model.version.trim(),
         resourceID: model.resourceID,
-        year: month.year,
-        month: month.month,
+        year: Number(model.releaseYear),
+        month: Number(model.releaseMonth),
       });
       this.messages.add({
         severity: 'success',
@@ -302,17 +531,11 @@ export class ReleaseManagement {
 }
 
 function emptyReleaseModel(): ReleaseFormModel {
-  return { version: '', resourceID: '', releaseMonth: new Date().toISOString().slice(0, 7) };
+  const { year, month } = currentYearMonth();
+  return { version: '', resourceID: '', releaseYear: year, releaseMonth: month };
 }
 
-function parseReleaseMonth(
-  value: string,
-): { readonly year: number; readonly month: number } | null {
-  const match = /^(\d{4})-(\d{2})$/u.exec(value);
-  if (!match) {
-    return null;
-  }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  return year >= 1970 && year <= 2100 && month >= 1 && month <= 12 ? { year, month } : null;
+function emptyReleaseEditModel(): ReleaseEditModel {
+  const { year, month } = currentYearMonth();
+  return { version: '', releaseYear: year, releaseMonth: month };
 }

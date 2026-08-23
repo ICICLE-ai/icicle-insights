@@ -74,10 +74,7 @@
 }
 
 .ins-reach > app-top-resources-chart {
-  display: block;
-}
-
-.ins-reach > app-top-resources-chart {
+  display: flex;
   flex: 1;
 }
 
@@ -208,10 +205,6 @@
   color: var(--ins-ink-muted);
 }
 
-.ins-table__number {
-  text-align: right;
-}
-
 .ins-release-resource {
   display: inline-flex;
   align-items: baseline;
@@ -249,54 +242,120 @@
   text-decoration-color: currentcolor;
 }
 
-.ins-release-table__month {
-  text-align: left;
-}
-
-/* Prime's default table and paginator use a separate green-highlighted visual language. These
-   documented component tokens bring the paginated cadence table back into the same neutral
-   surface and blue active-state system as the rest of the dashboard. */
-.ins-release-table {
-  display: block;
-  overflow: hidden;
-  color: var(--ins-ink-secondary);
+/* Gives the cadence table the same card chrome as the trend, reach, and lineage panels — a
+   bordered surface with its heading and subtitle inside it — rather than a bare table sitting
+   under a header outside any card. */
+.ins-release-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem;
   background: var(--ins-surface);
   border: 1px solid var(--ins-border);
   border-radius: var(--ins-radius);
+}
+
+.ins-release-panel__caption {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ins-release-panel__title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 650;
+  color: var(--ins-ink);
+}
+
+.ins-release-panel__subtitle {
+  margin: 0;
+  color: var(--ins-ink-muted);
   font-size: var(--ins-text-small);
-  --p-datatable-border-color: var(--ins-border);
-  --p-datatable-header-cell-background: var(--ins-raised);
-  --p-datatable-header-cell-color: var(--ins-ink-muted);
-  --p-datatable-header-cell-border-color: var(--ins-border);
-  --p-datatable-row-background: var(--ins-surface);
-  --p-datatable-row-color: var(--ins-ink-secondary);
-  --p-datatable-row-hover-background: var(--ins-raised);
-  --p-datatable-body-cell-border-color: var(--ins-border);
-  --p-datatable-paginator-bottom-border-color: var(--ins-border);
-  --p-datatable-paginator-bottom-border-width: 1px 0 0;
-  --p-paginator-background: var(--ins-surface);
-  --p-paginator-color: var(--ins-ink-muted);
-  --p-paginator-nav-button-background: transparent;
-  --p-paginator-nav-button-hover-background: var(--ins-raised);
-  --p-paginator-nav-button-selected-background: color-mix(
-    in srgb,
-    var(--ins-series-1) 14%,
-    var(--ins-surface)
-  );
-  --p-paginator-nav-button-selected-color: var(--ins-ink);
-  --p-paginator-nav-button-border-radius: var(--ins-radius-sm);
-  --p-paginator-current-page-report-color: var(--ins-ink-muted);
+}
+
+.ins-release-panel__filter {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ins-release-panel__filter select {
+  min-height: 2.375rem;
+  padding: 0.3125rem 1.75rem 0.3125rem 0.5rem;
+  color: var(--ins-ink);
+  background: var(--ins-surface);
+  border: 1px solid var(--ins-border);
+  border-radius: var(--ins-radius-sm);
+  font: inherit;
+  font-size: var(--ins-text-small);
+}
+
+@media (width < 40rem) {
+  .ins-release-panel__caption {
+    flex-direction: column;
+  }
+}
+
+/* Same scrollable-row-area treatment as `.ins-admin-panel` in the admin catalog — a plain
+   `<table>`, the same technology every other paired data table in this app already uses, rather
+   than a second widget library's own table with its own chrome to reconcile by hand. */
+.ins-release-panel__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Matches `.ins-admin-table` (features/admin/admin-records.css) value for value — same padding,
+   same header weight and tracking, same hover — rather than the lighter `.ins-chart-table`
+   treatment the other dashboard panels use, per direct request to make this one look like the
+   Administration tables specifically. */
+.ins-release-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ins-text-small);
+}
+
+.ins-release-table th,
+.ins-release-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--ins-border);
+  vertical-align: middle;
 }
 
 .ins-release-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: var(--ins-ink-muted);
+  background: var(--ins-surface);
   font-size: var(--ins-text-micro);
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 
+.ins-release-table tbody td {
+  color: var(--ins-ink-secondary);
+}
+
 .ins-release-table tbody tr:hover {
   background: var(--ins-raised);
+}
+
+.ins-release-table__number {
+  text-align: right;
+}
+
+/* The release month itself, called out bolder than the admin row-header weight (550) it would
+   otherwise inherit — each month is the row's identifying value here, the same role a name plays
+   in an admin table's first column, so it earns the heavier weight on request. */
+.ins-release-table__month {
+  color: var(--ins-ink);
+  font-weight: 700;
 }
 
 .ins-release-heading {

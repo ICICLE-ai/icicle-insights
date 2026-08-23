@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormField, form, required } from '@angular/forms/signals';
 import { ConfirmationService, MessageService } from '@openng/optimus-ui/api';
 import { DialogModule } from '@openng/optimus-ui/dialog';
+import { InputTextModule } from '@openng/optimus-ui/inputtext';
 
 import { toApiError, type ApiError } from '../../../core/api/api-error';
 import type { Account, Platform } from '../../../core/api/models';
@@ -20,7 +21,7 @@ interface AccountFormModel {
 /** Account catalog editor using Angular Signal Forms and the API's closed platform enum. */
 @Component({
   selector: 'app-account-management',
-  imports: [CatalogTabs, DialogModule, ErrorNotice, FormField],
+  imports: [CatalogTabs, DialogModule, ErrorNotice, FormField, InputTextModule],
   template: `
     <section class="ins-admin-page" aria-labelledby="accounts-title">
       <header class="ins-admin-page__header">
@@ -100,9 +101,20 @@ interface AccountFormModel {
       (onHide)="resetForm()"
     >
       <form class="ins-admin-form" (submit)="createAccount($event)">
+        <p class="ins-admin-secret-notice">
+          An account is the provider identity that owns resources and, optionally, one Vault
+          credential. Create it before the resources it will hold.
+        </p>
+
         <div class="ins-admin-form__field">
           <label for="account-name">Account or organization name</label>
-          <input id="account-name" type="text" autocomplete="off" [formField]="accountForm.name" />
+          <input
+            id="account-name"
+            pInputText
+            type="text"
+            autocomplete="off"
+            [formField]="accountForm.name"
+          />
           @if (accountForm.name().touched() && accountForm.name().invalid()) {
             <p class="ins-admin-form__hint" role="alert">Enter a non-blank account name.</p>
           }
@@ -115,11 +127,10 @@ interface AccountFormModel {
               <option [value]="platform">{{ platformName(platform) }}</option>
             }
           </select>
+          <p class="ins-admin-form__hint">
+            The API normalizes the name to lowercase and prevents duplicates within a registry.
+          </p>
         </div>
-
-        <p class="ins-admin-form__hint">
-          The API normalizes the name to lowercase and prevents duplicates within a registry.
-        </p>
 
         @if (formError(); as failure) {
           <p class="ins-admin-form-error" role="alert">
@@ -151,7 +162,7 @@ export class AccountManagement {
   private readonly messages = inject(MessageService);
 
   protected readonly platforms = PLATFORM_ORDER;
-  protected readonly dialogStyle = { width: '29rem', maxWidth: 'calc(100vw - 2rem)' };
+  protected readonly dialogStyle = { width: '31rem', maxWidth: 'calc(100vw - 2rem)' };
   protected readonly createOpen = signal(false);
   protected readonly saving = signal(false);
   protected readonly formError = signal<ApiError | null>(null);

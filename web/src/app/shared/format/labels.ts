@@ -17,7 +17,7 @@ const PLATFORM_LABELS: Record<Platform, string> = {
 };
 
 /** A presentation-level collection of registries that users commonly analyze together. */
-export type PlatformGroupId = 'packages';
+export type PlatformGroupId = 'repositories' | 'containers' | 'models' | 'packages';
 
 /** The value held by the registry picker. Individual providers remain intact in the API. */
 export type PlatformFilter = Platform | PlatformGroupId | 'all';
@@ -38,11 +38,29 @@ export interface PlatformScopeDefinition {
 /**
  * Registry groups are deliberately frontend taxonomy, not database values.
  *
- * Adding a future package provider such as Crates requires adding the provider to the API's
- * Platform enum, then adding it to this one membership list. Every picker count and filter is
- * derived from the list rather than repeating `npm || pypi` checks across components.
+ * Every registry belongs to exactly one group, so the pickers name **what a registry publishes**
+ * rather than the registry itself: "Containers", not "GHCR". That is the question a reader of
+ * this dashboard actually has — how much of the institute's output is models, how much is
+ * packages — and it is the only framing under which a multi-registry group like Packages sits
+ * beside its neighbours as a peer instead of as the one odd entry in a list of brand names.
+ *
+ * Membership is what does the work; the labels are presentation. A group that currently holds
+ * one registry still reads as its type, so adding a second provider later — a Crates alongside
+ * npm, a Quay alongside GHCR — is one entry in this list and changes no component. Every picker
+ * count, colour, and filter derives from here rather than repeating `npm || pypi` checks.
+ *
+ * Splitting "Models & Datasets" into two entries is **not** possible here, and the reason is
+ * worth recording: both live on Hugging Face, and this taxonomy keys on the registry. That
+ * distinction exists only at the resource level (`ResourceType.model` vs `.dataset`), so it
+ * would require the picker to filter by resource type instead — a different dimension, not a
+ * longer list.
+ *
+ * Order sets picker order, and follows `PLATFORM_ORDER` by each group's first member.
  */
 export const PLATFORM_GROUPS: readonly PlatformGroupDefinition[] = [
+  { id: 'repositories', label: 'Repositories', platforms: ['github'] },
+  { id: 'containers', label: 'Containers', platforms: ['ghcr'] },
+  { id: 'models', label: 'Models & Datasets', platforms: ['huggingface'] },
   { id: 'packages', label: 'Packages', platforms: ['npm', 'pypi'] },
 ];
 
@@ -58,6 +76,19 @@ const METRIC_LABELS: Partial<Record<MetricType, string>> = {
   downloads: 'Downloads · 30 days',
   clones: 'Clones · 14 days',
   views: 'Views · 14 days',
+};
+
+/**
+ * The collection window each qualified metric covers, as a sentence fragment.
+ *
+ * Exists so a form can put the window in hint text under the picker instead of inside the option
+ * label. Dropping the qualifier without saying the window somewhere is the bug `METRIC_LABELS`
+ * was written to prevent.
+ */
+const METRIC_WINDOWS: Partial<Record<MetricType, string>> = {
+  downloads: 'a trailing 30 days',
+  clones: 'a rolling 14 days',
+  views: 'a rolling 14 days',
 };
 
 const ALL_TIME_SUFFIX = 'AllTime';
@@ -104,9 +135,25 @@ export function platformFilterIncludes(filter: PlatformFilter, platform: Platfor
   return group ? group.platforms.includes(platform) : filter === platform;
 }
 
-/** True when the picker value represents more than one underlying provider. */
+/** Whether the picker value names one of the type groups rather than a bare provider. */
 export function isPlatformGroup(filter: PlatformFilter): filter is PlatformGroupId {
   return PLATFORM_GROUPS.some((group) => group.id === filter);
+}
+
+/**
+ * True when the selected scope covers more than one registry.
+ *
+ * Distinct from `isPlatformGroup`, which every scope now satisfies: with the taxonomy naming
+ * types rather than providers, "is this a group?" stopped separating anything, while "am I
+ * looking at one registry or several?" is still what a caption needs to know.
+ *
+ * Answered from the group definition, not from the catalog: the question is what the scope
+ * means, and a Packages view is a multi-registry view whether or not a PyPI resource happens to
+ * exist today.
+ */
+export function spansMultipleRegistries(filter: PlatformFilter): boolean {
+  const group = PLATFORM_GROUPS.find((candidate) => candidate.id === filter);
+  return (group?.platforms.length ?? 0) > 1;
 }
 
 /**
@@ -122,6 +169,9 @@ export function platformScopes(platforms: readonly Platform[]): readonly Platfor
   for (const platform of platforms) {
     const group = PLATFORM_GROUPS.find((candidate) => candidate.platforms.includes(platform));
     if (!group) {
+      // Every known provider is grouped, so this is the forward-compatibility path: a provider
+      // the API starts returning before `PLATFORM_GROUPS` learns its type still gets a usable
+      // scope of its own, under its own name, instead of disappearing from the picker.
       scopes.push({
         value: platform,
         label: platformLabel(platform),
@@ -165,6 +215,21 @@ export function metricLabel(type: string): string {
   }
 
   return titleCase(type);
+}
+
+/**
+ * The metric's bare name, with no collection window.
+ *
+ * Only for pickers, where every option is a metric and the qualifier is repeated noise. Anywhere
+ * a *reading* is shown — tables, charts, legends — use `metricLabel`, or a 30-day figure reads as
+ * a lifetime total. Pair this with `metricWindowNote` so the window is still on screen.
+ */
+export const metricBaseLabel = (type: string): string => titleCase(type);
+
+/** Sentence describing a metric's collection window, or null when its name is already exact. */
+export function metricWindowNote(type: string): string | null {
+  const window = METRIC_WINDOWS[type as MetricType];
+  return window ? `The platform reports ${type} over ${window}.` : null;
 }
 
 /** How many categorical slots the validated palette provides. */

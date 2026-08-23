@@ -1,11 +1,18 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 
 import { SessionStore } from '../../core/auth/session-store';
 import { TokenStore } from '../../core/auth/token-store';
 import { ExperimentStore } from '../../core/layout/experiment-store';
 import { ErrorNotice } from '../../shared/ui/error-notice';
+import { Paginator, pageSlice } from '../../shared/ui/paginator';
 import { AdminStore } from './admin-store';
-import { summarizeOperations, type AttentionSeverity } from './operations';
+import {
+  attentionAssets,
+  filterAttention,
+  summarizeOperations,
+  type AttentionFilter,
+  type AttentionSeverity,
+} from './operations';
 
 interface StatusCard {
   readonly label: string;
@@ -22,10 +29,13 @@ const timestampFormatter = new Intl.DateTimeFormat('en-US', {
   day: 'numeric',
 });
 
+/** Rows shown per watchlist page. Sized to the panel, which sits beside the context aside. */
+const ATTENTION_PAGE_SIZE = 8;
+
 /** Administrator landing view: a compact triage surface built from existing API fields. */
 @Component({
   selector: 'app-admin-overview',
-  imports: [ErrorNotice],
+  imports: [ErrorNotice, Paginator],
   templateUrl: './admin-overview.html',
   styleUrl: './admin-overview.css',
 })
@@ -35,11 +45,45 @@ export class AdminOverview {
   protected readonly tokens = inject(TokenStore);
   protected readonly experiments = inject(ExperimentStore);
 
+  protected readonly attentionPageSize = ATTENTION_PAGE_SIZE;
   protected readonly summary = computed(() => summarizeOperations(this.store.snapshot()));
-  protected readonly topAttention = computed(() => this.summary().attention.slice(0, 7));
-  protected readonly hiddenAttentionCount = computed(() =>
-    Math.max(0, this.summary().attention.length - this.topAttention().length),
+
+  protected readonly severityFilter = signal<AttentionFilter>('');
+  protected readonly assetFilter = signal('');
+  protected readonly attentionPage = signal(0);
+
+  protected readonly attentionAssets = computed(() => attentionAssets(this.summary().attention));
+
+  protected readonly filteredAttention = computed(() =>
+    filterAttention(this.summary().attention, this.severityFilter(), this.assetFilter()),
   );
+
+  protected readonly pagedAttention = computed(() =>
+    pageSlice(this.filteredAttention(), this.attentionPage(), ATTENTION_PAGE_SIZE),
+  );
+
+  protected readonly expandedAttentionID = signal<string | null>(null);
+
+  protected selectSeverityFilter(event: Event): void {
+    this.severityFilter.set((event.target as HTMLSelectElement).value as AttentionFilter);
+    this.resetAttentionPaging();
+  }
+
+  protected selectAssetFilter(event: Event): void {
+    this.assetFilter.set((event.target as HTMLSelectElement).value);
+    this.resetAttentionPaging();
+  }
+
+  protected toggleAttentionReason(id: string): void {
+    this.expandedAttentionID.update((current) => (current === id ? null : id));
+  }
+
+  /** A filter change reshuffles the rows, so an open reason row would belong to a row that is
+   * no longer on screen — and its `aria-controls` target would vanish with it. */
+  private resetAttentionPaging(): void {
+    this.attentionPage.set(0);
+    this.expandedAttentionID.set(null);
+  }
 
   protected readonly cards = computed<readonly StatusCard[]>(() => {
     const summary = this.summary();

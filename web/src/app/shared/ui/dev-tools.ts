@@ -88,7 +88,10 @@ import { ExperimentPicker } from './experiment-picker';
       font: inherit;
       font-size: var(--ins-text-small);
       font-weight: 650;
-      color: #ffffff;
+      /* Surface, not a literal white: the fill is --ins-ink, which inverts between themes, so a
+       * hardcoded white left this button white-on-white and unreadable in dark mode. Pairing the
+       * two tokens keeps the contrast inverted along with them, hover included. */
+      color: var(--ins-surface);
       background: var(--ins-ink);
       border: 1px solid var(--ins-ink);
       border-radius: 999px;

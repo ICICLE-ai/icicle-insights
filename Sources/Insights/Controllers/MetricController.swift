@@ -55,6 +55,14 @@ struct MetricController: RouteCollection {
           summary: "Get metric by ID",
           response: .type(Metric.Public.self)
         )
+      metric.grouped(Require.admin).patch(use: update)
+        .openAPI(
+          tags: "Metrics",
+          summary: "Update metric",
+          body: .type(Metric.Update.self),
+          response: .type(Metric.Public.self),
+          auth: .bearer()
+        )
       metric.grouped(Require.admin).delete(use: delete)
         .openAPI(
           tags: "Metrics",
@@ -101,6 +109,15 @@ struct MetricController: RouteCollection {
 
   @Sendable
   /// Records a validated metric reading for an existing resource.
+  ///
+  /// The reading is folded into its all-time counterpart, so a hand-recorded observation moves
+  /// the lifetime figure the same way a collected one does. `Metric.Create.toModel` has already
+  /// rejected an attempt to write that counterpart directly.
+  ///
+  /// For a Hugging Face resource the fold into `downloadsAllTime` is temporary: the Hub reports
+  /// its own lifetime figure and `SyncHuggingFaceHubStats` writes it with `setAllTime`, replacing
+  /// whatever this added at the next sweep. That is correct — the platform owns that number —
+  /// and is not a bug to fix here.
   func create(req: Request) async throws -> Response {
     let metric = try req.content.decode(Metric.Create.self).toModel()
 
@@ -109,6 +126,12 @@ struct MetricController: RouteCollection {
       throw Abort(.badRequest, reason: "Resource with ID: \(metric.$resource.id), not found.")
     }
     try await resource.$metrics.create(metric, on: req.db)
+    try await Metric.adjustAllTime(
+      on: req.db,
+      resourceID: metric.$resource.id,
+      type: metric.type,
+      delta: metric.reading
+    )
 
     return try await metric.toPublic().encodeResponse(status: .created, for: req)
   }
@@ -130,6 +153,15 @@ struct MetricController: RouteCollection {
       throw Abort(.badRequest, reason: "Resource with ID: \(resourceID), not found.")
     }
     try await resource.$metrics.create(metric, on: req.db)
+    // A client that retries this POST now moves the all-time total twice as well as writing a
+    // second row. The duplicate row was always the outcome of a retry here; the total simply
+    // follows it. Services needing exactly-once delivery must deduplicate before posting.
+    try await Metric.adjustAllTime(
+      on: req.db,
+      resourceID: resourceID,
+      type: metric.type,
+      delta: metric.reading
+    )
 
     return try await metric.toPublic().encodeResponse(status: .created, for: req)
   }
@@ -146,14 +178,90 @@ struct MetricController: RouteCollection {
   }
 
   @Sendable
-  /// Permanently deletes one metric reading.
+  /// Corrects a manually recorded reading's value or type, carrying the correction into the
+  /// all-time total.
+  ///
+  /// The total moves by the *difference*, not the new value: it is an accumulation of many
+  /// readings, so restating one of them changes it by however much that one reading changed. A
+  /// type change is two corrections — the old contribution leaves its total and the new value
+  /// joins another.
+  ///
+  /// The row itself must be a collected reading. An all-time row is server-derived; editing one
+  /// would set a figure the next fold immediately contradicts.
+  func update(req: Request) async throws -> Metric.Public {
+    guard let metric = try await Metric.find(req.parameters.get("metricID"), on: req.db)
+    else {
+      throw Abort(.notFound)
+    }
+
+    _ = try requireRecordable(metric.type)
+    let newValues = try req.content.decode(Metric.Update.self)
+    let previousReading = metric.reading
+    let previousType = metric.type
+
+    if let reading = newValues.reading {
+      metric.reading = try requireNonNegative(reading, "reading")
+    }
+    if let type = newValues.type {
+      metric.type = try requireRecordable(type)
+    }
+
+    try await metric.save(on: req.db)
+
+    // The unchanged-type case is one net delta, not a withdraw-then-add against the same total,
+    // and the two are not interchangeable: `adjustAllTime` floors at zero, so withdrawing first
+    // can clip a total that the addition then rebuilds from the floor. A reading corrected from
+    // 100 to 175 against a total of 50 is +75 → 125; done in two steps it is 0 → 175.
+    if previousType == metric.type {
+      try await Metric.adjustAllTime(
+        on: req.db,
+        resourceID: metric.$resource.id,
+        type: metric.type,
+        delta: metric.reading - previousReading
+      )
+    } else {
+      try await Metric.adjustAllTime(
+        on: req.db,
+        resourceID: metric.$resource.id,
+        type: previousType,
+        delta: -previousReading
+      )
+      try await Metric.adjustAllTime(
+        on: req.db,
+        resourceID: metric.$resource.id,
+        type: metric.type,
+        delta: metric.reading
+      )
+    }
+
+    return metric.toPublic()
+  }
+
+  @Sendable
+  /// Permanently deletes one metric reading, withdrawing it from its all-time total.
+  ///
+  /// Deleting an all-time row itself is allowed — it is the only remaining way to correct a
+  /// total that has gone wrong. It does not reset collection: `MetricWatermark.countedThrough`
+  /// still marks those days as folded, so the rebuilt row starts from the next uncounted day.
   func delete(req: Request) async throws -> HTTPStatus {
     guard let metric = try await Metric.find(req.parameters.get("metricID"), on: req.db)
     else {
       throw Abort(.notFound)
     }
 
+    let withdrawn = metric.reading
+    let type = metric.type
+    let resourceID = metric.$resource.id
+
     try await metric.delete(on: req.db)
+    // Guarded, not delegated: `MetricType.allTime` maps an all-time type to *itself*, so an
+    // all-time row would otherwise be withdrawn from its own series. Deleting the only such row
+    // is harmless — the negative delta finds nothing and stops — but where a duplicate total
+    // exists, and the unguarded API used to allow those, it would silently corrupt the survivor.
+    if !type.isAllTime {
+      try await Metric.adjustAllTime(
+        on: req.db, resourceID: resourceID, type: type, delta: -withdrawn)
+    }
     return .noContent
   }
 }

@@ -202,6 +202,35 @@
   font-size: var(--ins-text-small);
 }
 
+/* Matches `.ins-release-panel__filter` on the dashboard value for value, so the two filtered
+   tables in the app present the same control. */
+.ins-attention__filters {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.ins-attention__filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.ins-attention__filter select {
+  min-width: 0;
+  min-height: 2.375rem;
+  padding: 0.3125rem 1.75rem 0.3125rem 0.5rem;
+  color: var(--ins-ink);
+  background: var(--ins-surface);
+  border: 1px solid var(--ins-border);
+  border-radius: var(--ins-radius-sm);
+  font: inherit;
+  font-size: var(--ins-text-small);
+}
+
 .ins-attention__table-wrap {
   min-height: 0;
   overflow: auto;
@@ -258,6 +287,38 @@
   border-left-color: var(--ins-warning);
 }
 
+.ins-attention__why {
+  min-height: 1.75rem;
+  padding: 0.1875rem 0.5rem;
+  color: var(--ins-ink-secondary);
+  background: transparent;
+  border: 1px solid var(--ins-border);
+  border-radius: var(--ins-radius-sm);
+  font: inherit;
+  font-size: var(--ins-text-micro);
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ins-attention__why:hover {
+  color: var(--ins-ink);
+  background: var(--ins-raised);
+}
+
+.ins-attention__why[aria-expanded='true'] {
+  color: var(--ins-ink);
+  background: var(--ins-raised);
+  border-color: var(--ins-border-strong);
+}
+
+.ins-attention__reason-row td {
+  color: var(--ins-ink-secondary);
+  background: var(--ins-raised);
+  font-size: var(--ins-text-small);
+  line-height: 1.5;
+}
+
 .ins-attention__clear {
   display: flex;
   align-items: center;
@@ -278,16 +339,16 @@
   border-radius: 50%;
 }
 
-.ins-attention__clear p,
-.ins-attention__more {
-  margin: 0;
-  font-size: var(--ins-text-small);
+/* "Nothing matched your filter" is not the same news as "nothing needs attention". The neutral
+   ring keeps the reassuring green reserved for the genuinely clear board. */
+.ins-attention__clear.is-filtered > span {
+  color: var(--ins-ink-muted);
+  border-color: var(--ins-border-strong);
 }
 
-.ins-attention__more {
-  margin-top: auto;
-  padding-top: 0.625rem;
-  color: var(--ins-ink-muted);
+.ins-attention__clear p {
+  margin: 0;
+  font-size: var(--ins-text-small);
 }
 
 .ins-admin-context__list {

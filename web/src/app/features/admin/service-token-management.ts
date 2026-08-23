@@ -10,6 +10,7 @@ import { ErrorNotice } from '../../shared/ui/error-notice';
 import { AdminApi } from './admin-api';
 import { formatAdminDate } from './admin-format';
 import { AdminStore } from './admin-store';
+import { groupResourcesByPlatform } from './option-groups';
 
 interface TokenDraft {
   readonly resourceID: string;
@@ -187,12 +188,17 @@ interface TokenDraft {
               [value]="draft().resourceID"
               (change)="updateDraft('resourceID', $event)"
             >
-              @for (resource of serviceResources(); track resource.id ?? resource.name) {
-                @if (resource.id) {
-                  <option [value]="resource.id">{{ resource.name || resource.id }}</option>
-                }
+              @for (group of serviceResourcesByPlatform(); track group.label) {
+                <optgroup [label]="group.label">
+                  @for (option of group.options; track option.item.id) {
+                    <option [value]="option.item.id">{{ option.label }}</option>
+                  }
+                </optgroup>
               }
             </select>
+            <p class="ins-admin-form__hint">
+              Grouped by registry scope. Only service resources appear — a token names exactly one.
+            </p>
           </div>
 
           <div class="ins-admin-form__field">
@@ -212,6 +218,7 @@ interface TokenDraft {
             <label for="token-lifetime">Lifetime in days</label>
             <input
               id="token-lifetime"
+              pInputText
               type="number"
               min="1"
               max="365"
@@ -267,6 +274,9 @@ export class ServiceTokenManagement {
       .snapshot()
       .resources.filter((resource) => resource.type === 'service')
       .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '')),
+  );
+  protected readonly serviceResourcesByPlatform = computed(() =>
+    groupResourcesByPlatform(this.serviceResources(), this.store.snapshot().accounts),
   );
 
   protected readonly canMint = computed(() => {

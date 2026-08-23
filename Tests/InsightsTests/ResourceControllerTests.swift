@@ -151,6 +151,67 @@ struct ResourceControllerTests {
   }
 
   @Test
+  func `Update changes name, type, and cadence`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let payload = Resource.Update(name: "Renamed", type: .package, collectionIntervalDays: 3)
+
+      try await app.testing().test(
+        .PATCH,
+        "api/resources/\(resource.requireID())",
+        headers: app.adminAuth,
+        beforeRequest: { req in try req.content.encode(payload) },
+        afterResponse: { res async throws in
+          #expect(res.status == .ok)
+          let returned = try res.content.decode(Resource.Public.self)
+          #expect(returned.name == "renamed")
+          #expect(returned.type == .package)
+          #expect(returned.collectionIntervalDays == 3)
+        },
+      )
+    }
+  }
+
+  @Test
+  func `Update rejects a cadence beyond the account platform's retention window`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db, platform: .github)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let payload = Resource.Update(collectionIntervalDays: 30)
+
+      try await app.testing().test(
+        .PATCH,
+        "api/resources/\(resource.requireID())",
+        headers: app.adminAuth,
+        beforeRequest: { req in try req.content.encode(payload) },
+        afterResponse: { res async throws in
+          #expect(res.status == .badRequest)
+          let model = try #require(await Resource.find(resource.id, on: app.db))
+          #expect(model.collectionIntervalDays == Resource.defaultCollectionIntervalDays)
+        },
+      )
+    }
+  }
+
+  @Test
+  func `Update with unknown resource is not found`() async throws {
+    try await withInsightsApp { app in
+      let payload = Resource.Update(name: "Renamed")
+
+      try await app.testing().test(
+        .PATCH,
+        "api/resources/\(UUID())",
+        headers: app.adminAuth,
+        beforeRequest: { req in try req.content.encode(payload) },
+        afterResponse: { res async throws in
+          #expect(res.status == .notFound)
+        },
+      )
+    }
+  }
+
+  @Test
   func `Delete resource`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)

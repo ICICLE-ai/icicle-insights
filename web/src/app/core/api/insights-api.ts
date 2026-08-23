@@ -35,6 +35,21 @@ export const ALL_METRIC_TYPES: readonly MetricType[] = [
   'viewsAllTime',
 ];
 
+/** True for the running totals the server derives rather than accepts. */
+export const isAllTimeMetric = (type: MetricType): boolean => type.endsWith('AllTime');
+
+/**
+ * The metric types a human may record.
+ *
+ * The `*AllTime` twins are excluded because the server owns them: `MetricController` rejects a
+ * write naming one and folds every accepted reading into its twin instead. Offering them in a
+ * picker would only produce a 422 — and before that guard existed, a hand-typed total drifted
+ * from the collector's the moment the next sweep ran.
+ */
+export const RECORDABLE_METRIC_TYPES: readonly MetricType[] = ALL_METRIC_TYPES.filter(
+  (type) => !isAllTimeMetric(type),
+);
+
 /** One metric type's readings, plus whether the response hit the server's page ceiling. */
 export interface MetricSlice {
   readonly type: MetricType;

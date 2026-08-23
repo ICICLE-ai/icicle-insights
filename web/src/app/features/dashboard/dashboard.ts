@@ -1,12 +1,12 @@
 import { Component, computed, inject, linkedSignal, signal } from '@angular/core';
-import { TableModule } from '@openng/optimus-ui/table';
 
 import { currentTotal, latestByResource, totalSeries } from '../../core/analytics/metrics';
 import type { MetricType, Platform } from '../../core/api/models';
 import { pluralize } from '../../shared/format/formatters';
-import { isPlatformGroup, metricLabel } from '../../shared/format/labels';
+import { metricLabel, spansMultipleRegistries } from '../../shared/format/labels';
 import { ErrorNotice } from '../../shared/ui/error-notice';
 import { AppNav } from '../../shared/ui/app-nav';
+import { Paginator, pageSlice } from '../../shared/ui/paginator';
 import { StatTile } from '../../shared/ui/stat-tile';
 import { StructureSunburst, type StructureRow } from './charts/structure-sunburst';
 import { TopResourcesChart, type ResourceReading } from './charts/top-resources-chart';
@@ -21,6 +21,10 @@ import { FilterBar } from './filter-bar';
 import { PlatformPicker } from './platform-picker';
 import { ReleaseGraph } from './charts/release-graph';
 import { ScopeProfile, type ScopeProfileStat } from './scope-profile';
+
+/** Rows per page in the release-cadence table. Bound to the paginator as well as the slice, so
+ * it lives here rather than being written twice. */
+const CADENCE_PAGE_SIZE = 8;
 
 /** One headline metric, already reduced to what the tile renders. */
 interface HeadlineMetric {
@@ -48,7 +52,7 @@ interface ReleaseMonthRow {
   readonly resources: readonly ReleaseResourceLink[];
 }
 
-type ReleaseDisplay = 'cadence' | 'lineage';
+type ReleaseDisplay = 'cadence' | 'cluster';
 
 /** Stable presentation order for the four cumulative institute-wide headline measures. */
 const HEADLINE_ALL_TIME_TYPES: readonly MetricType[] = [
@@ -59,10 +63,10 @@ const HEADLINE_ALL_TIME_TYPES: readonly MetricType[] = [
 ];
 
 const DASHBOARD_SECTION_OPTIONS: readonly DashboardSectionOption[] = [
-  { id: 'headline', label: 'Headline' },
-  { id: 'reach', label: 'Reach by resource' },
-  { id: 'trends', label: 'Over time' },
-  { id: 'releases', label: 'Software Releases' },
+  { id: 'headline', label: 'Portfolio' },
+  { id: 'reach', label: 'Top Resources' },
+  { id: 'trends', label: 'Trends' },
+  { id: 'releases', label: 'Releases' },
 ];
 
 @Component({
@@ -71,12 +75,12 @@ const DASHBOARD_SECTION_OPTIONS: readonly DashboardSectionOption[] = [
     AppNav,
     ErrorNotice,
     FilterBar,
+    Paginator,
     PlatformPicker,
     ReleaseGraph,
     ScopeProfile,
     StatTile,
     StructureSunburst,
-    TableModule,
     TopResourcesChart,
     TrendChart,
   ],
@@ -86,6 +90,7 @@ const DASHBOARD_SECTION_OPTIONS: readonly DashboardSectionOption[] = [
 export class Dashboard {
   protected readonly store = inject(DashboardStore);
   protected readonly releaseDisplay = signal<ReleaseDisplay>('cadence');
+  protected readonly releaseCadencePage = signal(0);
 
   /** Masthead line: what this page is showing, in one sentence of counts. */
   protected readonly summary = computed(() => {
@@ -241,7 +246,7 @@ export class Dashboard {
       profileLabel:
         this.store.scope() === 'resource'
           ? 'Resource profile'
-          : isPlatformGroup(this.store.platformFilter())
+          : spansMultipleRegistries(this.store.platformFilter())
             ? 'Registry group profile'
             : 'Registry profile',
       subtitle: 'Catalog footprint and measurement coverage for this selection.',
@@ -353,6 +358,38 @@ export class Dashboard {
         };
       });
   });
+
+  protected readonly cadenceSubtitle = computed(() => {
+    const months = this.releaseMonths().length;
+    const releases = this.store.scopedReleases().length;
+    return `${pluralize(months, 'month')} · ${pluralize(releases, 'release')} · ${this.scopeLabel()}`;
+  });
+
+  /** `YYYY-MM` keys already carried by each cadence row — the same period identity the release
+   * graph's own selector uses, so choosing one here means the same thing in both sub-views. */
+  protected readonly cadencePeriods = computed(() => this.releaseMonths().map((row) => row.month));
+
+  /** Empty means "every period" — the table's original overview behaviour — rather than forcing
+   * a single month by default, which would turn a steady-vs-bursty overview into a one-row table
+   * before the admin ever asked to narrow it. */
+  protected readonly selectedCadencePeriod = signal('');
+
+  protected readonly filteredReleaseMonths = computed(() => {
+    const period = this.selectedCadencePeriod();
+    return period
+      ? this.releaseMonths().filter((row) => row.month === period)
+      : this.releaseMonths();
+  });
+
+  protected readonly cadencePageSize = CADENCE_PAGE_SIZE;
+  protected readonly pagedReleaseMonths = computed(() =>
+    pageSlice(this.filteredReleaseMonths(), this.releaseCadencePage(), CADENCE_PAGE_SIZE),
+  );
+
+  protected selectCadencePeriod(event: Event): void {
+    this.selectedCadencePeriod.set((event.target as HTMLSelectElement).value);
+    this.releaseCadencePage.set(0);
+  }
 
   /**
    * Trend panels, longest series first.

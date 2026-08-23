@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormField, form, max, min, required } from '@angular/forms/signals';
 import { ConfirmationService, MessageService } from '@openng/optimus-ui/api';
 import { DialogModule } from '@openng/optimus-ui/dialog';
+import { InputTextModule } from '@openng/optimus-ui/inputtext';
 
 import { toApiError, type ApiError } from '../../../core/api/api-error';
 import type { Platform, Resource, ResourceType } from '../../../core/api/models';
@@ -9,8 +10,9 @@ import { RESOURCE_TYPE_ORDER, resourceTypeLabel } from '../../../shared/format/l
 import { ErrorNotice } from '../../../shared/ui/error-notice';
 import { AdminApi } from '../admin-api';
 import { formatAdminDate } from '../admin-format';
-import { AdminPaginator } from '../admin-paginator';
+import { Paginator, pageSlice } from '../../../shared/ui/paginator';
 import { AdminStore } from '../admin-store';
+import { groupAccountsByPlatform } from '../option-groups';
 import { CatalogTabs } from './catalog-tabs';
 
 interface ResourceFormModel {
@@ -20,10 +22,16 @@ interface ResourceFormModel {
   readonly collectionIntervalDays: number;
 }
 
+interface ResourceEditModel {
+  readonly name: string;
+  readonly type: ResourceType;
+  readonly collectionIntervalDays: number;
+}
+
 /** Resource editor that mirrors collection-interval validation and triggers initial collection. */
 @Component({
   selector: 'app-resource-management',
-  imports: [AdminPaginator, CatalogTabs, DialogModule, ErrorNotice, FormField],
+  imports: [Paginator, CatalogTabs, DialogModule, ErrorNotice, FormField, InputTextModule],
   template: `
     <section class="ins-admin-page" aria-labelledby="resources-title">
       <header class="ins-admin-page__header">
@@ -77,6 +85,14 @@ interface ResourceFormModel {
                     <div class="ins-admin-table__actions">
                       <button
                         type="button"
+                        class="ins-admin-action is-secondary"
+                        [disabled]="!resource.id"
+                        (click)="openEdit(resource)"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
                         class="ins-admin-action is-danger"
                         [disabled]="!resource.id"
                         (click)="confirmDelete($event, resource)"
@@ -89,7 +105,7 @@ interface ResourceFormModel {
               }
             </tbody>
           </table>
-          <app-admin-paginator
+          <app-paginator
             label="Resource catalog"
             [total]="sortedResources().length"
             [(page)]="resourcePage"
@@ -121,6 +137,7 @@ interface ResourceFormModel {
           <label for="resource-name">Provider resource name or path</label>
           <input
             id="resource-name"
+            pInputText
             type="text"
             autocomplete="off"
             [formField]="resourceForm.name"
@@ -139,18 +156,25 @@ interface ResourceFormModel {
         <div class="ins-admin-form__field">
           <label for="resource-account">Account</label>
           <select id="resource-account" [formField]="resourceForm.accountID">
-            @for (account of sortedAccounts(); track account.id ?? account.name) {
-              @if (account.id) {
-                <option [value]="account.id">{{ account.name }} · {{ account.platform }}</option>
-              }
+            @for (group of accountsByPlatform(); track group.label) {
+              <optgroup [label]="group.label">
+                @for (option of group.options; track option.item.id) {
+                  <option [value]="option.item.id">{{ option.label }}</option>
+                }
+              </optgroup>
             }
           </select>
+          <p class="ins-admin-form__hint">
+            Grouped by registry scope, matching the dashboard. Inside a scope that covers more than
+            one registry — Packages — each option names its own.
+          </p>
         </div>
 
         <div class="ins-admin-form__field">
           <label for="resource-interval">Collection interval in days</label>
           <input
             id="resource-interval"
+            pInputText
             type="number"
             inputmode="numeric"
             [formField]="resourceForm.collectionIntervalDays"
@@ -191,6 +215,91 @@ interface ResourceFormModel {
         </div>
       </form>
     </p-dialog>
+
+    <p-dialog
+      header="Edit resource"
+      closeAriaLabel="Close resource editor"
+      [modal]="true"
+      [draggable]="false"
+      [resizable]="false"
+      [dismissableMask]="true"
+      [blockScroll]="true"
+      [style]="dialogStyle"
+      [visible]="editOpen()"
+      (visibleChange)="editOpen.set($event)"
+      (onHide)="resetEditForm()"
+    >
+      <form class="ins-admin-form" (submit)="confirmEdit($event)">
+        <p class="ins-admin-secret-notice">
+          Saving reschedules collection from the new interval. Moving a resource to a different
+          account is not supported here — its metric history is keyed to this one.
+        </p>
+
+        <div class="ins-admin-form__field">
+          <span>Account</span>
+          <p class="ins-admin-form__hint">
+            {{ accountName(editingResource()?.accountID) }} — not editable here.
+          </p>
+        </div>
+
+        <div class="ins-admin-form__field">
+          <label for="resource-edit-name">Provider resource name or path</label>
+          <input
+            id="resource-edit-name"
+            pInputText
+            type="text"
+            autocomplete="off"
+            [formField]="editForm.name"
+          />
+        </div>
+
+        <div class="ins-admin-form__field">
+          <label for="resource-edit-kind">Resource kind</label>
+          <select id="resource-edit-kind" [formField]="editForm.type">
+            @for (type of resourceTypes; track type) {
+              <option [value]="type">{{ typeName(type) }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="ins-admin-form__field">
+          <label for="resource-edit-interval">Collection interval in days</label>
+          <input
+            id="resource-edit-interval"
+            pInputText
+            type="number"
+            inputmode="numeric"
+            [formField]="editForm.collectionIntervalDays"
+          />
+          <p class="ins-admin-form__hint">
+            {{
+              editingAccountPlatform() === 'github'
+                ? 'GitHub traffic history permits at most 14 days.'
+                : 'This registry permits at most 30 days.'
+            }}
+          </p>
+        </div>
+
+        @if (formError(); as failure) {
+          <p class="ins-admin-form-error" role="alert">
+            {{ failure.detail || failure.message }}
+            @if (failure.requestID) {
+              Request ID <code>{{ failure.requestID }}</code
+              >.
+            }
+          </p>
+        }
+
+        <div class="ins-admin-form__actions">
+          <button type="button" class="ins-admin-action is-secondary" (click)="closeEdit()">
+            Cancel
+          </button>
+          <button type="submit" class="ins-admin-action" [disabled]="!editFormReady() || saving()">
+            {{ saving() ? 'Saving…' : 'Save changes' }}
+          </button>
+        </div>
+      </form>
+    </p-dialog>
   `,
   styleUrl: '../admin-records.css',
 })
@@ -201,7 +310,7 @@ export class ResourceManagement {
   private readonly messages = inject(MessageService);
 
   protected readonly resourceTypes = RESOURCE_TYPE_ORDER;
-  protected readonly dialogStyle = { width: '32rem', maxWidth: 'calc(100vw - 2rem)' };
+  protected readonly dialogStyle = { width: '31rem', maxWidth: 'calc(100vw - 2rem)' };
   protected readonly createOpen = signal(false);
   protected readonly resourcePage = signal(0);
   protected readonly saving = signal(false);
@@ -210,14 +319,15 @@ export class ResourceManagement {
   protected readonly sortedAccounts = computed(() =>
     [...this.store.snapshot().accounts].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '')),
   );
+  protected readonly accountsByPlatform = computed(() =>
+    groupAccountsByPlatform(this.store.snapshot().accounts),
+  );
   protected readonly sortedResources = computed(() =>
     [...this.store.snapshot().resources].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '')),
   );
-  protected readonly pagedResources = computed(() => {
-    const resources = this.sortedResources();
-    const page = Math.min(this.resourcePage(), Math.max(0, Math.ceil(resources.length / 10) - 1));
-    return resources.slice(page * 10, page * 10 + 10);
-  });
+  protected readonly pagedResources = computed(() =>
+    pageSlice(this.sortedResources(), this.resourcePage()),
+  );
   protected readonly selectedPlatform = computed<Platform | null>(() => {
     const accountID = this.resourceModel().accountID;
     return (
@@ -241,6 +351,104 @@ export class ResourceManagement {
       this.resourceModel().collectionIntervalDays <= this.maximumInterval(),
   );
   protected readonly formatDate = formatAdminDate;
+
+  protected readonly editOpen = signal(false);
+  protected readonly editingResource = signal<Resource | null>(null);
+  protected readonly editModel = signal<ResourceEditModel>(emptyResourceEditModel());
+  protected readonly editingAccountPlatform = computed<Platform | null>(() => {
+    const accountID = this.editingResource()?.accountID;
+    return (
+      this.store.snapshot().accounts.find((account) => account.id === accountID)?.platform ?? null
+    );
+  });
+  private readonly editMaximumInterval = computed(() =>
+    this.editingAccountPlatform() === 'github' ? 14 : 30,
+  );
+  protected readonly editForm = form(this.editModel, (path) => {
+    required(path.name, { message: 'Enter a resource name.' });
+    min(path.collectionIntervalDays, 1, { message: 'Use at least one day.' });
+    max(path.collectionIntervalDays, () => this.editMaximumInterval(), {
+      message: () => `Use no more than ${this.editMaximumInterval()} days.`,
+    });
+  });
+  protected readonly editFormReady = computed(
+    () =>
+      this.editForm().valid() &&
+      this.editModel().collectionIntervalDays <= this.editMaximumInterval(),
+  );
+
+  protected openEdit(resource: Resource): void {
+    this.editingResource.set(resource);
+    this.editModel.set({
+      name: resource.name ?? '',
+      type: resource.type ?? 'repository',
+      collectionIntervalDays: resource.collectionIntervalDays ?? 7,
+    });
+    this.formError.set(null);
+    this.editOpen.set(true);
+  }
+
+  protected closeEdit(): void {
+    this.editOpen.set(false);
+    this.resetEditForm();
+  }
+
+  protected resetEditForm(): void {
+    this.editingResource.set(null);
+    this.editModel.set(emptyResourceEditModel());
+    this.formError.set(null);
+  }
+
+  protected confirmEdit(event: SubmitEvent): void {
+    event.preventDefault();
+    this.editForm().markAsTouched();
+    const resource = this.editingResource();
+    if (!resource?.id || !this.editFormReady() || this.saving()) {
+      return;
+    }
+
+    this.confirmations.confirm({
+      target: event.currentTarget as EventTarget,
+      header: 'Save changes to this resource?',
+      message:
+        'This overwrites the resource’s name, kind, and collection cadence. Existing metrics and releases are unaffected.',
+      rejectLabel: 'Keep editing',
+      acceptLabel: 'Save changes',
+      acceptButtonProps: { severity: 'warn' },
+      rejectButtonProps: { severity: 'secondary', outlined: true },
+      accept: () => void this.saveEdit(resource),
+    });
+  }
+
+  private async saveEdit(resource: Resource): Promise<void> {
+    if (!resource.id) {
+      return;
+    }
+
+    const model = this.editModel();
+    this.saving.set(true);
+    this.formError.set(null);
+    try {
+      await this.api.updateResource(resource.id, {
+        name: model.name.trim(),
+        type: model.type,
+        collectionIntervalDays: model.collectionIntervalDays,
+      });
+      this.messages.add({
+        severity: 'success',
+        summary: 'Resource updated',
+        detail: `${model.name.trim()} was saved.`,
+        life: 3500,
+      });
+      this.editOpen.set(false);
+      this.resetEditForm();
+      this.store.reload();
+    } catch (error) {
+      this.formError.set(toApiError(error));
+    } finally {
+      this.saving.set(false);
+    }
+  }
 
   protected openCreate(): void {
     const accountID = this.sortedAccounts().find((account) => account.id)?.id ?? '';
@@ -349,4 +557,8 @@ export class ResourceManagement {
 
 function emptyResourceModel(): ResourceFormModel {
   return { name: '', type: 'repository', accountID: '', collectionIntervalDays: 7 };
+}
+
+function emptyResourceEditModel(): ResourceEditModel {
+  return { name: '', type: 'repository', collectionIntervalDays: 7 };
 }

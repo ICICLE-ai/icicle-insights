@@ -26,8 +26,7 @@ const dateFormatter = new Intl.DateTimeFormat('en', {
  * Negative zero is collapsed to zero first: axis ticks come out of floating-point arithmetic
  * that can produce `-0`, which `Intl` faithfully renders as "-0".
  */
-export const compact = (value: number): string =>
-  compactFormatter.format(value === 0 ? 0 : value);
+export const compact = (value: number): string => compactFormatter.format(value === 0 ? 0 : value);
 
 /** Exact number with thousands separators. */
 export const whole = (value: number): string => wholeFormatter.format(value === 0 ? 0 : value);

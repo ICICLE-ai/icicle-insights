@@ -32,30 +32,28 @@ extension Vault {
 
   /// Request body for creating Tapis Vault metadata and its secret value.
   struct Create: Content, WithExample {
-    /// Tapis Vault secret name stored in local metadata.
-    var name: String
     /// Platform token written to Tapis Vault and never persisted locally.
     var token: String
-    /// Account that uses the platform token.
+    /// Account that uses the platform token. Its platform and name determine the generated
+    /// credential name — see `Vault.credentialName` — so callers no longer choose it themselves.
     var accountID: Account.IDValue
     /// Future expiration date for operational rotation.
     var expires: Expires
 
     enum CodingKeys: String, CodingKey {
-      case name, token, accountID, expires
+      case token, accountID, expires
     }
 
     static let example = Create(
-      name: "github-token",
       token: "ghp_exampleToken",
       accountID: UUID(uuidString: "0ba5c0de-0000-0000-0000-000000000000")!,
       expires: Expires(day: 31, month: 12, year: 2030),
     )
 
     /// Validates metadata and converts it into an unsaved Fluent model.
-    func toModel() throws -> Vault {
+    func toModel(accountPlatform: Platform, accountName: String) throws -> Vault {
       let model = Vault()
-      model.name = try requireNonBlank(name, "name").lowercased()
+      model.name = Vault.credentialName(platform: accountPlatform, accountName: accountName)
       model.$account.id = accountID
 
       // Validated here even though the token is not persisted yet — see the TODO in

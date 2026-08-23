@@ -19,9 +19,11 @@ import {
   type ChartPoint,
 } from '@tanstack/charts';
 import { Chart } from '@tanstack/charts/angular';
+import { d3Curve } from '@tanstack/charts/d3/shape';
 import { decorative } from '@tanstack/charts/mark/decorative';
 import { scaleLinear } from '@tanstack/charts/scales/linear';
 import { tooltip } from '@tanstack/charts/tooltip';
+import { curveMonotoneX } from 'd3-shape';
 
 import type { SeriesPoint } from '../../../core/analytics/metrics';
 import { compact, formatDate, whole } from '../../../shared/format/formatters';
@@ -61,6 +63,13 @@ interface TrendLegendItem {
 }
 
 export const ALL_TREND_METRICS = 'all';
+
+/**
+ * Monotone rather than natural cubic interpolation: it smooths the line for presentation without
+ * overshooting past a local minimum or maximum, which would draw a dip or spike the data never
+ * had. Safe for sparse, noisy count series in a way a natural spline is not.
+ */
+const smoothCurve = d3Curve(curveMonotoneX);
 
 const RANGE_OPTIONS: readonly TrendRangeOption[] = [
   { value: 'thirtyDays', label: 'Last 30 days' },
@@ -471,7 +480,8 @@ export class TrendChart {
                       z: 'label',
                       color: 'label',
                       key: 'key',
-                      strokeWidth: 2.6,
+                      curve: smoothCurve,
+                      strokeWidth: 2.75,
                       strokeOpacity: 0.96,
                     }),
                   ),
@@ -484,6 +494,7 @@ export class TrendChart {
                       y1: 0,
                       y2: 'plotValue',
                       key: 'key',
+                      curve: smoothCurve,
                       fill: `url(#${gradientId})`,
                       fillOpacity: 1,
                     }),
@@ -494,8 +505,9 @@ export class TrendChart {
                       x: 'time',
                       y: 'plotValue',
                       key: 'key',
+                      curve: smoothCurve,
                       stroke: accent,
-                      strokeWidth: 2.4,
+                      strokeWidth: 2.75,
                     }),
                   ),
                 ]),

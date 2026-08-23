@@ -100,6 +100,13 @@ COPY --from=build --chown=vapor:vapor /staging /app
 # Provide configuration needed by the built-in crash reporter and some sensible default behaviors.
 ENV SWIFT_BACKTRACE=enable=yes,sanitize=yes,threads=all,images=all,interactive=no,swift-backtrace=./swift-backtrace-static
 
+# The image defaults to production, as a variable rather than a `--env` flag on CMD. `--env`
+# outranks VAPOR_ENV in `Environment.detect`, so pinning it on the command line would make this
+# image ignore the variable every other process in the stack reads — `docker-compose.yml` and the
+# container justfile both avoid the flag for exactly this reason. A deployment overrides this the
+# ordinary way, with `-e VAPOR_ENV=…`.
+ENV VAPOR_ENV=production
+
 # Ensure all further commands run as the vapor user
 USER vapor:vapor
 
@@ -108,4 +115,4 @@ EXPOSE 8080
 
 # Start the Vapor service when the image is run, default to listening on 8080 in production environment
 ENTRYPOINT ["./Insights"]
-CMD ["serve", "--env", "production", "--hostname", "0.0.0.0", "--port", "8080"]
+CMD ["serve", "--hostname", "0.0.0.0", "--port", "8080"]

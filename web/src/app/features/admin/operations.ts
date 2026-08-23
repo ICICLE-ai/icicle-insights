@@ -10,6 +10,8 @@ export interface AttentionItem {
   readonly asset: string;
   readonly deadline: string;
   readonly dueAt: number;
+  /** Why this item needs attention now, in enough detail to act without opening the record. */
+  readonly reason: string;
 }
 
 export interface OperationalSummary {
@@ -120,11 +122,14 @@ function failureAttention(failure: JobFailureInsight, now: number): AttentionIte
     deadline: relativeOccurrence(failedAt, now),
     // Newer failures should lead within the same severity, hence the inverted sort key.
     dueAt: -failedAt,
+    reason: `${failure.job} failed ${relativeOccurrence(failedAt, now)}: ${failure.details}`,
   };
 }
 
 function resourceAttention(resource: Resource, now: number): AttentionItem {
   const dueAt = dateValue(resource.nextCollectionAt) ?? now;
+  const cadence = resource.collectionIntervalDays;
+  const name = resource.name ?? 'This resource';
   return {
     id: `collection-${resource.id ?? resource.name ?? dueAt}`,
     severity: 'critical',
@@ -132,11 +137,15 @@ function resourceAttention(resource: Resource, now: number): AttentionItem {
     asset: resource.name ?? 'Unnamed resource',
     deadline: relativeDeadline(dueAt, now),
     dueAt,
+    reason: cadence
+      ? `${name} was due to sync ${relativeDeadline(dueAt, now)} on its ${cadence}-day cadence, but no sweep has picked it up. Every day past due is a gap in its metric history.`
+      : `${name} was due to sync ${relativeDeadline(dueAt, now)}, but no sweep has picked it up. Every day past due is a gap in its metric history.`,
   };
 }
 
 function vaultAttention(vault: Vault, now: number, severity: AttentionSeverity): AttentionItem {
   const dueAt = dateValue(vault.expiresAt) ?? now;
+  const name = vault.name ?? 'This vault credential';
   return {
     id: `vault-${vault.id ?? vault.name ?? dueAt}`,
     severity,
@@ -144,6 +153,10 @@ function vaultAttention(vault: Vault, now: number, severity: AttentionSeverity):
     asset: vault.name ?? 'Unnamed vault credential',
     deadline: relativeDeadline(dueAt, now),
     dueAt,
+    reason:
+      severity === 'critical'
+        ? `${name} expired ${relativeDeadline(dueAt, now)}. Collection for its account is failing authentication right now — rotate it to restore syncing.`
+        : `${name} expires ${relativeDeadline(dueAt, now)}. Rotate it before then, or collection for its account will start failing authentication.`,
   };
 }
 
@@ -153,6 +166,7 @@ function tokenAttention(
   severity: AttentionSeverity,
 ): AttentionItem {
   const dueAt = dateValue(token.expiresAt) ?? now;
+  const name = token.label ?? 'This service token';
   return {
     id: `token-${token.id ?? token.jti ?? dueAt}`,
     severity,
@@ -160,6 +174,10 @@ function tokenAttention(
     asset: token.label ?? 'Unlabelled service token',
     deadline: relativeDeadline(dueAt, now),
     dueAt,
+    reason:
+      severity === 'critical'
+        ? `${name} expired ${relativeDeadline(dueAt, now)}. The service holding it can no longer authenticate its webhook calls — reissue a replacement.`
+        : `${name} expires ${relativeDeadline(dueAt, now)}. Reissue it before then so the service it authenticates does not lose access.`,
   };
 }
 
@@ -220,4 +238,37 @@ function severityRank(severity: AttentionSeverity): number {
     default:
       return 2;
   }
+}
+
+/** Empty string means "no filter" for either watchlist dimension. */
+export type AttentionFilter = AttentionSeverity | '';
+
+/**
+ * Narrows the watchlist by severity and asset together.
+ *
+ * Preserves order rather than re-sorting: `summarizeOperations` already ranked by severity and
+ * then deadline, and that ordering is what makes the first page the one worth reading.
+ */
+export function filterAttention(
+  items: readonly AttentionItem[],
+  severity: AttentionFilter,
+  asset: string,
+): readonly AttentionItem[] {
+  if (severity === '' && asset === '') {
+    return items;
+  }
+  return items.filter(
+    (item) =>
+      (severity === '' || item.severity === severity) && (asset === '' || item.asset === asset),
+  );
+}
+
+/**
+ * Distinct assets on the watchlist, for the filter's option list.
+ *
+ * Callers pass the *unfiltered* items. Deriving options from the filtered set would delete every
+ * option but the selected one as soon as a filter applied, leaving no way back to a wider view.
+ */
+export function attentionAssets(items: readonly AttentionItem[]): readonly string[] {
+  return [...new Set(items.map((item) => item.asset))].sort((a, b) => a.localeCompare(b));
 }

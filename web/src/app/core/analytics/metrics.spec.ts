@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Metric } from '../api/models';
-import {
-  currentTotal,
-  latestByResource,
-  newestRecordedAt,
-  totalSeries,
-} from './metrics';
+import { currentTotal, latestByResource, newestRecordedAt, totalSeries } from './metrics';
 
 /** Builds a reading, keeping the tests readable when only one field is interesting. */
 function reading(resourceID: string, value: number, recordedAt: string): Metric {
-  return { id: `${resourceID}-${recordedAt}`, resourceID, reading: value, recordedAt, type: 'stars' };
+  return {
+    id: `${resourceID}-${recordedAt}`,
+    resourceID,
+    reading: value,
+    recordedAt,
+    type: 'stars',
+  };
 }
 
 describe('totalSeries', () => {

@@ -3,11 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { toApiError } from './api-error';
 
-const failure = (init: {
-  status: number;
-  headers?: Record<string, string>;
-  error?: unknown;
-}) =>
+const failure = (init: { status: number; headers?: Record<string, string>; error?: unknown }) =>
   new HttpErrorResponse({
     status: init.status,
     headers: new HttpHeaders(init.headers ?? {}),
@@ -28,9 +24,7 @@ describe('toApiError', () => {
   });
 
   it('carries the request ID through, since a 401 never says why', () => {
-    const error = toApiError(
-      failure({ status: 401, headers: { 'X-Request-ID': 'abc-123' } }),
-    );
+    const error = toApiError(failure({ status: 401, headers: { 'X-Request-ID': 'abc-123' } }));
 
     expect(error.requestID).toBe('abc-123');
   });

@@ -86,6 +86,10 @@ export class AdminApi {
     return firstValueFrom(this.http.post<Resource>(this.url('/resources'), input));
   }
 
+  updateResource(id: string, input: UpdateResourceInput): Promise<Resource> {
+    return firstValueFrom(this.http.patch<Resource>(this.url(`/resources/${id}`), input));
+  }
+
   deleteResource(id: string): Promise<void> {
     return firstValueFrom(this.http.delete<void>(this.url(`/resources/${id}`)));
   }
@@ -94,12 +98,20 @@ export class AdminApi {
     return firstValueFrom(this.http.post<Release>(this.url('/releases'), input));
   }
 
+  updateRelease(id: string, input: UpdateReleaseInput): Promise<Release> {
+    return firstValueFrom(this.http.patch<Release>(this.url(`/releases/${id}`), input));
+  }
+
   deleteRelease(id: string): Promise<void> {
     return firstValueFrom(this.http.delete<void>(this.url(`/releases/${id}`)));
   }
 
   createMetric(input: CreateMetricInput): Promise<Metric> {
     return firstValueFrom(this.http.post<Metric>(this.url('/metrics'), input));
+  }
+
+  updateMetric(id: string, input: UpdateMetricInput): Promise<Metric> {
+    return firstValueFrom(this.http.patch<Metric>(this.url(`/metrics/${id}`), input));
   }
 
   deleteMetric(id: string): Promise<void> {
@@ -150,7 +162,6 @@ export interface ExpirationDateInput {
 }
 
 export interface CreateVaultInput {
-  readonly name: string;
   readonly token: string;
   readonly accountID: string;
   readonly expires: ExpirationDateInput;
@@ -184,6 +195,12 @@ export interface CreateResourceInput {
   readonly collectionIntervalDays: number;
 }
 
+export interface UpdateResourceInput {
+  readonly name?: string;
+  readonly type?: ResourceType;
+  readonly collectionIntervalDays?: number;
+}
+
 export interface CreateReleaseInput {
   readonly version: string;
   readonly month: number;
@@ -191,8 +208,19 @@ export interface CreateReleaseInput {
   readonly resourceID: string;
 }
 
+export interface UpdateReleaseInput {
+  readonly version?: string;
+  readonly month?: number;
+  readonly year?: number;
+}
+
 export interface CreateMetricInput {
   readonly reading: number;
   readonly type: MetricType;
   readonly resourceID: string;
+}
+
+export interface UpdateMetricInput {
+  readonly reading?: number;
+  readonly type?: MetricType;
 }

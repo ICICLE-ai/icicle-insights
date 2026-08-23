@@ -65,12 +65,13 @@ struct VaultController: RouteCollection {
   /// Creates Vault metadata and its Tapis secret as one logical operation.
   func create(req: Request) async throws -> Response {
     let payload = try req.content.decode(Vault.Create.self)
-    let vault = try payload.toModel()
 
-    guard let account = try await Account.find(vault.$account.id, on: req.db)
+    guard let account = try await Account.find(payload.accountID, on: req.db)
     else {
-      throw Abort(.badRequest, reason: "Account with ID: \(vault.$account.id), not found.")
+      throw Abort(.badRequest, reason: "Account with ID: \(payload.accountID), not found.")
     }
+
+    let vault = try payload.toModel(accountPlatform: account.platform, accountName: account.name)
 
     try await conflictOnConstraintFailure(
       "A vault named '\(vault.name)' already exists for this account.",

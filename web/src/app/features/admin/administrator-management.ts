@@ -155,7 +155,7 @@ export class AdministratorManagement {
   private readonly messages = inject(MessageService);
   private readonly router = inject(Router);
 
-  protected readonly dialogStyle = { width: '29rem', maxWidth: 'calc(100vw - 2rem)' };
+  protected readonly dialogStyle = { width: '31rem', maxWidth: 'calc(100vw - 2rem)' };
   protected readonly addOpen = signal(false);
   protected readonly username = signal('');
   protected readonly saving = signal(false);

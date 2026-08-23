@@ -26,7 +26,7 @@ extension Metric {
     func toModel() throws -> Metric {
       let model = Metric()
       model.reading = try requireNonNegative(reading, "reading")
-      model.type = type
+      model.type = try requireRecordable(type)
       model.$resource.id = resourceID
       return model
     }
@@ -53,10 +53,28 @@ extension Metric {
     func toModel(resourceID: Resource.IDValue) throws -> Metric {
       let model = Metric()
       model.reading = try requireNonNegative(reading, "reading")
-      model.type = type
+      model.type = try requireRecordable(type)
       model.$resource.id = resourceID
       return model
     }
+  }
+
+  /// Partial request body for correcting a manually recorded reading.
+  ///
+  /// Carries no `resourceID` or `recordedAt`: moving a reading to a different resource or
+  /// timestamp is indistinguishable from deleting and recreating it, and the timestamp is
+  /// server-assigned everywhere else, so editing it here would be the one exception.
+  struct Update: Content, WithExample {
+    /// Nonnegative numeric observation.
+    var reading: Double?
+    /// Semantic kind of the observation.
+    var type: MetricType?
+
+    enum CodingKeys: String, CodingKey {
+      case reading, type
+    }
+
+    static let example = Update(reading: 1250, type: .stars)
   }
 
   /// Public metric representation returned by the API.

@@ -64,7 +64,7 @@
     [hidden]="!showDashboardSection('headline')"
     aria-labelledby="dashboard-heading-headline"
   >
-    <h2 id="dashboard-heading-headline" class="ins-eyebrow ins-section">Headline</h2>
+    <h2 id="dashboard-heading-headline" class="ins-eyebrow ins-section">Portfolio</h2>
     <div class="ins-headline" [class.ins-headline--profile-only]="visibleHeadlines().length === 0">
       @if (showStructure()) {
         <app-structure-sunburst [rows]="structureRows()" />
@@ -100,7 +100,7 @@
       [hidden]="!showDashboardSection('reach')"
       aria-labelledby="dashboard-heading-reach"
     >
-      <h2 id="dashboard-heading-reach" class="ins-eyebrow ins-section">Reach by resource</h2>
+      <h2 id="dashboard-heading-reach" class="ins-eyebrow ins-section">Top Resources</h2>
       <div class="ins-reach">
         <app-top-resources-chart
           [rows]="topResourceRows()"
@@ -119,7 +119,7 @@
       [hidden]="!showDashboardSection('trends')"
       aria-labelledby="dashboard-heading-trends"
     >
-      <h2 id="dashboard-heading-trends" class="ins-eyebrow ins-section">Over time</h2>
+      <h2 id="dashboard-heading-trends" class="ins-eyebrow ins-section">Trends</h2>
       <app-trend-chart
         [series]="trendSections()"
         [metricOptions]="trendOptions()"
@@ -137,7 +137,7 @@
     aria-labelledby="dashboard-heading-releases"
   >
     <div class="ins-release-heading ins-section">
-      <h2 id="dashboard-heading-releases" class="ins-eyebrow">Software Releases</h2>
+      <h2 id="dashboard-heading-releases" class="ins-eyebrow">Releases</h2>
       <div class="ins-release-views" role="group" aria-label="Software release view">
         <button
           type="button"
@@ -150,10 +150,10 @@
         <button
           type="button"
           class="ins-release-views__item"
-          [attr.aria-pressed]="releaseDisplay() === 'lineage'"
-          (click)="releaseDisplay.set('lineage')"
+          [attr.aria-pressed]="releaseDisplay() === 'cluster'"
+          (click)="releaseDisplay.set('cluster')"
         >
-          Lineage
+          Cluster
         </button>
       </div>
     </div>
@@ -163,55 +163,77 @@
       <!-- Aggregated by month rather than listed one per row. Eighty-odd release rows is a log,
            and the question worth answering here is whether shipping is steady or bursty. Each
            month names the resources that shipped, so the detail is not lost, only folded. -->
-      <p-table
-        [value]="releaseMonths()"
-        [paginator]="releaseMonths().length > 12"
-        [rows]="8"
-        [rowsPerPageOptions]="[8, 12, 24, 48]"
-        size="small"
-        styleClass="ins-release-table"
-        currentPageReportTemplate="{first}–{last} of {totalRecords} release months"
-        [showCurrentPageReport]="true"
-        dataKey="month"
-      >
-        <ng-template #caption>
-          <span class="ins-visually-hidden">
-            Resources with software releases per month in {{ scopeLabel() }}, newest first.
-          </span>
-        </ng-template>
-
-        <ng-template #header>
-          <tr>
-            <th scope="col">Release</th>
-            <th scope="col" class="ins-table__number">Resources</th>
-            <th scope="col">Which</th>
-          </tr>
-        </ng-template>
-
-        <ng-template #body let-row>
-          <tr>
-            <th scope="row" class="ins-mono ins-release-table__month">{{ row.month }}</th>
-            <td class="ins-table__number ins-mono">{{ row.resourceCount }}</td>
-            <td class="ins-release-table__which">
-              <div class="ins-release-resource-list">
-                @for (resource of row.resources; track resource.id; let last = $last) {
-                  <button
-                    type="button"
-                    class="ins-release-resource"
-                    [attr.aria-label]="'View dashboard for ' + resource.name"
-                    (click)="selectReleasedResource(resource.id)"
-                  >
-                    <span class="ins-release-resource__name">{{ resource.name }}</span>
-                    @if (!last) {
-                      <span class="ins-release-resource__separator" aria-hidden="true">,</span>
-                    }
-                  </button>
-                }
-              </div>
-            </td>
-          </tr>
-        </ng-template>
-      </p-table>
+      <div class="ins-release-panel">
+        <div class="ins-release-panel__caption">
+          <div>
+            <h3 class="ins-release-panel__title">Release cadence</h3>
+            <p class="ins-release-panel__subtitle">{{ cadenceSubtitle() }}</p>
+          </div>
+          <div class="ins-release-panel__filter">
+            <label class="ins-eyebrow" for="cadence-period">Release</label>
+            <select
+              id="cadence-period"
+              [value]="selectedCadencePeriod()"
+              (change)="selectCadencePeriod($event)"
+            >
+              <option value="">All periods</option>
+              @for (period of cadencePeriods(); track period) {
+                <option [value]="period">{{ period }}</option>
+              }
+            </select>
+          </div>
+        </div>
+        <div class="ins-release-panel__scroll">
+          <table class="ins-release-table">
+            <caption class="ins-visually-hidden">
+              Resources with software releases per month in
+              {{
+                scopeLabel()
+              }}, newest first.
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Release</th>
+                <th scope="col" class="ins-release-table__number">Resources</th>
+                <th scope="col">Which</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of pagedReleaseMonths(); track row.month) {
+                <tr>
+                  <th scope="row" class="ins-mono ins-release-table__month">{{ row.month }}</th>
+                  <td class="ins-release-table__number ins-mono">{{ row.resourceCount }}</td>
+                  <td>
+                    <div class="ins-release-resource-list">
+                      @for (resource of row.resources; track resource.id; let last = $last) {
+                        <button
+                          type="button"
+                          class="ins-release-resource"
+                          [attr.aria-label]="'View dashboard for ' + resource.name"
+                          (click)="selectReleasedResource(resource.id)"
+                        >
+                          <span class="ins-release-resource__name">{{ resource.name }}</span>
+                          @if (!last) {
+                            <span class="ins-release-resource__separator" aria-hidden="true"
+                              >,</span
+                            >
+                          }
+                        </button>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <app-paginator
+          label="Release cadence"
+          [total]="filteredReleaseMonths().length"
+          [pageSize]="cadencePageSize"
+          [(page)]="releaseCadencePage"
+        />
+      </div>
     } @else {
       <app-release-graph
         [releases]="store.scopedReleases()"

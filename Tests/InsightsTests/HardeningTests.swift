@@ -188,8 +188,11 @@ struct HardeningTests {
         )
       }
 
-      // Refused, not silently dropped: two readings landed, the third did not.
-      #expect(try await Metric.query(on: app.db).count() == 2)
+      // Refused, not silently dropped: two readings landed, the third did not. Counts the
+      // posted type rather than every row — an accepted reading also maintains the resource's
+      // `downloadsAllTime` total, which is not one of the readings under test here.
+      let landed = try await Metric.query(on: app.db).filter(\.$type == .downloads).count()
+      #expect(landed == 2)
     }
   }
 

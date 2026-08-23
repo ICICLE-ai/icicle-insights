@@ -162,6 +162,53 @@ struct ReleaseControllerTests {
   }
 
   @Test
+  func `Update changes version and releasedAt`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let release = try await makeRelease(on: app.db, resourceID: try resource.requireID())
+      let payload = Release.Update(version: "1.0.1", month: 8, year: 2026)
+
+      try await app.testing().test(
+        .PATCH,
+        "api/releases/\(release.requireID())",
+        headers: app.adminAuth,
+        beforeRequest: { req in try req.content.encode(payload) },
+        afterResponse: { res async throws in
+          #expect(res.status == .ok)
+          let returned = try res.content.decode(Release.Public.self)
+          #expect(returned.version == "1.0.1")
+          let releasedAt = try #require(returned.releasedAt)
+          let components = Calendar(identifier: .gregorian).dateComponents(
+            [.year, .month], from: releasedAt)
+          #expect(components.year == 2026)
+          #expect(components.month == 8)
+        },
+      )
+    }
+  }
+
+  @Test
+  func `Update rejects month without year`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let release = try await makeRelease(on: app.db, resourceID: try resource.requireID())
+      let payload = Release.Update(month: 8)
+
+      try await app.testing().test(
+        .PATCH,
+        "api/releases/\(release.requireID())",
+        headers: app.adminAuth,
+        beforeRequest: { req in try req.content.encode(payload) },
+        afterResponse: { res async throws in
+          #expect(res.status == .badRequest)
+        },
+      )
+    }
+  }
+
+  @Test
   func `Delete release`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)

@@ -48,7 +48,11 @@ function isUsable(metric: Metric): metric is UsableMetric {
 export function totalSeries(metrics: readonly Metric[]): SeriesPoint[] {
   const ordered = metrics
     .filter(isUsable)
-    .map((metric) => ({ resourceID: metric.resourceID, value: metric.reading, time: parseTime(metric.recordedAt)! }))
+    .map((metric) => ({
+      resourceID: metric.resourceID,
+      value: metric.reading,
+      time: parseTime(metric.recordedAt)!,
+    }))
     .sort((a, b) => a.time - b.time);
 
   const current = new Map<string, number>();

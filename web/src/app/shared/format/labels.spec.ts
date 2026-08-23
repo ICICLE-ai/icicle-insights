@@ -4,7 +4,9 @@ import {
   PLATFORM_ORDER,
   RESOURCE_TYPE_ORDER,
   SERIES_SLOT_COUNT,
+  metricBaseLabel,
   metricLabel,
+  metricWindowNote,
   platformColor,
   platformFilterIncludes,
   platformFilterLabel,
@@ -43,6 +45,37 @@ describe('metricLabel', () => {
   });
 });
 
+describe('metricBaseLabel', () => {
+  it('drops the window qualifier the picker does not need', () => {
+    expect(metricBaseLabel('downloads')).toBe('Downloads');
+    expect(metricBaseLabel('clones')).toBe('Clones');
+    expect(metricBaseLabel('views')).toBe('Views');
+  });
+
+  it('agrees with metricLabel wherever the name is already exact', () => {
+    for (const type of ['stars', 'forks', 'likes', 'subscribers']) {
+      expect(metricBaseLabel(type)).toBe(metricLabel(type));
+    }
+  });
+});
+
+describe('metricWindowNote', () => {
+  it('names the window for every metric whose bare label omits one', () => {
+    // The pairing that keeps `metricBaseLabel` honest: each type the bare label strips a
+    // qualifier from must have a note to carry that information instead.
+    for (const type of ['downloads', 'clones', 'views']) {
+      expect(metricLabel(type)).not.toBe(metricBaseLabel(type));
+      expect(metricWindowNote(type)).toContain('days');
+    }
+  });
+
+  it('is null for metrics that need no qualification', () => {
+    expect(metricWindowNote('stars')).toBeNull();
+    expect(metricWindowNote('forks')).toBeNull();
+    expect(metricWindowNote('downloadsAllTime')).toBeNull();
+  });
+});
+
 describe('platformLabel', () => {
   it('uses each project own spelling', () => {
     expect(platformLabel('github')).toBe('GitHub');
@@ -57,14 +90,19 @@ describe('platformLabel', () => {
 });
 
 describe('platform groups', () => {
-  it('collapses npm and PyPI into one Packages scope without losing provider membership', () => {
+  it('names every scope by what it publishes, not by the registry brand', () => {
     expect(platformScopes(PLATFORM_ORDER)).toEqual([
-      { value: 'github', label: 'GitHub', description: null, platforms: ['github'] },
-      { value: 'ghcr', label: 'GHCR', description: null, platforms: ['ghcr'] },
       {
-        value: 'huggingface',
-        label: 'Hugging Face',
-        description: null,
+        value: 'repositories',
+        label: 'Repositories',
+        description: 'GitHub',
+        platforms: ['github'],
+      },
+      { value: 'containers', label: 'Containers', description: 'GHCR', platforms: ['ghcr'] },
+      {
+        value: 'models',
+        label: 'Models & Datasets',
+        description: 'Hugging Face',
         platforms: ['huggingface'],
       },
       {
@@ -74,6 +112,13 @@ describe('platform groups', () => {
         platforms: ['npm', 'pypi'],
       },
     ]);
+  });
+
+  it('keeps models and datasets in one scope, because both are one registry', () => {
+    // Separating them is a resource-type question, not a registry one — Hugging Face publishes
+    // both, so no membership list keyed on platforms can split them.
+    const scopes = platformScopes(PLATFORM_ORDER);
+    expect(scopes.filter((scope) => scope.platforms.includes('huggingface'))).toHaveLength(1);
   });
 
   it('uses group membership for filtering and labels', () => {

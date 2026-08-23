@@ -75,14 +75,29 @@
 
   /* Registry identity is a separate semantic palette from the generic analytical series above.
    * These hues name stable external systems; they do not change when the data is re-ranked.
-   * GitHub stays neutral, GHCR uses GitHub's purple family, and the remaining three use their
-   * established brand hue. Labels and exact-value tables remain structural, so colour is never
-   * the only way to identify a registry. */
-  --ins-platform-github: #24292f;
-  --ins-platform-ghcr: #8250df;
-  --ins-platform-huggingface: #d4a900;
-  --ins-platform-npm: #cb3837;
-  --ins-platform-pypi: #3775a9;
+   *
+   * Previously each registry wore its own brand colour. That failed as a categorical set:
+   * GitHub's near-black sits outside the lightness band at L 0.28 and below the chroma floor at
+   * 0.013, so in a row of coloured bars it read as "no colour assigned" rather than as GitHub.
+   * The registries now draw their steps from the validated series ramp above instead, which is
+   * why these hexes repeat values from it — same ramp, different semantic role.
+   *
+   * Association is kept where a registry has a real colour: yellow for Hugging Face, blue for
+   * PyPI, violet for GHCR. npm takes magenta rather than the ramp's red because `PLATFORM_ORDER`
+   * puts it immediately after Hugging Face, and red against that yellow fails the normal-vision
+   * floor in dark mode (ΔE 13.0, floor 15). GitHub takes aqua for the plain reason that it has
+   * no chromatic brand colour to honour.
+   *
+   * Validated in both modes on the adjacent pairlist — worst CVD ΔE 13.0 light / 13.2 dark
+   * (target 8), worst normal-vision ΔE 19.6 light / 19.3 dark (floor 15). Aqua, yellow and
+   * magenta fall below 3:1 on the light surface; the documented relief is a visible label, and
+   * both the registry picker and the rail print the registry name beside every bar. Re-run
+   * `validate_palette.js` before changing any of these five. */
+  --ins-platform-github: #1baf7a;
+  --ins-platform-ghcr: #4a3aa7;
+  --ins-platform-huggingface: #eda100;
+  --ins-platform-npm: #e87ba4;
+  --ins-platform-pypi: #2a78d6;
 
   /* Status. Reserved — never reused as a series colour, always paired with an icon and label. */
   --ins-good: #0ca30c;
@@ -145,13 +160,14 @@
   --ins-rank-5: #ed7aa7;
   --ins-rank-ink: #141a22;
 
-  /* Brand families stay the same in dark mode, with only the steps lifted enough to remain
-   * distinct on the dark chart surface. */
-  --ins-platform-github: #f0f6fc;
-  --ins-platform-ghcr: #a371f7;
-  --ins-platform-huggingface: #ffd21e;
-  --ins-platform-npm: #e45c5c;
-  --ins-platform-pypi: #63a6d8;
+  /* The same five hues, stepped for the dark surface — chosen against it, not flipped from the
+   * light values. All five clear 3:1 here, so dark mode carries no contrast relief obligation.
+   * The light block holds the rationale and the validator numbers. */
+  --ins-platform-github: #199e70;
+  --ins-platform-ghcr: #9085e9;
+  --ins-platform-huggingface: #c98500;
+  --ins-platform-npm: #d55181;
+  --ins-platform-pypi: #3987e5;
 }
 
 html,

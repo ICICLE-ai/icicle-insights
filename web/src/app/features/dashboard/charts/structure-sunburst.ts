@@ -215,9 +215,7 @@ export class StructureSunburst {
   protected readonly registryLabel = platformLabel;
 
   protected readonly sortedRows = computed(() =>
-    [...this.rows()].sort(
-      (a, b) => b.count - a.count || a.type.localeCompare(b.type),
-    ),
+    [...this.rows()].sort((a, b) => b.count - a.count || a.type.localeCompare(b.type)),
   );
 
   protected readonly typeSummaries = computed<readonly TypeSummary[]>(() => {
@@ -235,8 +233,8 @@ export class StructureSunburst {
       }))
       .sort(
         (a, b) =>
-          b.count - a.count
-          || RESOURCE_TYPE_ORDER.indexOf(a.type) - RESOURCE_TYPE_ORDER.indexOf(b.type),
+          b.count - a.count ||
+          RESOURCE_TYPE_ORDER.indexOf(a.type) - RESOURCE_TYPE_ORDER.indexOf(b.type),
       );
   });
 
@@ -353,8 +351,7 @@ export class StructureSunburst {
       height: 320,
       onFocusChange: (point: ChartPoint<unknown, number, number> | null) =>
         this.activatePoint(point),
-      onSelect: (point: ChartPoint<unknown, number, number> | null) =>
-        this.activatePoint(point),
+      onSelect: (point: ChartPoint<unknown, number, number> | null) => this.activatePoint(point),
     };
   });
 
@@ -381,11 +378,11 @@ export class StructureSunburst {
 
 function isTypeArc(value: unknown): value is TypeArc {
   return (
-    typeof value === 'object'
-    && value !== null
-    && 'type' in value
-    && RESOURCE_TYPE_ORDER.includes((value as { type: ResourceType }).type)
-    && 'count' in value
+    typeof value === 'object' &&
+    value !== null &&
+    'type' in value &&
+    RESOURCE_TYPE_ORDER.includes((value as { type: ResourceType }).type) &&
+    'count' in value
   );
 }
 

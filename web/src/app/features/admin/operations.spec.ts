@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AdminSnapshot } from './admin-store';
-import { summarizeOperations } from './operations';
+import {
+  attentionAssets,
+  filterAttention,
+  summarizeOperations,
+  type AttentionItem,
+} from './operations';
 
 const NOW = Date.UTC(2026, 7, 20, 12);
 const DAY = 24 * 60 * 60 * 1_000;
@@ -115,5 +120,74 @@ describe('summarizeOperations', () => {
       asset: 'icicle-ai/insights',
       deadline: '1 day ago',
     });
+  });
+});
+
+/** A watchlist row with only the fields the filters read. */
+function attention(id: string, severity: AttentionItem['severity'], asset: string): AttentionItem {
+  return { id, severity, area: 'Collection', asset, deadline: 'now', dueAt: 0, reason: '' };
+}
+
+const WATCHLIST: readonly AttentionItem[] = [
+  attention('a', 'critical', 'icicle-ai/insights'),
+  attention('b', 'critical', 'icicle-ai/tapis'),
+  attention('c', 'warning', 'icicle-ai/insights'),
+  attention('d', 'notice', 'icicle-ai/ci'),
+];
+
+describe('filterAttention', () => {
+  it('returns everything when neither filter is set', () => {
+    expect(filterAttention(WATCHLIST, '', '')).toStrictEqual(WATCHLIST);
+  });
+
+  it('narrows by severity alone', () => {
+    expect(filterAttention(WATCHLIST, 'critical', '').map((item) => item.id)).toStrictEqual([
+      'a',
+      'b',
+    ]);
+  });
+
+  it('narrows by asset alone', () => {
+    expect(
+      filterAttention(WATCHLIST, '', 'icicle-ai/insights').map((item) => item.id),
+    ).toStrictEqual(['a', 'c']);
+  });
+
+  it('combines the two filters with AND, not OR', () => {
+    expect(
+      filterAttention(WATCHLIST, 'critical', 'icicle-ai/insights').map((item) => item.id),
+    ).toStrictEqual(['a']);
+  });
+
+  it('returns nothing for a combination no row satisfies', () => {
+    expect(filterAttention(WATCHLIST, 'notice', 'icicle-ai/tapis')).toStrictEqual([]);
+  });
+
+  it('preserves the incoming severity-then-deadline order', () => {
+    // The panel shows the first page only, so reordering here would bury the urgent rows.
+    const filtered = filterAttention(WATCHLIST, '', 'icicle-ai/insights');
+    expect(filtered.map((item) => item.severity)).toStrictEqual(['critical', 'warning']);
+  });
+});
+
+describe('attentionAssets', () => {
+  it('lists each asset once, alphabetically', () => {
+    expect(attentionAssets(WATCHLIST)).toStrictEqual([
+      'icicle-ai/ci',
+      'icicle-ai/insights',
+      'icicle-ai/tapis',
+    ]);
+  });
+
+  it('keeps every option available once a filter has narrowed the rows', () => {
+    // Options come from the unfiltered list precisely so a chosen filter cannot strand the user
+    // with no way back to a wider view.
+    const narrowed = filterAttention(WATCHLIST, 'notice', '');
+    expect(attentionAssets(WATCHLIST)).toHaveLength(3);
+    expect(narrowed).toHaveLength(1);
+  });
+
+  it('is empty for an empty watchlist', () => {
+    expect(attentionAssets([])).toStrictEqual([]);
   });
 });

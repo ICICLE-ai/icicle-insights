@@ -7,11 +7,16 @@ import { toApiError, type ApiError } from '../../core/api/api-error';
 import type { Vault } from '../../core/api/models';
 import { ErrorNotice } from '../../shared/ui/error-notice';
 import { AdminApi } from './admin-api';
-import { expirationFromInput, formatAdminDate, futureDateInput } from './admin-format';
+import {
+  expirationFromInput,
+  formatAdminDate,
+  futureDateInput,
+  vaultCredentialNamePreview,
+} from './admin-format';
 import { AdminStore } from './admin-store';
+import { groupAccountsByPlatform } from './option-groups';
 
 interface VaultDraft {
-  readonly name: string;
   readonly accountID: string;
   readonly token: string;
   readonly expiresAt: string;
@@ -37,7 +42,12 @@ interface RotateDraft {
         <button
           type="button"
           class="ins-admin-action"
-          [disabled]="store.snapshot().accounts.length === 0"
+          [disabled]="accountsWithoutVault().length === 0"
+          [title]="
+            accountsWithoutVault().length === 0
+              ? 'Every account already has a Vault credential.'
+              : ''
+          "
           (click)="openCreate()"
         >
           <span aria-hidden="true">＋</span> Add credential
@@ -130,31 +140,32 @@ interface RotateDraft {
         </p>
 
         <div class="ins-admin-form__field">
-          <label for="vault-name">Credential name</label>
-          <input
-            id="vault-name"
-            pInputText
-            type="text"
-            autocomplete="off"
-            [value]="draft().name"
-            (input)="updateCreate('name', $event)"
-          />
-        </div>
-
-        <div class="ins-admin-form__field">
           <label for="vault-account">Account</label>
           <select
             id="vault-account"
             [value]="draft().accountID"
             (change)="updateCreate('accountID', $event)"
           >
-            @for (account of store.snapshot().accounts; track account.id ?? account.name) {
-              @if (account.id) {
-                <option [value]="account.id">{{ account.name || account.id }}</option>
-              }
+            @for (group of accountsByPlatform(); track group.label) {
+              <optgroup [label]="group.label">
+                @for (option of group.options; track option.item.id) {
+                  <option [value]="option.item.id">{{ option.label }}</option>
+                }
+              </optgroup>
             }
           </select>
+          <p class="ins-admin-form__hint">
+            Grouped by registry scope, matching the dashboard. Inside a scope that covers more than
+            one registry — Packages — each option names its own.
+          </p>
         </div>
+
+        @if (draft().accountID) {
+          <p class="ins-admin-form__hint">
+            Credential name <code>{{ previewName() }}</code
+            >, generated from the account and registry above.
+          </p>
+        }
 
         <div class="ins-admin-form__field">
           <label for="vault-token">Platform token</label>
@@ -174,6 +185,7 @@ interface RotateDraft {
           <label for="vault-expiry">Expiration date</label>
           <input
             id="vault-expiry"
+            pInputText
             type="date"
             [min]="minimumExpiry"
             [value]="draft().expiresAt"
@@ -239,6 +251,7 @@ interface RotateDraft {
           <label for="rotate-vault-expiry">New expiration date</label>
           <input
             id="rotate-vault-expiry"
+            pInputText
             type="date"
             [min]="minimumExpiry"
             [value]="rotateDraft().expiresAt"
@@ -288,11 +301,32 @@ export class VaultManagement {
   protected readonly canCreate = computed(() => {
     const draft = this.draft();
     return (
-      draft.name.trim().length > 0 &&
       draft.accountID.length > 0 &&
       draft.token.trim().length > 0 &&
       expirationFromInput(draft.expiresAt) !== null
     );
+  });
+
+  /** One vault per account, per the catalog's data model — see `Account.vault` in the Swift
+   * model. Accounts that already have one are excluded so a create attempt can never collide. */
+  protected readonly accountsWithoutVault = computed(() => {
+    const vaulted = new Set(this.store.snapshot().vaults.map((vault) => vault.accountID));
+    return this.store
+      .snapshot()
+      .accounts.filter((account) => account.id && !vaulted.has(account.id));
+  });
+
+  protected readonly accountsByPlatform = computed(() =>
+    groupAccountsByPlatform(this.accountsWithoutVault()),
+  );
+
+  protected readonly previewName = computed(() => {
+    const account = this.accountsWithoutVault().find(
+      (entry) => entry.id === this.draft().accountID,
+    );
+    return account?.platform && account.name
+      ? vaultCredentialNamePreview(account.platform, account.name)
+      : '';
   });
 
   protected readonly canRotate = computed(() => {
@@ -307,7 +341,7 @@ export class VaultManagement {
   protected readonly formatDate = formatAdminDate;
 
   protected openCreate(): void {
-    const accountID = this.store.snapshot().accounts.find((account) => account.id)?.id ?? '';
+    const accountID = this.accountsWithoutVault()[0]?.id ?? '';
     this.draft.set({ ...emptyVaultDraft(), accountID });
     this.formError.set(null);
     this.createOpen.set(true);
@@ -374,12 +408,12 @@ export class VaultManagement {
       return;
     }
 
+    const createdName = this.previewName();
     this.saving.set(true);
     this.formError.set(null);
     this.draft.update((current) => ({ ...current, token: '' }));
     try {
       await this.api.createVault({
-        name: draft.name.trim(),
         accountID: draft.accountID,
         token: draft.token.trim(),
         expires,
@@ -387,7 +421,7 @@ export class VaultManagement {
       this.messages.add({
         severity: 'success',
         summary: 'Credential stored',
-        detail: `${draft.name.trim()} is now referenced in Insights.`,
+        detail: `${createdName} is now referenced in Insights.`,
         life: 3500,
       });
       this.createOpen.set(false);
@@ -489,7 +523,7 @@ export class VaultManagement {
 }
 
 function emptyVaultDraft(): VaultDraft {
-  return { name: '', accountID: '', token: '', expiresAt: futureDateInput(90) };
+  return { accountID: '', token: '', expiresAt: futureDateInput(90) };
 }
 
 function emptyRotateDraft(): RotateDraft {
