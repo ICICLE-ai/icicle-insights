@@ -31,6 +31,33 @@ is untested in production.
 Confirm by checking a production boot log for `Webhook token signing keys loaded.` If instead it
 says `No webhook token signing keyset found`, run `init-key` once and restart.
 
+### Document minting a token through the UI, once a service account protocol exists
+
+**Blocked on:** deciding how deployed ICICLE services register themselves — the service account
+protocol. Nothing to do until that is settled.
+
+No resource of kind `service` is registered anywhere, so the Service tokens screen has only ever
+shown its empty state: *"No service resources are registered."* That means the console half of
+[Issue a service token](docs/how-to/issue-a-service-token.md) was written from
+`Dashboard/src/app/features/admin/service-token-management.ts`, not from a flow anyone has run.
+
+The form fields named there — Resource, Deployment label, Lifetime in days — are correct as source,
+and `ServiceTokenIssuer.swift:61` does enforce `resource.type == .service` server-side. What is
+unverified is everything around them: what the populated screen looks like, how the minted token is
+presented and copied, what the token list shows once a row exists, and what revoking looks like in
+the UI.
+
+When the protocol lands:
+
+- register a real service resource and mint a token through the console;
+- rewrite the console steps in that how-to against the actual flow;
+- replace `assets/screenshots/admin-service-tokens.png`, which currently shows the empty state, with
+  a populated list;
+- check whether the empty-state wording still belongs in `docs/reference/admin-console.md`.
+
+Treat the current console steps as provisional until then. The CLI half is verified and can be
+relied on.
+
 ### Collectors for GHCR, npm, and PyPI
 
 All three can be registered and are re-booked normally, but the dispatcher logs and skips them.
