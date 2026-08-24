@@ -1,6 +1,6 @@
 # CLI
 
-Every command the `Insights` binary accepts. For administrators.
+Every command the `Insights` binary accepts. For administrators and developers.
 
 Run as `swift run Insights <command>` from a checkout, or `./Insights <command>` in the image.
 `just token` and `just collect` wrap the two used most often.
@@ -80,4 +80,4 @@ Liveness deliberately checks no dependencies, so a brief database blip does not 
 that would have recovered. Readiness also returns 503 before migrations have run, because it
 queries a real table.
 
-#icicle-insights# #Reference# #Administrator# #cli#
+#icicle-insights# #Reference# #Administrator# #Developer# #cli#

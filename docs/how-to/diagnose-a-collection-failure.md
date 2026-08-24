@@ -1,6 +1,6 @@
 # Diagnose a collection failure
 
-Work out why metrics stopped arriving. For administrators.
+Work out why metrics stopped arriving. For administrators and developers.
 
 Start at **Administration → Operations**. The four status tiles and the watchlist name most
 problems directly.
@@ -111,4 +111,4 @@ Otherwise the token has expired or been revoked. `just token list` shows both.
 Failed jobs are persisted, so the console's watchlist and failure list survive a restart and do not
 depend on Slack being configured.
 
-#icicle-insights# #How-To# #Administrator# #troubleshooting#
+#icicle-insights# #How-To# #Administrator# #Developer# #troubleshooting#

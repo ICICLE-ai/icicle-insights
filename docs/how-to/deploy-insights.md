@@ -1,67 +1,116 @@
 # Deploy Insights
 
-Stand up a new deployment. For administrators.
+Stand up and operate a deployment. For administrators and developers.
 
-Four steps in order. The third is the one people miss.
+One image, three processes, two backing services. The image is built from the repository root
+`Dockerfile` and serves the API and the dashboard from the same container.
 
-## 1. Set the environment
+## Topology
 
-Five variables have no default and boot fails without them.
+| Process | Command | Replicas | Notes |
+|---|---|---|---|
+| API | `serve` | scale freely | The only one that takes traffic. Listens on 8080 |
+| Worker | `queues --queue metrics` | scale freely | Does the collecting. Scale this when it falls behind |
+| Scheduler | `queues --scheduled` | **exactly 1** | Hard constraint. Pin it; no autoscaler |
+
+Plus PostgreSQL 18 and Valkey 9. Neither should be reachable from outside the cluster.
+
+All three processes are required. Without the scheduler nothing is enqueued on a timer. Without the
+worker, jobs accumulate in Valkey and no metric is ever written — silently, with a healthy API.
+
+**Two schedulers dispatch every due resource twice.** There is no leader election. Set
+`replicas: 1`, exclude it from any autoscaler, and prefer `Recreate` over `RollingUpdate` so two
+never overlap during a deploy.
+
+## Configuration
+
+Five values have no default and the process exits at boot without them. All five are secrets —
+mount them from your secret store, not from a manifest.
+
+| Variable | Value |
+|---|---|
+| `TAPIS_BASE_URL` | Tenant base URL, **including `/v3`** |
+| `TAPIS_TENANT` | Tenant ID. Must name the same tenant as the URL |
+| `TAPIS_USER` | Service identity |
+| `TAPIS_TOKEN` | Service token |
+| `ROOT_ADMIN_USERNAME` | A real Tapis username in that tenant |
+
+Then, on every process:
 
 ```dotenv
 VAPOR_ENV=production
-TAPIS_BASE_URL=https://icicleai.tapis.io/v3
-TAPIS_TENANT=icicleai
-TAPIS_USER=<service identity>
-TAPIS_TOKEN=<service token>
-ROOT_ADMIN_USERNAME=<a real tapis username in that tenant>
+DATABASE_HOST=…
+DATABASE_PASSWORD=…
+REDIS_HOST=…
+REDIS_PASSWORD=…
 ```
 
-Three things to get right:
-
-- **`TAPIS_BASE_URL` and `TAPIS_TENANT` must name the same tenant.** Each tenant has its own host.
-  A mismatch boots cleanly and then refuses every administrator with a bare 403.
-- **The `/v3` suffix is required.** Every Tapis URL is built off the base, so omitting it fails the
-  tenant key fetch and the process exits.
-- **`ROOT_ADMIN_USERNAME` must be a real username.** A placeholder boots fine and matches nobody.
-
-Set `VAPOR_ENV` as a variable on every process. Never pass `--env` on a command line: it outranks
-the variable, which is how a stack ends up with processes disagreeing about their own environment.
+`SLACK_WEBHOOK_URL` belongs on the worker and scheduler only — jobs fail there, so that is where
+alerts fire.
 
 Full list in [Configuration](../reference/configuration.md).
 
-## 2. Run migrations
+Three mistakes account for most failed deployments:
 
-```bash
-docker compose run --rm migrate
-```
+- **`TAPIS_BASE_URL` and `TAPIS_TENANT` naming different tenants.** Each tenant has its own host.
+  The pair boots cleanly and then refuses every administrator with a bare 403.
+- **Omitting `/v3`.** Every Tapis URL is built off the base, so the tenant key fetch fails and the
+  process exits.
+- **A placeholder `ROOT_ADMIN_USERNAME`.** Boots fine, matches nobody, and every write returns 403.
 
-Repeat after any deploy carrying a migration.
+Do not set `--env`, `--hostname`, or `--port` on a command line. Each outranks its environment
+variable, which is how a stack ends up with processes disagreeing about their own configuration.
+The image already defaults to production on 8080.
 
-## 3. Create the signing keyset
+## Rollout order
+
+Migrations are the coupling point. Everything else is independent.
+
+1. **Migrate.** Run `migrate --yes` to completion as a one-shot job, before any process starts.
+2. **Start the API and worker.** Both scale freely; roll them however you like.
+3. **Start the scheduler**, at one replica.
+
+Repeat step 1 on any deploy carrying a migration. The API's readiness probe fails until migrations
+have run, because it queries a real table — so an un-migrated rollout stays out of the load balancer
+rather than serving errors.
+
+### First deployment only
 
 ```bash
 Insights service-token init-key
 ```
 
-Then **restart**.
+Then restart the API.
 
-**Once per deployment.** Staging and production are separate vaults; a keyset created against one
-does not carry over.
+Once per deployment, and staging and production are separate vaults — a keyset created against one
+does not carry over. Until it exists, webhook authentication recognises nobody while administrator
+access, public reads, and collection all work normally. It is logged at `critical` on every boot,
+naming the command.
 
-Until it exists, the service runs with an empty keyset. Webhook authentication recognises nobody,
-while administrator access, public reads, and collection all work normally. It is logged at
-`critical` on every boot, naming the command.
+## Probes
 
-## 4. Verify the boot log
+| Probe | Endpoint | Checks | On failure |
+|---|---|---|---|
+| Liveness | `GET /health` | Process is up, nothing else | Restart |
+| Readiness | `GET /ready` | PostgreSQL and Valkey both answer | Remove from the load balancer |
 
-Every process should report the same environment.
+Both sit outside `/api`, so they are neither rate limited nor authenticated.
+
+Liveness deliberately checks no dependencies. A brief database blip should not restart a server that
+would have recovered.
+
+Only the API serves HTTP. Give the worker and scheduler a process-level liveness check, not an HTTP
+one.
+
+## Verify
+
+Every process should report the same environment:
 
 ```bash
 for c in app queues scheduled; do docker compose logs $c | grep "Insights configured"; done
 ```
 
-A correct start prints these at `notice`:
+A correct boot prints these at `notice`:
 
 ```
 HTTP middleware configured.        bind=… cors_origins=… frame_ancestors=… hsts=true
@@ -73,23 +122,18 @@ Failure alerting configured.       channel=slack
 Insights configured.               environment=production database=…
 ```
 
-Anything missing is a misconfiguration that will otherwise surface days later as an unexplained 403
-or a webhook that silently stopped working.
+A missing line is a misconfiguration that surfaces days later as an unexplained 403 or a webhook
+that quietly stopped working. Check this on every deploy; it is cheaper than the alternative.
 
-## Run the three processes
+## Rollback
 
-| Process | Command | Replicas |
-|---|---|---|
-| API and dashboard | `serve` | Scale freely |
-| Queue worker | `queues --queue metrics` | Scale freely |
-| Scheduler | `queues --scheduled` | **Exactly one** |
+The image is stateless — roll it back like anything else.
 
-All three are needed. Without the scheduler nothing is enqueued on a timer. Without the worker,
-jobs pile up in Valkey and no metric is ever written, silently.
+A migration is not. `migrate --revert --yes` rolls back the most recent batch, and is destructive
+for whatever that batch added. Roll the image back first and confirm it runs against the newer
+schema before reverting anything.
 
-```bash
-docker compose up app queues scheduled
-```
+## Scaling
 
 Scale the worker when collection falls behind:
 
@@ -97,44 +141,35 @@ Scale the worker when collection falls behind:
 docker compose up --scale queues=3 app queues scheduled
 ```
 
-Never scale the scheduler. Two dispatch every due resource twice.
+Two things bound how far that helps. Workers share the platform's rate allowance, so more of them
+consume it faster — a 403 from GitHub calls for longer cadences, not more concurrency. And one queue
+has head-of-line pressure, so slow jobs delay fast ones behind them.
 
-## Wire up the platform
+Never scale the scheduler.
 
-| Setting | Value |
+## Monitor
+
+| Signal | Why |
 |---|---|
-| Liveness probe | `GET /health` |
-| Readiness probe | `GET /ready` |
-| Restart policy | `unless-stopped` on the three long-lived services |
-| Published ports | The API only. Keep the database and queue private |
-| TLS | Terminate in front of the service |
+| Scheduler heartbeat | A stopped scheduler is silent. Collection just stops |
+| Queue depth on `metrics` | Sustained growth means workers cannot keep up |
+| `critical` log lines | Credential failures and the missing-keyset warning are both critical |
+| Provider rate limits | GitHub and Hugging Face both throttle |
 
-Readiness returns 503 before migrations have run, because it queries a real table.
+The console's Operations screen surfaces the first three, including the scheduler heartbeat. See
+[Admin console](../reference/admin-console.md).
 
-## Deployment differences from local
+## Networking
 
-| Setting | Local | Deployment |
-|---|---|---|
-| `VAPOR_ENV` | `development` | `production` |
-| `DATABASE_TLS` | `disable` | required |
-| `DATABASE_PASSWORD` | the default | replaced |
-| `REDIS_PASSWORD` | empty | set, with Valkey started `--requirepass` |
+Publish the API only. Terminate TLS in front of it; the container serves plain HTTP on 8080.
 
-`VAPOR_ENV=production` also selects the production database name and keeps the development seed
-migration from running against real data.
+Set `FRAME_ANCESTORS` if the dashboard will be embedded, and `CORS_ORIGINS` only if a browser origin
+calls the API directly. Unset, framing is denied and no CORS middleware is installed at all — the
+right posture for a same-origin deployment. See [Embed the dashboard](embed-the-dashboard.md).
 
 ## Then
 
-- [Register an account](register-an-account.md) and add resources.
-- Set `FRAME_ANCESTORS` if the dashboard will be embedded — see
-  [Embed the dashboard](embed-the-dashboard.md).
-- Set `SLACK_WEBHOOK_URL` on `queues` and `scheduled` so failures reach a person.
+- [Register an account](register-an-account.md) and add resources, or nothing is collected.
+- [Diagnose a collection failure](diagnose-a-collection-failure.md) when something stops.
 
-## What to monitor
-
-- **Scheduler liveness.** A stopped scheduler is silent; collection just stops.
-- **Queue depth** on `metrics`. Sustained growth means workers cannot keep up.
-- **`critical` log lines.** Credential failures and the missing-keyset warning are both critical.
-- **Provider rate limits.** GitHub and Hugging Face both throttle.
-
-#icicle-insights# #How-To# #Administrator# #deployment#
+#icicle-insights# #How-To# #Administrator# #Developer# #deployment#

@@ -1,6 +1,6 @@
 # Configuration
 
-Every environment variable Insights reads. For administrators.
+Every environment variable Insights reads. For administrators and developers.
 
 All values are read at boot by `configure.swift`. A change needs a restart.
 
@@ -46,8 +46,6 @@ Read by `serve` only.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `SERVER_HOSTNAME` | `0.0.0.0` | Which interfaces to accept on. Vapor's own default of `127.0.0.1` leaves a container unreachable |
-| `SERVER_PORT` | `8080` | |
 | `CORS_ORIGINS` | unset | Comma-separated. Unset installs no CORS middleware at all |
 | `FRAME_ANCESTORS` | unset | Comma-separated origins allowed to iframe the dashboard. Unset denies framing |
 | `RATE_LIMIT_PER_MINUTE` | `300` | Per client address, across `/api` |
@@ -107,4 +105,4 @@ Insights configured.               environment=production database=…
 
 A missing line is a misconfiguration. See [Deploy Insights](../how-to/deploy-insights.md).
 
-#icicle-insights# #Reference# #Administrator# #configuration#
+#icicle-insights# #Reference# #Administrator# #Developer# #configuration#

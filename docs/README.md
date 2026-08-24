@@ -31,47 +31,40 @@ Learning by doing. Follow start to finish.
 
 One goal each. Assume you know what you want.
 
-**Administrator**
-
-| Page | Goal |
-|---|---|
-| [Get admin access](how-to/get-admin-access.md) | Sign in and gain administrator rights |
-| [Register an account](how-to/register-an-account.md) | Add a platform account and its credential |
-| [Add a resource](how-to/add-a-resource.md) | Put a repository or model under collection |
-| [Run collection immediately](how-to/run-collection-immediately.md) | Collect now instead of waiting |
-| [Issue a service token](how-to/issue-a-service-token.md) | Let a deployed service post its own metrics |
-| [Rotate the signing keyset](how-to/rotate-the-signing-keyset.md) | Roll the webhook signing key with no downtime |
-| [Manage administrators](how-to/manage-administrators.md) | Grant and revoke administrator access |
-| [Diagnose a collection failure](how-to/diagnose-a-collection-failure.md) | Work out why metrics stopped |
-| [Deploy Insights](how-to/deploy-insights.md) | Stand up a new deployment |
-| [Embed the dashboard](how-to/embed-the-dashboard.md) | Put the dashboard in an iframe |
-
-**Developer**
-
-| Page | Goal |
-|---|---|
-| [Set up the dashboard toolchain](how-to/set-up-the-dashboard-toolchain.md) | Angular, the MCP server, and the `llms-full.txt` files |
-| [Add a collector](how-to/add-a-collector.md) | Collect from a new platform |
-| [Add a queue or worker](how-to/add-a-queue-or-worker.md) | Introduce a new named queue |
-| [Add a secret provider](how-to/add-a-secret-provider.md) | Store credentials somewhere else |
-| [Run the tests](how-to/run-the-tests.md) | Get the suite passing locally |
+| Page | Goal | For |
+|---|---|---|
+| [Get admin access](how-to/get-admin-access.md) | Sign in and gain administrator rights | Admin |
+| [Register an account](how-to/register-an-account.md) | Add a platform account and its credential | Admin |
+| [Add a resource](how-to/add-a-resource.md) | Put a repository or model under collection | Admin |
+| [Issue a service token](how-to/issue-a-service-token.md) | Let a deployed service post its own metrics | Admin |
+| [Rotate the signing keyset](how-to/rotate-the-signing-keyset.md) | Roll the webhook signing key with no downtime | Admin |
+| [Manage administrators](how-to/manage-administrators.md) | Grant and revoke administrator access | Admin |
+| [Deploy Insights](how-to/deploy-insights.md) | Stand up and operate a deployment | Both |
+| [Run collection immediately](how-to/run-collection-immediately.md) | Collect now instead of waiting | Both |
+| [Diagnose a collection failure](how-to/diagnose-a-collection-failure.md) | Work out why metrics stopped | Both |
+| [Embed the dashboard](how-to/embed-the-dashboard.md) | Put the dashboard in an iframe | Both |
+| [Set up the dashboard toolchain](how-to/set-up-the-dashboard-toolchain.md) | Angular, the MCP server, and the `llms-full.txt` files | Dev |
+| [Add a collector](how-to/add-a-collector.md) | Collect from a new platform | Dev |
+| [Add a queue or worker](how-to/add-a-queue-or-worker.md) | Introduce a new named queue | Dev |
+| [Add a secret provider](how-to/add-a-secret-provider.md) | Store credentials somewhere else | Dev |
+| [Run the tests](how-to/run-the-tests.md) | Get the suite passing locally | Dev |
 
 ## Reference
 
 Facts. Look things up; do not read start to finish.
 
-| Page | Contains |
-|---|---|
-| [Admin console](reference/admin-console.md) | Every console screen, with screenshots |
-| [Configuration](reference/configuration.md) | Every environment variable |
-| [CLI](reference/cli.md) | Every command and flag |
-| [HTTP API](reference/http-api.md) | Routes, guards, status codes, conventions |
-| [Collection schedule](reference/collection-schedule.md) | What is collected, when, from where |
-| [Data model](reference/data-model.md) | Tables, fields, enumerations |
-| [just recipes](reference/just-recipes.md) | Every recipe in both justfiles |
-| [Invariants](reference/invariants.md) | Rules a change must not break |
-| [Test suite](reference/test-suite.md) | What the 195 tests cover |
-| [Glossary](reference/glossary.md) | Project vocabulary |
+| Page | Contains | For |
+|---|---|---|
+| [Admin console](reference/admin-console.md) | Every console screen, with screenshots | Admin |
+| [Configuration](reference/configuration.md) | Every environment variable | Both |
+| [CLI](reference/cli.md) | Every command and flag | Both |
+| [HTTP API](reference/http-api.md) | Routes, guards, status codes, conventions | Both |
+| [Collection schedule](reference/collection-schedule.md) | What is collected, when, from where | Both |
+| [Data model](reference/data-model.md) | Tables, fields, enumerations | Dev |
+| [just recipes](reference/just-recipes.md) | Every recipe in both justfiles | Dev |
+| [Invariants](reference/invariants.md) | Rules a change must not break | Dev |
+| [Test suite](reference/test-suite.md) | What the 195 tests cover | Dev |
+| [Glossary](reference/glossary.md) | Project vocabulary | Both |
 
 ## Explanation
 

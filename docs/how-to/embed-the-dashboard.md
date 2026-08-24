@@ -1,6 +1,6 @@
 # Embed the dashboard
 
-Put the dashboard in an iframe in another application. For administrators.
+Put the dashboard in an iframe in another application. For administrators and developers.
 
 Three things must line up: the framing allowlist, the pod's networking, and how the parent hands
 over a token.
@@ -93,4 +93,4 @@ Insights origin in its `postMessage`, and that the dashboard's expected parent o
 **Cross-origin API calls arrive anonymous.** The browser is refusing to send the header. Add the
 parent's origin to `CORS_ORIGINS`.
 
-#icicle-insights# #How-To# #Administrator# #embedding#
+#icicle-insights# #How-To# #Administrator# #Developer# #embedding#

@@ -1,6 +1,6 @@
 # Run collection immediately
 
-Collect now instead of waiting for the schedule. For administrators.
+Collect now instead of waiting for the schedule. For administrators and developers.
 
 Useful after adding a resource, after fixing a credential, or when verifying a deployment.
 
@@ -97,4 +97,4 @@ collect everything.
 **The all-time total did not move.** Often correct: no completed day newer than the watermark was
 returned.
 
-#icicle-insights# #How-To# #Administrator# #collection#
+#icicle-insights# #How-To# #Administrator# #Developer# #collection#

@@ -1,6 +1,6 @@
 # Collection schedule
 
-What Insights collects, when, and from where. For administrators.
+What Insights collects, when, and from where. For administrators and developers.
 
 ## The three clocks
 
@@ -73,4 +73,4 @@ repaired token resumes collection unattended and the alert repeats until it is f
 Changing a resource's cadence does not make it due. It sets the spacing applied after the next
 successful collection.
 
-#icicle-insights# #Reference# #Administrator# #collection#
+#icicle-insights# #Reference# #Administrator# #Developer# #collection#
