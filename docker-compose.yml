@@ -5,7 +5,7 @@
 # resolve a merge key first.
 #
 #     Build:      docker compose build
-#     Migrate:    docker compose run --rm migrate
+#     Migrate:    docker compose run --rm migrate      (see below — often optional now)
 #     Run:        docker compose up app queues scheduled
 #     Sweep now:  docker compose run --rm collect-now
 #     Stop:       docker compose down          (-v also wipes the volumes)
@@ -209,7 +209,14 @@ services:
   # replicas: 0 keeps them out of `up`; reach them with `docker compose run`.
   # ==========================================================================
 
-  # Run once before the first `up`, and after any deploy carrying a migration.
+  # Mostly redundant now: `app` migrates itself at startup, under an advisory lock, so a plain
+  # `up` converges on its own however many replicas start at once.
+  #
+  # Still worth running as its own step when you want the migration to be a distinct, observable
+  # event — a deploy carrying a risky migration, or one you want to fail before any traffic is
+  # served. It is also the only way to migrate without starting the API, and running it first
+  # avoids the window where `queues` and `scheduled` are up against a schema `app` has not
+  # finished creating.
   migrate:
     image: insights:latest
     build:

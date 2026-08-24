@@ -257,6 +257,11 @@ func configure(_ app: Application) async throws {
   // Credential minting stays off the HTTP surface — see `ServiceTokenCommand`.
   app.asyncCommands.use(ServiceTokenCommand(), as: "service-token")
 
+  // What the container entrypoint runs before `serve`. Vapor's own `migrate` stays available and
+  // remains the right command for a deliberate deployment step; this one is safe to run from
+  // several replicas at once.
+  app.asyncCommands.use(MigrateLockedCommand(), as: "migrate-locked")
+
   app.logger.notice(
     "Insights configured.",
     metadata: [
