@@ -352,7 +352,10 @@ Sources/Insights/
 ├── Middlewares/    authenticators, requirements, limits, headers
 ├── Migrations/     schema and development snapshot
 ├── Models/         Fluent models
-├── Queues/         scheduled dispatchers, workers, and metric folds
+├── Queues/         queue names and metric folds
+│   ├── Scheduled/     sweeps that enqueue on a timer
+│   ├── Collectors/    per-platform syncs and their routing
+│   └── Support/       retry backoff, failure reporting, heartbeat
 ├── Services/
 │   ├── Admins/         who holds administrative access
 │   ├── Notifications/  failure alerting

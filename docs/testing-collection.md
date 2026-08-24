@@ -154,7 +154,7 @@ the persistent worker performs the sync.
 
 ### A platform was skipped
 
-Check `Queue+SyncDispatch.swift` and the current matrix in
+Check `Collectors/SyncDispatch.swift` and the current matrix in
 [queue-workers.md](queue-workers.md). A runnable job needs both registration and dispatch
 routing.
 

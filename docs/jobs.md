@@ -20,9 +20,9 @@ routing places the typed payload on the correct queue.
 
 | # | File | What it does |
 |---|---|---|
-| 1 | `Sources/Insights/Queues/SyncXStats.swift` | The work itself |
+| 1 | `Sources/Insights/Queues/Collectors/SyncXStats.swift` | The work itself |
 | 2 | `Sources/Insights/configure.swift` | `app.queues.add(...)` — maps the job's name to a decoder |
-| 3 | `Sources/Insights/Queues/Queue+SyncDispatch.swift` | Routes a platform to the job |
+| 3 | `Sources/Insights/Queues/Collectors/SyncDispatch.swift` | Routes a platform to the job |
 
 **Controllers need no change.** `ResourceController.create` and `CollectDueResources` both call
 `dispatchSync(for:platform:logger:)`, so wiring the platform in step 3 gets you create-time
@@ -102,7 +102,7 @@ app.queues.add(syncGHCRStats)
 it the dispatch still succeeds — the failure surfaces on the *worker*, at dequeue time, as an
 unknown job name.
 
-### 3. Route the platform — `Queue+SyncDispatch.swift`
+### 3. Route the platform — `Collectors/SyncDispatch.swift`
 
 ```swift
 case .ghcr:
@@ -140,7 +140,7 @@ per sweep and buys a much simpler design; revisit only if it shows up as rate-li
 
 `JobError`'s `DebuggableError` conformance gives the log its severity, `identifier`, and
 explanation. The one question that changes the response — is a person needed? — is answered by the
-failure handler itself, in a private `Error` extension in `SyncJob+Failure.swift`.
+failure handler itself, in a private `Error` extension in `Support/FailureReporting.swift`.
 
 | Error | Log level | Alert | Re-books the resource |
 |---|---|---|---|
@@ -174,7 +174,7 @@ the same severity as a transient blip.
 ### What `error(_:_:_:)` does
 
 It runs **once the retry budget is spent**, never before, and delegates to one shared helper in
-`Sources/Insights/Queues/SyncJob+Failure.swift`:
+`Sources/Insights/Queues/Support/FailureReporting.swift`:
 
 1. Logs through `report(error:)` with filterable metadata — `job`, `subject`, `identifier`,
    `platform`, and the resource or account id.
@@ -308,10 +308,10 @@ operator would have been told without a webhook.
 
 ## Checklist
 
-- [ ] Job file in `Sources/Insights/Queues/`, throwing `JobError`, writing after all fetches
+- [ ] Job file in `Sources/Insights/Queues/Collectors/`, throwing `JobError`, writing after all fetches
 - [ ] `BackoffRetrying` conformance and an `error(_:_:_:)` delegating to the shared helper
 - [ ] `app.queues.add(...)` in `configure.swift`
-- [ ] Platform case in `Queue+SyncDispatch.swift`, dispatched with `maxRetryCount:`
+- [ ] Platform case in `Collectors/SyncDispatch.swift`, dispatched with `maxRetryCount:`
 - [ ] All-time handling matches the API's shape (table above)
 - [ ] Migration for any new enum case, plus `maxCollectionIntervalDays` for a new platform
 - [ ] `SyncJobTests` case for the happy path and at least one failure

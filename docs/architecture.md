@@ -70,7 +70,10 @@ Sources/Insights/
 ├── Middlewares/     authenticators, Require, rate limits, headers, request IDs
 ├── Migrations/      PostgreSQL schema and development snapshot
 ├── Models/          Fluent domain persistence
-├── Queues/          scheduled sweeps, queue jobs, routing, watermark folds
+├── Queues/          queue names and watermark folds
+│   ├── Scheduled/      the clock: sweeps that only enqueue
+│   ├── Collectors/     the work: per-platform syncs, and the routing that picks one
+│   └── Support/        shared machinery: retry backoff, failure reporting, heartbeat
 ├── Services/
 │   ├── Admins/         who holds administrative access
 │   ├── Notifications/  FailureNotifier contract, Slack and noop adapters
