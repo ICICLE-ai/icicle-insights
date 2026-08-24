@@ -1,254 +1,298 @@
-# Apple Container replacement for docker compose.
-# Requires Apple Container 1.x and macOS 26 or later for custom networks.
+# Local stack on Apple Container. Mirrors docker-compose.yml service for service.
+# Requires Apple Container 1.x and macOS 26 or later for user-defined networks.
 #
-# Containers address each other by DNS name under `{{container_domain}}`, so run
-# `just dns` once before the first `just stack-scheduled`. Names resolve to the
-# container's current address on every connection, which an IP baked into the
-# environment at launch does not: recreating `db` leaves such a value stale.
+# First run:  just dns   (once per machine, asks for an administrator password)
+# Then:       just stack
 
-container_image := "icicle-insights"
-container_network := "icicle-insights"
-container_domain := "icicle-insights"
-container_db_image := "postgres:18-alpine"
-container_db_volume := "icicle-insights-postgres"
-container_db_name := "vapor_database"
-container_db_user := "vapor_username"
-container_db_password := "vapor_password"
-container_valkey_image := "valkey/valkey:9-alpine"
-container_valkey_volume := "icicle-insights-valkey"
-# Port inside the container, and therefore the port in the http://app.{{container_domain}} URL,
-# which reaches the container's own address directly rather than through --publish below.
-container_app_port := env_var_or_default("APP_PORT", "80")
-# Host-side port for the 127.0.0.1 mapping. macOS reserves ports below 1024 for root, so this
-# one stays high even though the container's is 80.
-container_host_port := env_var_or_default("APP_HOST_PORT", "8080")
-container_build_dns_primary := env_var_or_default("CONTAINER_BUILD_DNS_PRIMARY", "75.75.75.75")
-container_build_dns_secondary := env_var_or_default("CONTAINER_BUILD_DNS_SECONDARY", "75.75.76.76")
+image := "icicle-insights"
+network := "icicle-insights"
+domain := "icicle-insights"
 
-# Environment shared by every application container, layered in precedence order.
-#
-# `.env` first: gitignored, and therefore the only place credentials belong. `.env.container`
-# second, because repeated --env-file flags merge with the later file winning — which is what
-# lets the tracked local defaults override the deployment database values `.env` carries without
-# either file having to know about the other. The --env flags below outrank both regardless of
-# where they appear, so the in-network DNS names always win.
-#
-# `.env` must exist: a missing --env-file is a hard error, not a skipped file. Copy .env.example.
-# `.env.container` also carries VAPOR_ENV, which every process here reads. No recipe passes
-# `--env` on a command line: that flag outranks the variable, so pinning it on `serve` alone is
-# how the stack came to hold processes disagreeing about their own environment.
-container_app_env := '--env-file .env --env-file .env.container' + \
-  ' --env DATABASE_HOST=db.' + container_domain + \
-  ' --env REDIS_HOST=valkey.' + container_domain
+db_image := "postgres:18-alpine"
+db_volume := "icicle-insights-postgres"
+db_name := "vapor_database"
+db_user := "vapor_username"
+db_password := "vapor_password"
+
+valkey_image := "valkey/valkey:9-alpine"
+valkey_volume := "icicle-insights-valkey"
+
+# Port inside the container, and therefore the port in the http://app.icicle-insights URL.
+app_port := env("APP_PORT", "80")
+# Host side of the 127.0.0.1 mapping. macOS reserves ports below 1024 for root.
+host_port := env("APP_HOST_PORT", "8080")
+
+# Upstream resolvers for fetching Swift packages during a build. Unrelated to the
+# container name resolution that `just dns` configures.
+build_dns := env("CONTAINER_BUILD_DNS", "75.75.75.75")
+build_dns_alt := env("CONTAINER_BUILD_DNS_ALT", "75.75.76.76")
+
+# Environment for every application container, in precedence order. Repeated
+# --env-file flags merge with the later file winning, and an explicit --env outranks
+# both. So `.env` holds the credentials, `.env.container` overrides them with local
+# values, and the DNS names always apply. `.env` must exist: a missing --env-file is
+# an error, not a skipped file.
+env_files := "--env-file .env --env-file .env.container"
+env_hosts := "--env DATABASE_HOST=db." + domain + " --env REDIS_HOST=valkey." + domain
+app_env := env_files + " " + env_hosts
+
+# Stop and delete a container, ignoring one that is not there.
+[private]
+rm name:
+    @container stop {{ name }} >/dev/null 2>&1 || true
+    @container delete {{ name }} >/dev/null 2>&1 || true
+
+# ---------------------------------------------------------------------------
+# Setup
+# ---------------------------------------------------------------------------
 
 # Start Apple's container services.
-container-runtime:
+[group('setup')]
+runtime:
     container system start
 
-# Prompts for an administrator password and restarts the container service, which stops
-# every running container. Run once, before the first `just stack-scheduled`.
-# Register the local DNS domain so containers resolve each other by name.
+# Needed once per machine, before the first `just stack`. Asks for an administrator
+# password and restarts the container service, stopping everything running.
+
+# Register the local DNS domain so containers reach each other by name.
+[group('setup')]
 dns:
-    #!/bin/bash
+    #!/usr/bin/env bash
     set -euo pipefail
     config="$HOME/.config/container/config.toml"
     mkdir -p "$(dirname "$config")"
-    # The service reads the default domain at startup, so the config edit must precede
-    # the restart below.
+    # The service reads its default domain at startup, so this edit precedes the restart.
     if ! grep -q '^\[dns\]' "$config" 2>/dev/null; then
-        printf '\n[dns]\ndomain = "%s"\n' '{{container_domain}}' >> "$config"
-        echo "Added [dns] domain = \"{{container_domain}}\" to $config"
+        printf '\n[dns]\ndomain = "%s"\n' '{{ domain }}' >> "$config"
+        echo "Added [dns] domain = \"{{ domain }}\" to $config"
     fi
     container system stop
     container system start
-    # Writes /etc/resolver/{{container_domain}} so macOS routes the domain to the
-    # embedded resolver. Without it names resolve between containers but not from the host.
-    if container system dns list --quiet 2>/dev/null | grep -qx '{{container_domain}}'; then
-        echo "DNS domain '{{container_domain}}' already registered."
+    # Writes /etc/resolver/{{ domain }} so the host resolves the domain too, not just
+    # the containers.
+    if container system dns list --quiet 2>/dev/null | grep -qx '{{ domain }}'; then
+        echo "DNS domain '{{ domain }}' already registered."
     else
-        sudo container system dns create '{{container_domain}}'
+        sudo container system dns create '{{ domain }}'
     fi
-    # Confirms the service actually loaded the domain, rather than only that the
-    # resolver file exists.
     container system property list | grep -A1 '^\[dns\]'
 
-# The --dns values here are upstream nameservers for fetching Swift packages during the
-# build, unrelated to the container name resolution configured by `just dns`.
-# Start BuildKit with enough memory for Swift and explicit DNS for package resolution.
-builder: container-runtime
-    container builder status --quiet >/dev/null 2>&1 || container builder start --cpus 4 --memory 8g --dns '{{container_build_dns_primary}}' --dns '{{container_build_dns_secondary}}'
+# Host configuration rather than project data, so it is separate from `just destroy`.
 
-# Create persistent resources once. The data volumes survive `just clean`.
-up: container-runtime
-    container network list --quiet | grep -qx '{{container_network}}' || container network create '{{container_network}}'
-    container volume list --quiet | grep -qx '{{container_db_volume}}' || container volume create '{{container_db_volume}}'
-    container volume list --quiet | grep -qx '{{container_valkey_volume}}' || container volume create '{{container_valkey_volume}}'
-    @container system dns list --quiet 2>/dev/null | grep -qx '{{container_domain}}' || echo "warning: DNS domain '{{container_domain}}' is not registered; run 'just dns' or containers will fail to resolve each other" >&2
-
-# Override the CONTAINER_BUILD_DNS_* values if these resolvers are unavailable.
-# Build the application image.
-build: builder
-    #!/bin/bash
+# Unregister the local DNS domain.
+[group('setup')]
+dns-delete:
+    #!/usr/bin/env bash
     set -euo pipefail
-    build_root="$PWD"
-    mkdir -p "$build_root/.container"
-    build_context="$(mktemp -d "$build_root/.container/build-context.XXXXXX")"
-    trap 'rm -rf -- "$build_context"' EXIT
-    cp Dockerfile .dockerignore Package.swift Package.resolved "$build_context/"
-    cp -R Sources Tests Resources Public "$build_context/"
-    # The frontend stage compiles the dashboard from source, so `Dashboard/` has to be in the
-    # context — without it the build fails on `COPY Dashboard/package.json` before Swift starts.
-    # node_modules is the wrong platform's binaries and ~300 MB; dist and .angular are stale
-    # output. `.dockerignore` names the same three and is copied above so the builder applies it,
-    # but the copy still has to skip them or the cost lands before the builder ever reads it.
-    mkdir -p "$build_context/Dashboard"
+    if container system dns list --quiet 2>/dev/null | grep -qx '{{ domain }}'; then
+        sudo container system dns delete '{{ domain }}'
+    else
+        echo "DNS domain '{{ domain }}' is not registered."
+    fi
+    echo "The [dns] section remains in ~/.config/container/config.toml. Remove it by hand"
+    echo "to unset the default domain."
+
+# Start BuildKit with enough memory for a Swift build and explicit resolvers.
+[group('setup')]
+builder: runtime
+    @container builder status --quiet >/dev/null 2>&1 \
+      || container builder start --cpus 4 --memory 8g \
+           --dns '{{ build_dns }}' --dns '{{ build_dns_alt }}'
+
+# Create the network and both data volumes. They survive `just clean`.
+[group('setup')]
+up: runtime
+    @container network list --quiet | grep -qx '{{ network }}' || container network create '{{ network }}'
+    @container volume list --quiet | grep -qx '{{ db_volume }}' || container volume create '{{ db_volume }}'
+    @container volume list --quiet | grep -qx '{{ valkey_volume }}' || container volume create '{{ valkey_volume }}'
+    @container system dns list --quiet 2>/dev/null | grep -qx '{{ domain }}' \
+      || echo "warning: DNS domain '{{ domain }}' is not registered. Run 'just dns' first." >&2
+
+# ---------------------------------------------------------------------------
+# Image and containers
+# ---------------------------------------------------------------------------
+
+# The Dockerfile does `COPY . .`, so the context is assembled by hand. The Dashboard's
+# node_modules is the wrong platform's binaries and hundreds of megabytes, and that cost
+# lands before the builder ever reads .dockerignore.
+
+# Build the application image.
+[group('containers')]
+build: builder
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "$PWD/.container"
+    context="$(mktemp -d "$PWD/.container/build-context.XXXXXX")"
+    trap 'rm -rf -- "$context"' EXIT
+    cp Dockerfile .dockerignore Package.swift Package.resolved "$context/"
+    # Tests is included because SwiftPM errors when a declared target's directory
+    # is missing, even building only the Insights product.
+    cp -R Sources Tests Public "$context/"
+    mkdir -p "$context/Dashboard"
     tar -cf - -C Dashboard --exclude=node_modules --exclude=dist --exclude=.angular . \
-      | tar -xf - -C "$build_context/Dashboard"
-    cd "$build_context"
-    container build --dns '{{container_build_dns_primary}}' --dns '{{container_build_dns_secondary}}' --tag '{{container_image}}' --file Dockerfile .
+      | tar -xf - -C "$context/Dashboard"
+    cd "$context"
+    container build --dns '{{ build_dns }}' --dns '{{ build_dns_alt }}' \
+      --tag '{{ image }}' --file Dockerfile .
 
 # Start PostgreSQL and wait until it accepts connections.
-db: up
-    container stop db >/dev/null 2>&1 || true
-    container delete db >/dev/null 2>&1 || true
+[group('containers')]
+db: up (rm "db")
     container run --detach --name db \
-        --network '{{container_network}}' \
+        --network '{{ network }}' \
         --publish 127.0.0.1:5432:5432 \
-        --volume '{{container_db_volume}}:/var/lib/postgresql' \
-        --env POSTGRES_USER='{{container_db_user}}' \
-        --env POSTGRES_PASSWORD='{{container_db_password}}' \
-        --env POSTGRES_DB='{{container_db_name}}' \
-        '{{container_db_image}}'
-    @for i in $(seq 60); do container exec db pg_isready -U '{{container_db_user}}' -d '{{container_db_name}}' >/dev/null 2>&1 && exit 0; sleep 0.5; done; echo 'PostgreSQL did not become ready; run: container logs db' >&2; exit 1
+        --volume '{{ db_volume }}:/var/lib/postgresql' \
+        --env POSTGRES_USER='{{ db_user }}' \
+        --env POSTGRES_PASSWORD='{{ db_password }}' \
+        --env POSTGRES_DB='{{ db_name }}' \
+        '{{ db_image }}'
+    @just await db "pg_isready -U {{ db_user }} -d {{ db_name }}"
 
-# Start Valkey and wait until it answers. Append-only so queued jobs survive a restart.
-valkey: up
-    container stop valkey >/dev/null 2>&1 || true
-    container delete valkey >/dev/null 2>&1 || true
+# Start Valkey and wait until it answers. Append-only, so queued jobs survive a restart.
+[group('containers')]
+valkey: up (rm "valkey")
     container run --detach --name valkey \
-        --network '{{container_network}}' \
+        --network '{{ network }}' \
         --publish 127.0.0.1:6379:6379 \
-        --volume '{{container_valkey_volume}}:/data' \
-        '{{container_valkey_image}}' valkey-server --appendonly yes
-    @for i in $(seq 60); do container exec valkey valkey-cli ping >/dev/null 2>&1 && exit 0; sleep 0.5; done; echo 'Valkey did not become ready; run: container logs valkey' >&2; exit 1
+        --volume '{{ valkey_volume }}:/data' \
+        '{{ valkey_image }}' valkey-server --appendonly yes
+    @just await valkey "valkey-cli ping"
 
-# Apply migrations in a temporary one-shot container.
-migrate-container: build
-    container run --rm --name migrate \
-        --network '{{container_network}}' \
-        {{container_app_env}} \
-        '{{container_image}}' migrate --yes
+# Reachable at http://app.icicle-insights and at http://127.0.0.1:8080. The image's
+# `vapor` user cannot bind below 1024, so the bare URL needs --user root. Drop that
+# override if APP_PORT moves above 1024.
 
-# Reachable at http://app.{{container_domain}} with no port, and at
-# http://127.0.0.1:{{container_host_port}}. Override APP_PORT or APP_HOST_PORT to move either.
-# The image's default `vapor` user cannot bind anything below 1024, so serving the bare URL
-# requires overriding it with --user root; drop that override if APP_PORT moves above 1024.
-# Start the HTTP server.
-start: build
-    container stop app >/dev/null 2>&1 || true
-    container delete app >/dev/null 2>&1 || true
+# Serve the API and dashboard.
+[group('containers')]
+app: build (rm "app")
     container run --detach --name app \
         --user root \
-        --network '{{container_network}}' \
-        --publish 127.0.0.1:{{container_host_port}}:{{container_app_port}} \
-        {{container_app_env}} \
-        --env SERVER_PORT='{{container_app_port}}' \
-        '{{container_image}}' serve
+        --network '{{ network }}' \
+        --publish 127.0.0.1:{{ host_port }}:{{ app_port }} \
+        {{ app_env }} \
+        --env SERVER_PORT='{{ app_port }}' \
+        '{{ image }}' serve
 
-# Drain the metrics queue.
-queues: build
-    container stop queues >/dev/null 2>&1 || true
-    container delete queues >/dev/null 2>&1 || true
+# Drain the metrics queue. This is what actually writes collected data.
+[group('containers')]
+queues: build (rm "queues")
     container run --detach --name queues \
-        --network '{{container_network}}' \
-        {{container_app_env}} \
-        '{{container_image}}' queues --queue metrics
+        --network '{{ network }}' \
+        {{ app_env }} \
+        '{{ image }}' queues --queue metrics
 
-# Dispatch scheduled work. Run exactly one scheduler.
-scheduled: build
-    container stop scheduled >/dev/null 2>&1 || true
-    container delete scheduled >/dev/null 2>&1 || true
+# Dispatch scheduled work. Exactly one of these, ever.
+[group('containers')]
+scheduled: build (rm "scheduled")
     container run --detach --name scheduled \
-        --network '{{container_network}}' \
-        {{container_app_env}} \
-        '{{container_image}}' queues --scheduled
+        --network '{{ network }}' \
+        {{ app_env }} \
+        '{{ image }}' queues --scheduled
 
-# Run the due-resource sweep once without waiting for the hourly scheduler.
+# Apply migrations in a one-shot container.
+[group('containers')]
+stack-migrate: build
+    container run --rm --name migrate \
+        --network '{{ network }}' \
+        {{ app_env }} \
+        '{{ image }}' migrate --yes
+
+# Roll back the most recent migration batch in a one-shot container.
+[group('containers')]
+stack-revert: build
+    container run --rm --name revert \
+        --network '{{ network }}' \
+        {{ app_env }} \
+        '{{ image }}' migrate --revert --yes
+
+# ---------------------------------------------------------------------------
+# Collection, on demand
+# ---------------------------------------------------------------------------
+# Each of these only enqueues onto `metrics`, so `queues` has to be running or
+# nothing is collected.
+
+# Sweep the resources that are already due.
+[group('collect')]
 collect-now: build
     container run --rm --name collect-now \
-        --network '{{container_network}}' \
-        {{container_app_env}} \
-        '{{container_image}}' collect-resources
+        --network '{{ network }}' \
+        {{ app_env }} \
+        '{{ image }}' collect-resources
 
-# Mark every active resource due, then run the resource sweep once.
+# Mark every active resource due, then sweep. Shifts every cadence forward.
+[group('collect')]
 collect-all-now: build
     container run --rm --name collect-all-now \
-        --network '{{container_network}}' \
-        {{container_app_env}} \
-        '{{container_image}}' collect-resources --force
+        --network '{{ network }}' \
+        {{ app_env }} \
+        '{{ image }}' collect-resources --force
 
-# Run the monthly account-level sweep once.
+# Run the monthly account sweep once.
+[group('collect')]
 collect-accounts-now: build
     container run --rm --name collect-accounts-now \
-        --network '{{container_network}}' \
-        {{container_app_env}} \
-        '{{container_image}}' collect-accounts
+        --network '{{ network }}' \
+        {{ app_env }} \
+        '{{ image }}' collect-accounts
 
-# Recreate the complete local stack in Compose dependency order.
-stack-scheduled: stop db valkey migrate-container start queues scheduled
+# ---------------------------------------------------------------------------
+# Stack
+# ---------------------------------------------------------------------------
 
-stack-collect-all-now: stop db valkey migrate-container start queues collect-all-now
+# Recreate the whole stack, in dependency order.
+[group('stack')]
+stack: stop db valkey stack-migrate app queues scheduled
 
+# Stop and remove the stack containers. Both data volumes survive.
+[group('stack')]
+stop: runtime
+    @for name in scheduled queues app valkey db; do \
+        container stop "$name" >/dev/null 2>&1 || true; \
+        container delete "$name" >/dev/null 2>&1 || true; \
+    done
 
-# The insights-* names predate the move to DNS-based addressing; they are listed so a
-# stack started before that change is cleaned up rather than left running.
-# Stop and remove stack containers while preserving database and queue data.
-stop: container-runtime
-    @for name in scheduled queues app valkey db insights-scheduled insights-queues insights-app insights-valkey insights-db; do container stop "$name" >/dev/null 2>&1 || true; container delete "$name" >/dev/null 2>&1 || true; done
-
-# Remove ephemeral stack resources while preserving both data volumes.
+# Remove the stack and its network. Both data volumes survive.
+[group('stack')]
 clean: stop
-    container network delete '{{container_network}}' >/dev/null 2>&1 || true
+    @container network delete '{{ network }}' >/dev/null 2>&1 || true
 
-# Irreversible. The Postgres volume holds the collected metric history and the Valkey
-# volume holds queued jobs; neither is recoverable afterwards. `just clean` is the
-# non-destructive option. Set CONFIRM=yes to skip the prompt in scripts.
-# Delete everything: containers, both data volumes, the network, the image, the builder.
-destroy: container-runtime
-    #!/bin/bash
+# Irreversible. The PostgreSQL volume holds the collected metric history and the Valkey
+# volume holds queued jobs. `just clean` is the non-destructive option. Set CONFIRM=yes
+# to skip the prompt in a script.
+
+# Delete everything: containers, both volumes, the network, the image, the builder.
+[group('stack')]
+destroy: runtime
+    #!/usr/bin/env bash
     set -euo pipefail
     if [ "${CONFIRM:-}" != "yes" ]; then
-        echo "About to delete volumes '{{container_db_volume}}' and '{{container_valkey_volume}}'."
+        echo "About to delete volumes '{{ db_volume }}' and '{{ valkey_volume }}'."
         echo "All collected metrics and queued jobs will be lost."
         read -r -p "Type 'destroy' to continue: " reply
         [ "$reply" = "destroy" ] || { echo "Aborted."; exit 1; }
     fi
-    # Long-lived containers first, then the one-shot names, which are `--rm` but survive
-    # a failed run. Volumes and images cannot be deleted while a container references them.
-    for name in scheduled queues app valkey db migrate collect-now collect-all-now collect-accounts-now \
-                insights-scheduled insights-queues insights-app insights-valkey insights-db insights-migrate \
-                insights-collect-now insights-collect-all-now insights-collect-accounts-now; do
+    # One-shot containers are --rm but survive a failed run. Volumes and images
+    # cannot be deleted while a container still references them.
+    for name in scheduled queues app valkey db migrate revert \
+                collect-now collect-all-now collect-accounts-now; do
         container stop "$name" >/dev/null 2>&1 || true
         container delete --force "$name" >/dev/null 2>&1 || true
     done
-    container volume delete '{{container_db_volume}}' >/dev/null 2>&1 || true
-    container volume delete '{{container_valkey_volume}}' >/dev/null 2>&1 || true
-    container network delete '{{container_network}}' >/dev/null 2>&1 || true
-    container image delete '{{container_image}}' >/dev/null 2>&1 || true
-    # Holds the Swift build cache, which is the bulk of the reclaimable space.
+    container volume delete '{{ db_volume }}' >/dev/null 2>&1 || true
+    container volume delete '{{ valkey_volume }}' >/dev/null 2>&1 || true
+    container network delete '{{ network }}' >/dev/null 2>&1 || true
+    container image delete '{{ image }}' >/dev/null 2>&1 || true
+    # Holds the Swift build cache, which is most of the reclaimable space.
     container builder delete --force >/dev/null 2>&1 || true
     echo "Destroyed. Remaining disk usage:"
     container system df
 
-# Separate from `destroy` because this is host configuration rather than project data,
-# and it needs an administrator password.
-# Unregister the local DNS domain.
-dns-delete:
-    #!/bin/bash
-    set -euo pipefail
-    if container system dns list --quiet 2>/dev/null | grep -qx '{{container_domain}}'; then
-        sudo container system dns delete '{{container_domain}}'
-    else
-        echo "DNS domain '{{container_domain}}' is not registered."
-    fi
-    echo "Note: the [dns] section remains in $HOME/.config/container/config.toml; remove it by hand if you want the default domain unset."
+# Poll a container's readiness check until it passes.
+[private]
+await name check:
+    @for i in $(seq 60); do \
+        container exec {{ name }} {{ check }} >/dev/null 2>&1 && exit 0; \
+        sleep 0.5; \
+    done; \
+    echo "{{ name }} did not become ready. Run: container logs {{ name }}" >&2; \
+    exit 1
