@@ -1,3 +1,16 @@
+<!--
+  The Angular Best Practices section below is Angular's own published guidance, from
+  https://angular.dev/assets/context/best-practices.md
+
+  Refresh it from that URL after an Angular major version rather than editing it by hand:
+
+      curl -o /tmp/best-practices.md https://angular.dev/assets/context/best-practices.md
+
+  The "ICICLE Insights specifics" section at the end is ours. Put project rules there.
+  The Angular CLI MCP server also serves this guidance via its get_best_practices tool —
+  see docs/how-to/set-up-the-dashboard-toolchain.md
+-->
+
 You are an expert in TypeScript, Angular, and scalable web application development. You write functional, maintainable, performant, and accessible code following Angular and TypeScript best practices.
 
 ## TypeScript Best Practices
@@ -56,3 +69,53 @@ You are an expert in TypeScript, Angular, and scalable web application developme
 - Use the `providedIn: 'root'` option for singleton services
 - Prefer the `@Service` decorator over `@Injectable({providedIn: 'root'})` for new singleton services (Angular v22+)
 - Use the `inject()` function instead of constructor injection
+
+---
+
+## ICICLE Insights specifics
+
+Project rules. These sit on top of the Angular guidance above, and win where they overlap.
+
+### Components
+
+- Import Optimus UI components individually, per component, not from a barrel:
+  `import { Button } from '@openng/optimus-ui/button';`
+- Charts come from TanStack Charts. Do not add another charting dependency; the production build
+  enforces bundle budgets and will fail.
+
+### Authentication
+
+- The Tapis token lives **in memory only**. Never write it to `localStorage`, `sessionStorage`, or
+  a cookie.
+- Resolution order is `postMessage` from an allowed parent origin, then a readable
+  `X-Tapis-Token` cookie, then manual paste.
+- Always check `event.origin` before accepting a `postMessage`. There is no exception to this.
+- Send it as `Authorization: Bearer`. The server reads nothing else.
+- Anonymous is a first-class state. The application must render fully for a signed-out visitor;
+  administrator features are progressive enhancement, never a gate.
+- The route guard decides what to render, never whether access is permitted. Authorization is
+  always server-side.
+
+### Accessibility
+
+- Every chart needs an exact table alternative, keyboard support, and an accessible name.
+- Must pass AXE in **both** light and dark themes.
+- WCAG AA minimums, including focus management and colour contrast.
+
+### Testing
+
+- Vitest, not Karma or Jasmine. Run with `just web-test`.
+- Test stores and pure functions directly. Reserve component tests for rendering and interaction.
+
+### Layout
+
+- The dashboard viewport is bounded and does not scroll. New content fits inside it or earns its
+  place by displacing something.
+
+### Reference
+
+Server contract and rationale live in the repository's `docs/`:
+
+- `docs/reference/http-api.md` — routes, guards, status codes, query parameters
+- `docs/explanation/the-dashboard.md` — serving, tokens, CSP, why there is no SSR
+- `docs/how-to/set-up-the-dashboard-toolchain.md` — MCP server and the vendor `llms-full.txt` files

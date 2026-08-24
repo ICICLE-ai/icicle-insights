@@ -1,46 +1,66 @@
-# ICICLE Insights web application
+# ICICLE Insights dashboard
 
-Angular 22 public analytics dashboard and lazy-loaded admin portal for the ICICLE Insights Vapor
-service. It uses signals, Optimus UI, and TanStack Charts; the production Docker build emits the
-browser bundle into Vapor's `Public/` directory.
+Angular 22 public dashboard and lazy-loaded admin console for the Insights Vapor service.
+Signals, zoneless, standalone, lazy routes, with Optimus UI components and TanStack Charts.
 
-## Local development
-
-Run the Vapor API on port 8080, then from this directory:
+## Run it
 
 ```bash
-npm ci
-npm start
+just web-install
 ```
 
-Open `http://localhost:4200`. The Angular dev server proxies `/api` to `127.0.0.1:8080`, so browser
-requests are same-origin and hot reload remains enabled. Proxy configuration is read only at
-startup; restart `npm start` after changing `proxy.conf.json`.
+```bash
+just web
+```
+
+http://localhost:4200. Start the API separately with `just run`.
+
+The dev server proxies `/api` to port 8080, so requests are same-origin and hot reload works. Proxy
+configuration is read only at startup; restart after changing it.
+
+## Verify
+
+```bash
+just web-test     # Vitest
+```
+
+```bash
+just web-build    # production bundle and budgets
+```
+
+Every chart ships with an exact table alternative, keyboard support, and an accessible name. Keep
+new work AXE-clean in both themes and inside the bounded, non-scrolling viewport.
+
+## How it is served
+
+A Node stage in the root `Dockerfile` builds this application and emits the bundle into Vapor's
+public directory. The runtime image contains no Node.
+
+Deep links work through an SPA fallback; hashed bundles get immutable cache headers and the entry
+point gets `no-cache`.
 
 ## Authentication
 
-Anonymous reads are the default. Admin state is progressive enhancement: an in-memory Tapis token
-is resolved from an allowed parent `postMessage`, a readable `X-Tapis-Token` cookie, or the manual
-Test Lab control, then sent as `Authorization: Bearer …`. Tokens are never written to web storage.
+Anonymous reads are the default and the application renders fully signed out. Administrator
+features are progressive enhancement.
 
-The lazy `/admin` route probes `GET /api/admins`: 200 is admin, 403 is authenticated without
-permission, and 401 is anonymous or unusable. Production authorization always remains server-side.
+A Tapis token is resolved **into memory only**, in order: `postMessage` from an allowed parent
+origin, a readable `X-Tapis-Token` cookie, then manual paste. It is sent as
+`Authorization: Bearer`. Never write it to web storage.
 
-The Operations view combines catalog scheduling and credential metadata with admin-only queue,
-scheduler, watermark, and durable failure projections. Design comparisons stay in the
-development-only Test Lab and are never rendered by production builds.
+The `/admin` route probes an admin-only read: 200 means administrator, 403 means authenticated
+without permission, 401 means anonymous. Authorization is always enforced server-side; the guard
+only decides what to render.
 
-## Verification
+## Where to read more
 
-```bash
-npm test          # Vitest unit/component tests
-npm run build     # optimized production build and bundle budgets
-npm audit         # dependency vulnerability report
-```
+| Topic | Page |
+|---|---|
+| Angular MCP server, `llms-full.txt`, conventions | [Set up the dashboard toolchain](../docs/how-to/set-up-the-dashboard-toolchain.md) |
+| Serving, tokens, CSP, and why there is no SSR | [The dashboard](../docs/explanation/the-dashboard.md) |
+| Every console screen | [Admin console](../docs/reference/admin-console.md) |
+| Routes, status codes, conventions | [HTTP API](../docs/reference/http-api.md) |
+| Embedding in another application | [Embed the dashboard](../docs/how-to/embed-the-dashboard.md) |
 
-Every chart includes an exact table alternative, keyboard support, and an accessible name. Keep
-new work AXE-clean in both themes and within the bounded, non-scrolling dashboard viewport.
-
-The implementation plan and durable progress record are in [PLAN.md](PLAN.md). Server deployment,
-embedding, cache behavior, and the Tapis Pods networking stanza live in
-[`../docs/operations.md`](../docs/operations.md).
+Coding conventions are in [AGENTS.md](AGENTS.md). The implementation record for the rebuild is in
+[PLAN.md](PLAN.md).

@@ -1,182 +1,86 @@
-# TODO — Middleware, Auth, and Frontend
+# TODO
 
-Working notes for the `middlewares` branch. The rationale behind each decision is recorded so it
-doesn't get re-litigated — including for the several that were later reversed, where the reversal
-and its reason are written down rather than edited away. Full detail in
-[`docs/api-authentication.md`](docs/api-authentication.md) and ADRs 006 and 007.
+Current state and what is left. Rationale for decisions already made lives in
+[docs/explanation/decisions/](docs/explanation/decisions/); this file tracks work, not reasoning.
 
-## Decisions
+## State
 
-| Question | Decision |
+Deployed and running at `insights.pods.icicleai.tapis.io`, collecting from GitHub and Hugging Face
+across 110 resources under 5 accounts.
+
+| Area | State |
 |---|---|
-| Auth mechanism | Tapis JWT, verified locally against the tenant public key fetched at boot |
-| Webhook tokens | Self-minted JWTs, scoped to one resource, 90-day expiry, revocable |
-| Admin storage | `ROOT_ADMIN_USERNAME` break-glass + `admins` table, managed from the dashboard |
-| Read access | Public — the dashboard is a public site; writes are guarded |
-| API namespace | API under `/api`, Angular SPA at root |
-| Frontend hosting | Served by Vapor from `Public/` — one pod, no nginx |
-| CORS | `CORS_ORIGINS` allowlist; unset means no CORS middleware at all |
-| Rate limits | Redis-backed: per-IP on `/api`, per-token on the webhook route. Fails open |
+| Collection: GitHub repositories and accounts | Shipped |
+| Collection: Hugging Face | Shipped |
+| Collection: GHCR, npm, PyPI | Registered in the catalog, no collector |
+| Authentication, admins, webhook tokens | Shipped |
+| Hardening: headers, CORS, rate limits, key rotation | Shipped |
+| Failure classification and alerting | Shipped |
+| Angular dashboard and admin console | Shipped |
+| Request ID middleware | Shipped |
+| Documentation | Rewritten on Diátaxis |
 
-## Work items
+## Open
 
-### 1. Tapis auth middleware + admin guard ✅
+### Verify the production signing keyset
 
-- [x] Tenant public key fetched at boot (`TapisClient+Auth.swift`), registered into `app.jwt.keys`
-- [x] `TapisAuthenticator` verifies locally; no round trip on the request path
-- [x] `tapis/tenant_id` compared against `TAPIS_TENANT`, so a valid token from another Tapis
-      tenant can't authenticate here
-- [x] Webhook tokens reach exactly one route; everything else is admin-only
-- [x] `ROOT_ADMIN_USERNAME` read at boot; fails fast when absent
-- [x] `Require` returns 403 for an authenticated caller lacking the grant, 401 when nobody
-      authenticated — one middleware, since either identity may satisfy a shared route
-- [x] Validation caching — moot, local verification has no round trip to amortize
+`service-token init-key` must have run against the **production** vault, not just staging — they
+are separate vaults and a keyset does not carry over. The console shows no issued tokens, so this
+is untested in production.
 
-### 2. `/api` namespace ✅
+Confirm by checking a production boot log for `Webhook token signing keys loaded.` If instead it
+says `No webhook token signing keyset found`, run `init-key` once and restart.
 
-- [x] Group the five resource controllers under `api` in `routes.swift`
-- [x] `DashboardController`, `/openapi.json`, and `/docs` stay at root
-- [x] No `servers:` change needed — `VaporToOpenAPI` reflects off `app.routes`, so paths
-      become `/api/...` automatically
+### Collectors for GHCR, npm, and PyPI
 
-### 3. Re-enable mutating routes ✅
+All three can be registered and are re-booked normally, but the dispatcher logs and skips them.
 
-- [x] Every mutating route on `Account`, `Resource`, `Metric`, `Release` is `Require.admin`
-- [x] `VaultController` — all five routes admin-only, reads included
-- [x] Protected routes marked `.openAPI(auth: .bearer())`
-- [x] **Answered:** yes. Vault is admin-only throughout, reads as well as mutations. No service
-      needs it — jobs resolve secrets in-process through `SecretProvider`, never over HTTP — and
-      the metadata alone enumerates which credentials exist and when they expire.
+- A GHCR prototype exists that scrapes HTML. It needs a decision about whether that workload belongs
+  on the `metrics` queue or its own, given its very different failure profile and latency.
+- npm and PyPI both publish download APIs and should be straightforward.
 
-### 3b. Webhook tokens ✅
+See [Add a collector](docs/how-to/add-a-collector.md).
 
-Each deployed ICICLE service reports its own metrics with a token bound to its resource.
+### Metric series pagination
 
-- [x] `ServiceToken` model and additive `ServiceTokens` migration, `resource_id` cascading
-- [x] `WebhookToken` claims: `iss`, `jti`, `iat`, `exp`, `insights/resource_id`
-- [x] HS256, signing key in Vault, in its **own** `JWTKeyCollection` — never `app.jwt.keys`,
-      where an unknown Tapis `kid` would fall back to the HMAC signer and reject real admins
-- [x] `ServiceTokenIssuer` is the single home for mint/revoke/list; CLI and controller wrap it
-- [x] `POST /api/resources/:resourceID/metrics` behind `Require.resourceScoped`
-- [x] Revocation is a live per-request `jti` lookup — immediate, no restart
-- [x] Minting revokes any live token for the same resource, in one transaction
-- [x] Admin-only `ServiceTokenController` so the dashboard can mint, list, and revoke
-- [x] `service-token init-key | rotate-key | issue | revoke | list`
+`/api/metrics` caps at 1000 rows, newest first. At roughly 103 rows per weekly sweep that is about
+ten weeks of trailing history. Per-type fetches or downsampling is the follow-up when it gets tight.
 
-**Superseded:** the opaque-token Vault registry and the `Capability` enum are gone. Resource
-scoping replaced grants; see `docs/decisions/006-api-authentication.md` for why both that and the
-"no HTTP minting" rule were reversed.
+### Fetch-on-create
 
-### 3c. Hardening ✅
+`ResourceController.create` already dispatches a sync and books the next collection. The path is
+live; nothing outstanding unless creation-time collection needs to become optional.
 
-- [x] CORS from a `CORS_ORIGINS` allowlist, registered `at: .beginning` so error responses carry
-      the headers too — a 4xx without them is unreadable to the browser that caused it
-- [x] `SecurityHeadersMiddleware`: `nosniff`, `Referrer-Policy`, `X-Frame-Options`, HSTS in prod
-- [x] `RateLimiter`, Redis-backed fixed window; per-IP on `/api`, per-token on the webhook route.
-      Fails open — a limiter that takes the API down with its counter store is worse than the
-      abuse it prevents
-- [x] Signing keyset with `kid`s, so `service-token rotate-key` adds a key rather than replacing
-      one; tokens issued before a rotation keep verifying until they expire
-- [x] `admins` table plus `AdminController`; admin status resolved during authentication, since
-      `Require`'s predicate is synchronous and cannot reach the database
-- [x] **Fixed a boot-blocking bug only a live run found:** Tapis returns the tenant PEM as one
-      unwrapped line, which SwiftASN1 rejects for RFC 7468 line lengths. Every production boot
-      would have crashed on `invalidPEMDocument`. Now re-wrapped, with a regression test.
+## Deliberately not doing
 
-### 4. Angular frontend
+**Full Content-Security-Policy.** Needs the Angular bundle's asset origins settled, and a wrong
+policy breaks the application rather than degrading it. The headers that depend on nothing already
+ship. The API reference at `/docs` still loads from a CDN; vendor it or allow that origin explicitly
+first.
 
-- [ ] Node build stage in the `Dockerfile`; output copied into `Public/`. Lines 55-57 already
-      stage `/build/Public` into the runtime image, so no change to the staging logic.
-- [ ] SPA fallback: catchall serving `index.html` for deep links. Safe because Vapor's router
-      prefers constant path components, so `/api/*`, `/docs`, and `/openapi.json` still win.
-- [ ] Cache headers: immutable + long max-age for hashed bundles, no-cache for `index.html`,
-      or clients pin to a stale bundle referencing deleted files.
-- [ ] Decide the fate of the Leaf dashboard (`DashboardController`) and the existing
-      `Public/dashboard.css` / `dashboard.js` — replaced by Angular, or coexisting under
-      `Public/app/` during a transition?
-- [ ] Dev loop: `ng serve` on :4200 with `proxy.conf.json` forwarding `/api` → :8080.
-      Alternative is `ng build --watch` into `Public/` — no HMR, but dev matches prod.
+**Tapis `kid` routing / JWKS.** Not possible as Tapis is deployed. Discovery works, but the
+advertised key-set URI points back at the tenant record, which serves a single PEM rather than a key
+set. There is nothing to route a `kid` against. Revisit only if Tapis starts publishing a real JWKS.
 
-### 5. Request ID middleware
+**Webhook token self-renewal.** Tokens expire at 90 days and are replaced by minting a new one and
+updating the deployment's secret. A leaked token that could renew itself would never expire, which
+removes the only thing expiry buys.
 
-- [ ] Stamp a UUID into `req.logger` metadata, propagate into job payloads, include in
-      `SlackNotifier` alerts. Right now a failure alert can't be traced to the request that
-      enqueued it. Return it in a response header so frontend bug reports carry it.
+**Angular SSR.** Needs Node at runtime, so a second pod or Node in the runtime image. Worth
+reconsidering now the dashboard is public rather than authenticated — the original rationale no
+longer holds, even if the conclusion may.
 
-### 6. Docs ✅
+**Response compression.** The ingress may already handle it. Nobody has checked; this is an open
+question rather than a decision.
 
-- [x] `docs/decisions/006-api-authentication.md` — two credential paths, one requirement check
-- [x] `docs/decisions/007-hardening.md` — CORS, rate limits, headers, live key rotation
-- [x] `docs/api-authentication.md` rewritten for the built design, with each departure from the
-      original draft called out in place
-- [x] `.env.example`: `ROOT_ADMIN_USERNAME`, `CORS_ORIGINS`, rate limits, `TOKEN_SIGNING_SECRET`
+**Finer rate limiting.** Per-address on the API and per-token on the reporting route are in.
+Per-route budgets and burst allowances wait for evidence that the flat limits are wrong.
 
-### 7. Before this deploys
+## Known rough edges
 
-Everything here that could be checked without a deployment has been, against the **staging**
-tenant `icicleai.staging.tapis.io` — a separate vault, so none of it touched production.
+**Rotation across a restart is only checked by hand.** The suite proves rotation is additive in
+memory. Only a restart proves the retired key was persisted, and nothing automates that.
 
-- [x] Confirmed `TAPIS_BASE_URL` needs `/v3` and `TAPIS_TENANT` is `icicleai`, read from a live
-      token's `tapis/tenant_id`. Subtlety the original note missed: each tenant has its **own
-      host**, so the two values move together — `icicleai` is `icicleai.tapis.io`, not
-      `icicle.tapis.io`. `.env.example` now documents the staging and production pairings.
-- [x] `service-token init-key` runs. It could not before — see §9.
-- [x] The three `VaultControllerTests` pass against staging, writing and destroying real secrets.
-      Whole suite: 158 passing.
-- [x] `/openapi.json` carries the bearer scheme on all 22 guarded routes — every vault route
-      including reads, all admin and service-token routes, every mutation, and the webhook route.
-- [x] **Rotation exercised by hand, and further than planned:** mint → post (201) → `rotate-key`
-      → **restart** → the pre-rotation token still posts (201), with 2 keys loaded. The restart is
-      the part that matters; without it the old key is merely still in memory, and nothing proves
-      the retired key was persisted to the vault.
-- [ ] Set `ROOT_ADMIN_USERNAME` in the deployed environment. **`ADMIN_USERNAMES` no longer does
-      anything**, and boot fails outright without the new one. It must be a real `tapis/username`
-      in the configured tenant — a placeholder boots fine and then matches nobody, so every write
-      returns 403 with nothing in the log to explain it.
-- [ ] Run `service-token init-key` against **production** and restart. Staging's keyset does not
-      carry over; they are separate vaults.
-
-### 8. Known gaps
-
-- [x] **Webhook token expiry warnings** — `WarnExpiringServiceTokens`, daily at 07:00, alerting at
-      14, 7, 3, and 1 days remaining through the existing `FailureNotifier`. Fixed thresholds
-      rather than "anything under a fortnight", so a token does not alert daily for two weeks and
-      get itself muted. Critical at three days or fewer. Revoked and already-lapsed tokens are
-      excluded; remaining days round up, or a token at 6.4 days would fall between thresholds and
-      never warn at all.
-- [x] `SyncJobTests` percent-encoding — fixed. The code was right and the test was wrong: Vapor
-      encodes `[]` as `%5B%5D`, which Hugging Face decodes and answers normally. The assertion was
-      testing Vapor's encoding choice rather than the field set requested, so it now compares
-      against the decoded query.
-
-### 9. Fixed: the bootstrap catch-22
-
-`configure` ran before every command and threw when the signing keyset was missing, so `serve`,
-`migrate`, **and `service-token init-key`** all died on a fresh deployment — the only tool that
-creates the keyset could never run. The documented bootstrap in §7 was impossible as written.
-
-The keyset read now fails **open on absence only**: a not-found installs an empty
-`JWTKeyCollection`, logs `critical` naming the command to run, and continues, so webhook
-authentication recognizes nobody while everything else works. Any other error — notably a 401,
-meaning `TAPIS_TOKEN` is wrong and every collection job would fail — still aborts the boot. Both
-paths are verified live and covered by tests.
-
-## Deferred — deliberately not doing
-
-- **CSP** — genuinely needs the Angular bundle's asset origins settled; a wrong policy breaks the
-  app rather than degrading it. The headers that depend on nothing (`nosniff`, `Referrer-Policy`,
-  `X-Frame-Options`, HSTS) already ship in `SecurityHeadersMiddleware`.
-- **Tapis `kid` routing / JWKS** — **not possible as Tapis is deployed.** Discovery works, but
-  `/v3/oauth2/.well-known/oauth-authorization-server` returns a `jwks_uri` pointing back at
-  `/v3/tenants/{tenant}`, which serves a single PEM rather than a key set. There is nothing to
-  route a `kid` against. Revisit only if Tapis starts publishing a real JWKS.
-- **Webhook token renewal** — tokens expire at 90 days and are replaced by minting a new one and
-  updating the deployment secret. Self-renewal is the tempting shortcut and the wrong one: a
-  leaked token that can renew itself never expires, which removes the only thing expiry buys.
-- **Angular SSR** — needs Node at runtime, so a second pod or Node in the runtime image. Worth
-  reconsidering now that the dashboard is public rather than authed: the original rationale ("no
-  SEO or cold-load pressure on an authed dashboard") no longer holds, even if the conclusion may.
-- **Response compression** — the K8s ingress may already handle it. Nobody has checked; this is
-  an open question rather than a decision.
-- **Finer rate limiting** — per-IP on `/api` and per-token on the webhook route are in. Per-route
-  budgets and burst allowances wait for evidence that the flat limits are wrong.
+**The scheduler's clocks are not asserted.** Jobs are driven directly through a test queue context.
+That the hourly and monthly registrations are wired correctly is verified by observation, not by a
+test.

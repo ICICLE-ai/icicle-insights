@@ -1,5 +1,12 @@
 # ICICLE Insights — Angular dashboard + admin portal
 
+> **This is a durable engineering record, not current documentation.** It tracks the Angular rebuild
+> phase by phase, with the reasoning behind each decision preserved — including the ones later
+> reversed. Append to it; do not rewrite it.
+>
+> For how things work today, read [`../docs/`](../docs/). For coding conventions, read
+> [AGENTS.md](AGENTS.md). For what is still outstanding, read [`../TODO.md`](../TODO.md).
+
 ## Context
 
 The Insights service (Swift/Vapor) currently ships a client-rendered Leaf dashboard

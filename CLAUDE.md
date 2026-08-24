@@ -1,33 +1,38 @@
 # ICICLE Insights — working notes
 
 Swift 6.3 / Vapor 4 service collecting open-source impact metrics into PostgreSQL, with Valkey
-queues, a public REST API, and a dashboard.
+queues, a public REST API, and an Angular 22 dashboard.
 
 ## Orientation
 
 | Read | When |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | System map, lifecycles, layout |
-| [docs/invariants.md](docs/invariants.md) | **Before changing behaviour** — rules that must stay true |
-| [docs/api-authentication.md](docs/api-authentication.md) | Auth, admins, webhook tokens, config |
-| [docs/testing.md](docs/testing.md) | What the suite covers, why it might not run |
-| [docs/decisions/](docs/decisions/) | Why something is the way it is, before changing it |
+| [docs/](docs/) | Documentation map, organised on Diátaxis |
+| [docs/explanation/architecture.md](docs/explanation/architecture.md) | System map, lifecycles, layout |
+| [docs/reference/invariants.md](docs/reference/invariants.md) | **Before changing behaviour** — rules that must stay true |
+| [docs/reference/http-api.md](docs/reference/http-api.md) | Routes and their guards |
+| [docs/explanation/authentication.md](docs/explanation/authentication.md) | Auth, admins, webhook tokens |
+| [docs/reference/test-suite.md](docs/reference/test-suite.md) | What the suite covers, why it might not run |
+| [docs/explanation/decisions/](docs/explanation/decisions/) | Why something is the way it is, before changing it |
+| [docs/how-to/set-up-the-dashboard-toolchain.md](docs/how-to/set-up-the-dashboard-toolchain.md) | Angular MCP server and the vendor `llms-full.txt` files |
 | [TODO.md](TODO.md) | Current state and what is left |
 
 ## Commands
 
 ```bash
-just run          # dev server, environment = development
+just              # list every recipe, grouped
+just run          # dev server
 just migrate
 just test         # serial, against the `test` database
-just fmt          # swift-format, run before committing
-just fmt-check
+just fmt          # run before committing
+just web          # Angular dev server on :4200
+just stack        # full local container stack
 ```
 
 ## Setup that bites
 
-- **`.env` must exist** or the whole suite fails in setup — `TapisConfig.fromEnvironment()` throws
-  inside `configure`. Copy `.env.example`.
+- **`.env` must exist** or the whole suite fails in setup — Tapis configuration is parsed inside
+  `configure`. Copy `.env.example`.
 - **`DATABASE_TLS=disable`** locally, or every connection fails `sslUnsupported`.
 - **Use the staging Tapis tenant for local work** (`icicleai.staging.tapis.io`). It is a separate
   vault, so `init-key` and the vault tests never touch production.
@@ -38,6 +43,8 @@ just fmt-check
   command line — that flag outranks the variable, so pinning it on one process is how a stack ends
   up with processes disagreeing about their own environment. Deployments set `production`; the
   local stacks set `development` in `.env.container` and `docker-compose.yml`.
+- **`just dns` is needed once per machine** before the first `just stack`, or containers cannot
+  resolve each other.
 
 ## Conventions
 
@@ -50,6 +57,20 @@ just fmt-check
 - `swift-format` is authoritative; `just fmt` before committing.
 - Errors that cross the API boundary conform to `AbortError` with a reason that excludes
   credentials.
+- **`docker-compose.yml` and `justfiles/apple-container.just` describe the same stack**, service for
+  service, with matching names. Change one and change the other.
+
+## Documentation
+
+Organised on Diátaxis under `docs/`: `tutorials/`, `how-to/`, `reference/`, `explanation/`.
+
+- **One mode per page.** A how-to states no rationale; it links to the explanation. Reference is
+  tables, not narrative.
+- Every page ends with a tag line carrying exactly one type tag (`#Tutorial#`, `#How-To#`,
+  `#Reference#`, `#Explanation#`) and at least one audience tag (`#Administrator#`, `#Developer#`).
+- Administrator means whoever runs a deployment, not an end user of the API.
+- Keep sentences short. The previous documentation was rewritten specifically because long
+  em-dash-chained sentences made it hard to follow.
 
 ## Invariants worth stating here
 
@@ -68,6 +89,8 @@ just fmt-check
   authentication and rides on `TapisUser.isAdmin`.
 - **Secrets never enter logs or the database.** `Secret` redacts description and reflection;
   `service_tokens` rows hold identifiers and metadata only.
+- **`withInsightsApp` must not be renamed.** `VaporTesting`'s generic `withApp` wins overload
+  resolution for a single-expression closure and hands the test an empty app.
 
 ## Things that only fail on a real boot
 
