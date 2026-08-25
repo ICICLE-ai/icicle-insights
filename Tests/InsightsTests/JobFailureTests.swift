@@ -196,7 +196,6 @@ struct JobFailureTests {
       let resource = try await makeDueRepo(on: app)
       resource.scheduleNextCollection()
       try await resource.save(on: app.db)
-      let scheduled = try #require(resource.nextCollectionAt)
 
       try await SyncGitHubRepoStats().error(
         queueContext(for: app),
@@ -205,9 +204,9 @@ struct JobFailureTests {
       )
 
       #expect(notifier.recorded.first?.severity == .warning)
-      let unchanged = try #require(
+      let rebooked = try #require(
         try await Resource.find(resource.id, on: app.db)?.nextCollectionAt)
-      #expect(abs(unchanged.timeIntervalSince(scheduled)) < 1)
+      #expect(abs(rebooked.timeIntervalSinceNow - 3600) < 60)
     }
   }
 
@@ -341,13 +340,15 @@ struct JobFailureTests {
   }
 
   @Test
-  func `A platform failure leaves the normal cadence alone`() async throws {
+  func `A platform failure re-books within the cap instead of costing an interval`() async throws {
     try await withInsightsApp { app in
       _ = stubNotifier(on: app)
       let resource = try await makeDueRepo(on: app)
+      // A week out is where the sweep left it — it advances the due date on dispatch, long before
+      // the job fails. Leaving it there is what let gaps compound past the retention window.
+      resource.lastCollectedAt = past(7)
       resource.scheduleNextCollection()
       try await resource.save(on: app.db)
-      let scheduled = try #require(resource.nextCollectionAt)
 
       try await SyncGitHubRepoStats().error(
         queueContext(for: app),
@@ -355,9 +356,31 @@ struct JobFailureTests {
         .init(id: try resource.requireID()),
       )
 
-      let unchanged = try #require(
+      let rebooked = try #require(
         try await Resource.find(resource.id, on: app.db)?.nextCollectionAt)
-      #expect(abs(unchanged.timeIntervalSince(scheduled)) < 1)
+      // Barely overdue, so the floor applies: the next hourly sweep, not next week.
+      #expect(abs(rebooked.timeIntervalSinceNow - 3600) < 60)
+    }
+  }
+
+  @Test
+  func `A long-failing resource backs off but stays inside the window`() async throws {
+    try await withInsightsApp { app in
+      _ = stubNotifier(on: app)
+      let resource = try await makeDueRepo(on: app)
+      // Nine days since the last success on a 7-day cadence: two days overdue, so the ceiling.
+      resource.lastCollectedAt = past(9)
+      try await resource.save(on: app.db)
+
+      try await SyncGitHubRepoStats().error(
+        queueContext(for: app),
+        JobError.apiRequestFailed(url: "https://api.github.com", statusCode: 503, message: nil),
+        .init(id: try resource.requireID()),
+      )
+
+      let rebooked = try #require(
+        try await Resource.find(resource.id, on: app.db)?.nextCollectionAt)
+      #expect(abs(rebooked.timeIntervalSinceNow - 12 * 3600) < 60)
     }
   }
 

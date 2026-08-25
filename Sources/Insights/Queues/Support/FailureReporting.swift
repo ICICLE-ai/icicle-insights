@@ -36,8 +36,10 @@ extension QueueContext {
     )
   }
 
-  /// Reports a resource sync that has exhausted its retries, and keeps a credential failure in
-  /// rotation so it recovers on its own once the token is repaired.
+  /// Reports a resource sync that has exhausted its retries, and re-books it so the failure costs
+  /// hours rather than the interval `CollectDueResources` already advanced it by at dispatch.
+  /// Credential failures retry hourly until the token is repaired; everything else backs off on
+  /// `CollectionSchedule`'s capped curve.
   func reportResourceSyncFailure(_ error: any Error, job: String, resourceID: UUID) async {
     let resource = try? await Resource.query(on: application.db)
       .filter(\.$id == resourceID)
@@ -61,20 +63,39 @@ extension QueueContext {
       accountID: resource?.$account.id
     )
 
-    guard error.isCredentialFailure, let resource else { return }
+    guard let resource else { return }
 
-    resource.nextCollectionAt = Date().addingTimeInterval(credentialRetryInterval)
+    let now = Date()
+    let retryAt: Date
+    if error.isCredentialFailure {
+      // Flat, and deliberately not escalating: the fix lands out of band and can land at any
+      // moment, so there is no point spacing attempts out. See `credentialRetryInterval`.
+      retryAt = now.addingTimeInterval(credentialRetryInterval)
+    } else {
+      // Everything else used to fall out here without re-booking, which meant the sweep's
+      // dispatch-time advance stood: one failure cost a full interval, two put a GitHub resource
+      // past its 14-day traffic window, and the days in between were gone for good.
+      let overdue = CollectionSchedule.overdue(
+        now: now,
+        lastSuccess: resource.lastCollectedAt,
+        createdAt: resource.createdAt,
+        intervalDays: resource.collectionIntervalDays,
+      )
+      retryAt = now.addingTimeInterval(CollectionSchedule.retryDelay(overdueBy: overdue))
+    }
+
+    resource.nextCollectionAt = retryAt
     do {
       try await resource.save(on: application.db)
       logger.notice(
-        "Credential failure; resource re-booked for the next hourly sweep",
-        metadata: metadata
+        "Resource re-booked after a failed collection",
+        metadata: metadata.merging(["retry_at": .string("\(retryAt)")]) { _, new in new }
       )
     } catch {
       // The alert has already gone out, so the operator still knows. Losing the rebooking only
       // costs the automatic recovery, which is why this is reported rather than retried.
       logger.error(
-        "Could not re-book the resource after a credential failure",
+        "Could not re-book the resource after a failed collection",
         metadata: metadata.merging(["error": .string(String(reflecting: error))]) { _, new in new }
       )
     }
