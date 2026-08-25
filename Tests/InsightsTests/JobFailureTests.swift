@@ -381,4 +381,47 @@ struct JobFailureTests {
       #expect(persisted.$resource.id == nil)
     }
   }
+
+  // MARK: - Backoff policy
+
+  @Test
+  func `Backoff starts at an hour and never dips below it`() {
+    // A resource failing right on schedule is barely overdue; retry on the next sweep.
+    #expect(CollectionSchedule.retryDelay(overdueBy: 0) == 3600)
+    #expect(CollectionSchedule.retryDelay(overdueBy: -86_400) == 3600)
+    #expect(CollectionSchedule.retryDelay(overdueBy: 3600) == 3600)
+  }
+
+  @Test
+  func `Backoff grows with how overdue the resource is, then caps`() {
+    // A quarter of the overdue time: gentle enough that the first day keeps retrying hourly,
+    // steep enough to reach the ceiling after roughly two days of continuous failure.
+    #expect(CollectionSchedule.retryDelay(overdueBy: 8 * 3600) == 2 * 3600)
+    #expect(CollectionSchedule.retryDelay(overdueBy: 24 * 3600) == 6 * 3600)
+
+    // The cap has to stay far inside `retention - interval` (7 days at GitHub's cap), or the
+    // policy itself would be what loses the data.
+    #expect(CollectionSchedule.retryDelay(overdueBy: 2 * 86_400) == 12 * 3600)
+    #expect(CollectionSchedule.retryDelay(overdueBy: 60 * 86_400) == 12 * 3600)
+  }
+
+  @Test
+  func `Overdue time is measured from the last success, not the last attempt`() {
+    let now = Date()
+    let lastWeek = now.addingTimeInterval(-7 * 86_400)
+
+    // Succeeded 7 days ago on a 7-day cadence: due now, not yet overdue.
+    #expect(
+      abs(
+        CollectionSchedule.overdue(
+          now: now, lastSuccess: lastWeek, createdAt: lastWeek, intervalDays: 7)) < 1)
+
+    // Never succeeded: createdAt is the anchor, so a resource created 10 days ago on a 7-day
+    // cadence is 3 days overdue rather than indefinitely patient.
+    let tenDaysAgo = now.addingTimeInterval(-10 * 86_400)
+    #expect(
+      abs(
+        CollectionSchedule.overdue(
+          now: now, lastSuccess: nil, createdAt: tenDaysAgo, intervalDays: 7) - 3 * 86_400) < 1)
+  }
 }
