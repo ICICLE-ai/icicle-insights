@@ -22,6 +22,28 @@ across 110 resources under 5 accounts.
 
 ## Open
 
+### Finish the documentation pass
+
+The Diátaxis rewrite landed in `8059515`. 43 pages under `docs/`, all links resolving, all tags
+well formed, every route and guard checked against the live deployment's OpenAPI document. What
+remains is verification that needed a running system, not writing.
+
+**Walk the console against the docs.** The console pages were written from the Angular components,
+not from the running UI. That shortcut is what let four wrong claims through the first time, and
+one of them — the vault credential form having a name field it does not have — survived until a
+human spotted it. Sign in and check each screen and form against
+[docs/reference/admin-console.md](docs/reference/admin-console.md) and the administrator how-tos.
+
+**Run the stack end to end.** `just build` is verified, as are `db`, `valkey`, `stop` and the
+recreate path. `just stack` and `just test` have never been run in the `docs` worktree, which has
+no `.env`. Copy one from a checkout that has it — do not copy the main one wholesale, the container
+stack expects local database values — and confirm the tutorials work as written.
+
+**Then push and open the PR.** Six commits sit unpushed on the `docs` branch.
+
+Conventions for any new page are in [CLAUDE.md](CLAUDE.md) under Documentation. Follow them for
+docs written alongside other work, so the set stays consistent while this is unfinished.
+
 ### Verify the production signing keyset
 
 `service-token init-key` must have run against the **production** vault, not just staging — they

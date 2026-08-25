@@ -62,15 +62,47 @@ just stack        # full local container stack
 
 ## Documentation
 
-Organised on Diátaxis under `docs/`: `tutorials/`, `how-to/`, `reference/`, `explanation/`.
+**Ship docs with the change.** Do not leave a feature undocumented for later.
+
+Organised on Diátaxis under `docs/`. Every page lives in one of four directories, and **nothing
+goes at the repository root** — no stray `FEATURE.md`, no notes file beside the code.
+
+| Directory | Holds | Shape |
+|---|---|---|
+| `tutorials/` | a guided path start to finish | narrative, with checkpoints |
+| `how-to/` | one goal, for someone who knows what they want | numbered steps, verbs first |
+| `reference/` | facts to look up | tables, not prose |
+| `explanation/` | why it is built this way | prose, subheads every ~10 lines |
+
+Add the page to the index table in [docs/README.md](docs/README.md) in the same change.
+
+### The rules
 
 - **One mode per page.** A how-to states no rationale; it links to the explanation. Reference is
-  tables, not narrative.
-- Every page ends with a tag line carrying exactly one type tag (`#Tutorial#`, `#How-To#`,
-  `#Reference#`, `#Explanation#`) and at least one audience tag (`#Administrator#`, `#Developer#`).
-- Administrator means whoever runs a deployment, not an end user of the API.
-- Keep sentences short. The previous documentation was rewritten specifically because long
-  em-dash-chained sentences made it hard to follow.
+  tables, not narrative. If a page starts doing two jobs, split it.
+- **Verify every claim against the code**, never against another doc. Read the controller, the
+  component, the migration. A rewrite once carried four wrong claims forward this way: a form
+  field that does not exist, CORS attributed to the wrong layer, a fixed expiry that is actually
+  configurable, and two environment variables that are defined nowhere in this repository.
+- **Do not document a UI flow you have not seen run.** Say so in `TODO.md` if you cannot.
+- Every page ends with a tag line: exactly one type tag (`#Tutorial#`, `#How-To#`, `#Reference#`,
+  `#Explanation#`) and at least one audience tag (`#Administrator#`, `#Developer#`).
+
+```
+#icicle-insights# #How-To# #Administrator# #Developer# #deployment#
+```
+
+- **Administrator** runs a deployment; **Developer** changes the code. Console and access tasks are
+  Administrator. Anything done from a terminal, or that touches the deployment, is both.
+- Open every page with one line saying what it is and who it is for.
+- Keep sentences under about 25 words, and avoid chains of em-dash clauses. The previous
+  documentation was replaced specifically because that style made it hard to follow.
+- Code blocks are complete and copy-pasteable. At most one diagram per page.
+- Budgets: how-to 30–50 lines, explanation 60–100, tutorial 80–120. Reference is as long as its
+  tables need.
+
+Screenshots live in `assets/screenshots/`, 1440×900 at 2× device scale, light theme. **Substitute
+real usernames for placeholders before capture** — this repository is public.
 
 ## Invariants worth stating here
 
