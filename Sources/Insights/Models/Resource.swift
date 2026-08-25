@@ -40,6 +40,18 @@ final class Resource: Model, @unchecked Sendable {
   @Field(key: "collection_interval_days")
   var collectionIntervalDays: Int
 
+  /// When a collection last *succeeded*. The gap between successes is what the provider's
+  /// retention window governs, so this — not `nextCollectionAt` — is what the backoff and the
+  /// data-loss guard measure from. Nil until the first success; callers fall back to `createdAt`.
+  @OptionalField(key: "last_collected_at")
+  var lastCollectedAt: Date?
+
+  /// When this resource's retention-window alert last fired, cleared on the next success.
+  /// Without it the alert would repeat on every failure for the rest of the outage, which is
+  /// exactly the noise the capped backoff exists to avoid.
+  @OptionalField(key: "stall_notified_at")
+  var stallNotifiedAt: Date?
+
   @Children(for: \.$resource)
   /// Time-series and materialized total readings for this resource.
   var metrics: [Metric]
@@ -67,6 +79,8 @@ final class Resource: Model, @unchecked Sendable {
     accountID: Account.IDValue,
     nextCollectionAt: Date? = nil,
     collectionIntervalDays: Int = Resource.defaultCollectionIntervalDays,
+    lastCollectedAt: Date? = nil,
+    stallNotifiedAt: Date? = nil,
     createdAt: Date? = nil,
     updatedAt: Date? = nil,
     deletedAt: Date? = nil,
@@ -77,6 +91,8 @@ final class Resource: Model, @unchecked Sendable {
     $account.id = accountID
     self.nextCollectionAt = nextCollectionAt
     self.collectionIntervalDays = collectionIntervalDays
+    self.lastCollectedAt = lastCollectedAt
+    self.stallNotifiedAt = stallNotifiedAt
     self.createdAt = createdAt
     self.updatedAt = updatedAt
     self.deletedAt = deletedAt

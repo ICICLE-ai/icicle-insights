@@ -29,6 +29,29 @@ struct JobFailureTests {
       nextCollectionAt: past(1))
   }
 
+  // MARK: - Scheduling state
+
+  @Test
+  func `A resource carries nullable collection-history fields`() async throws {
+    try await withInsightsApp { app in
+      let resource = try await makeDueRepo(on: app)
+
+      // Nil on a fresh row: nothing has collected it yet, and the backoff anchors on createdAt
+      // until something does.
+      #expect(resource.lastCollectedAt == nil)
+      #expect(resource.stallNotifiedAt == nil)
+
+      let stamped = Date()
+      resource.lastCollectedAt = stamped
+      resource.stallNotifiedAt = stamped
+      try await resource.save(on: app.db)
+
+      let reloaded = try #require(try await Resource.find(resource.id, on: app.db))
+      #expect(abs(try #require(reloaded.lastCollectedAt).timeIntervalSince(stamped)) < 1)
+      #expect(abs(try #require(reloaded.stallNotifiedAt).timeIntervalSince(stamped)) < 1)
+    }
+  }
+
   // MARK: - Classification
 
   @Test
