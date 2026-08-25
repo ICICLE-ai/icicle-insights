@@ -995,20 +995,37 @@ for platforms reporting a lifetime total, which cannot lose data this way."
 
 ### Task 7: End-to-end proof and documentation
 
-Proves the reported scenario is fixed, and updates every document that describes the old behaviour.
+Proves the reported scenario is fixed, and updates every document the change makes wrong.
+
+**Retargeted after the `main` merge (1d9e891).** The flat `docs/*.md` pages this task originally
+named no longer exist — `main` restructured the documentation onto Diátaxis. Every path below is
+the current one, verified against the tree. Do not recreate a deleted flat page.
 
 **Files:**
 - Test: `Tests/InsightsTests/MetricAllTimeTests.swift`
-- Modify: `docs/invariants.md:17-18` and the Metrics section
-- Modify: `CLAUDE.md` (invariants section)
-- Modify: `docs/collection.md` (Scheduling section)
-- Modify: `docs/watermarks.md` (Watermark versus schedule section)
-- Modify: `docs/decisions/005-failure-alerting.md`
-- Create: `docs/decisions/008-collection-backoff.md`
+- Modify: `docs/reference/invariants.md` (Queues and scheduling table; Metrics table)
+- Modify: `CLAUDE.md` ("Invariants worth stating here")
+- Modify: `docs/reference/collection-schedule.md` (scheduling facts)
+- Modify: `docs/explanation/watermarks.md` (the field-versus-question table, ~line 66)
+- Modify: `docs/explanation/decisions/005-failure-alerting.md`
+- Create: `docs/explanation/decisions/008-collection-backoff.md`
+- Modify: `docs/explanation/decisions/README.md` (index table)
+- Modify: `docs/README.md` (line ~82 says "Seven architecture decision records")
 
 **Interfaces:**
 - Consumes: everything from Tasks 1–6.
 - Produces: no code API.
+
+**Documentation contract — binding, from `CLAUDE.md`:**
+- **One mode per page.** `reference/` is tables, not narrative. `explanation/` is prose. A how-to
+  states no rationale. Do not add paragraphs of reasoning to a reference page — put them in the ADR
+  and link.
+- **Verify every claim against the code**, never against another doc.
+- Every page ends with a tag line: exactly one type tag (`#Tutorial#`, `#How-To#`, `#Reference#`,
+  `#Explanation#`) and at least one audience tag (`#Administrator#`, `#Developer#`).
+- Any new page joins the index table in `docs/README.md` in the same change. A new ADR also joins
+  the table in `docs/explanation/decisions/README.md`.
+- `docs/superpowers/` is explicitly exempt from the placement rule. Leave plans and specs alone.
 
 - [ ] **Step 1: Write the scenario test**
 
@@ -1059,35 +1076,29 @@ func `Two consecutive failures keep the gap inside the retention window`() async
 - [ ] **Step 2: Run it to verify it passes**
 
 Run: `swift test --no-parallel --filter "MetricAllTimeTests"`
-Expected: PASS. (This test verifies the finished behaviour rather than driving new code — Tasks 1–6 already implement it.)
+Expected: PASS, with a non-zero test count. This test verifies finished behaviour rather than
+driving new code — Tasks 1–6 already implement it.
 
-- [ ] **Step 3: Update the invariants**
+- [ ] **Step 3: Update the invariants reference**
 
-In `docs/invariants.md`, under "Queues and scheduling", replace the credential re-booking bullet with:
+`docs/reference/invariants.md` uses **tables**, not bullets. In the "Queues and scheduling" table,
+replace the credential re-booking row with these two:
 
 ```markdown
-- Every exhausted resource failure re-books its resource. A credential failure re-books inside the
-  sweep interval, so a repaired token resumes collection without an operator forcing a backfill;
-  every other failure re-books on a capped backoff. Neither may leave the resource on the
-  full-interval due date the sweep set at dispatch — that is how gaps compound past a retention
-  window.
-- The failure backoff ceiling must stay well inside `retentionWindowDays - maxCollectionIntervalDays`.
-  The policy must never itself be the reason a day ages out.
+| Every exhausted resource failure re-books its resource | The sweep's dispatch-time due date stands, so one failure costs a full cadence and gaps compound past the retention window |
+| The failure backoff ceiling stays well inside `retentionWindowDays - maxCollectionIntervalDays` | The retry policy itself becomes the cause of a lost day |
 ```
 
-Under "Metrics", replace the retention bullet with:
+In the "Metrics" table, replace the cadence row with:
 
 ```markdown
-- Collection intervals must not exceed provider retention windows, and must leave headroom for a
-  missed collection: `maxCollectionIntervalDays` is at most half `retentionWindowDays` where a
-  window exists. Expired days cannot be reconstructed by a watermark.
-- A gap between successes that passes the provider's retention window raises
-  `collection_window_exceeded`, once per outage. Data loss is reported, never silent.
+| Cadence stays at most half the platform's retention window | No headroom for a missed collection: one delayed sweep ages days out |
+| A gap past the retention window raises `collection_window_exceeded`, once per outage | Data loss stays silent |
 ```
 
 - [ ] **Step 4: Update CLAUDE.md**
 
-In the "Invariants worth stating here" section, after the "Jobs must be retry-safe" bullet:
+In "Invariants worth stating here", after the "Jobs must be retry-safe" bullet:
 
 ```markdown
 - **Failures re-book, they do not skip.** `CollectDueResources` advances `nextCollectionAt` at
@@ -1095,41 +1106,46 @@ In the "Invariants worth stating here" section, after the "Jobs must be retry-sa
   failures put a resource past its provider's retention window and the gap days are gone.
 ```
 
-- [ ] **Step 5: Update collection.md**
+- [ ] **Step 5: Update the collection-schedule reference**
 
-In `docs/collection.md`, in the "Scheduling" section, after the `CollectDueResources` bullet:
+`docs/reference/collection-schedule.md` is a reference page: state the facts, do not explain them.
+Add to the scheduling section:
 
 ```markdown
-- The dispatch-time advance is a **lease**, not the schedule. A successful sync re-books from the
-  moment it completed and stamps `Resource.lastCollectedAt`; an exhausted failure re-books on
-  `CollectionSchedule`'s capped backoff — 1h to 12h, scaled to how overdue the resource is.
-- `Resource.lastCollectedAt` is what the retention guarantee is measured against. `nextCollectionAt`
-  says when to try; `lastCollectedAt` says when it last worked.
+| State | Question it answers |
+|---|---|
+| `next_collection_at` | When may this be dispatched again |
+| `last_collected_at` | When did a collection last succeed |
+| `collection_interval_days` | Spacing booked after a success |
+
+The dispatch-time advance is a lease, not the schedule. A successful sync re-books from the moment
+it completed; an exhausted failure re-books on a capped backoff of 1 to 12 hours, scaled to how
+overdue the resource is. See [ADR 008](../explanation/decisions/008-collection-backoff.md).
 ```
 
-- [ ] **Step 6: Update watermarks.md**
+- [ ] **Step 6: Update the watermarks explanation**
 
-In `docs/watermarks.md`, add a row to the "Watermark versus schedule" table:
+In `docs/explanation/watermarks.md`, the field-versus-question table (~line 66) gains a row:
 
 ```markdown
-| `Resource.lastCollectedAt` | When did a collection last succeed? | Resource |
+| `lastCollectedAt` | When did a collection last succeed? |
 ```
 
 - [ ] **Step 7: Amend ADR 005**
 
-In `docs/decisions/005-failure-alerting.md`, replace the "Re-booking is the part that matters operationally" paragraph with:
+In `docs/explanation/decisions/005-failure-alerting.md`, amend the paragraph rationalising the
+dispatch-time advance so it points forward. A record is history — correct the fact and supersede,
+do not delete the decision:
 
 ```markdown
-Re-booking is the part that matters operationally. `CollectDueResources` advances
-`nextCollectionAt` when it dispatches rather than when the job succeeds, so a failure that does not
-re-book removes a resource from collection for a full interval. Credential failures were re-booked
-hourly from the start; every other failure was not, which
+Credential failures were re-booked hourly from the start; every other failure was not, which
 [ADR 008](008-collection-backoff.md) corrects.
 ```
 
 - [ ] **Step 8: Write ADR 008**
 
-Create `docs/decisions/008-collection-backoff.md`:
+Create `docs/explanation/decisions/008-collection-backoff.md`. Match the house style of 004 and
+005 — situation, decision, what it costs — and end with a tag line:
 
 ```markdown
 # ADR 008: Bounded backoff for failed collections
@@ -1157,19 +1173,35 @@ Hugging Face is exempt from the guard. The Hub reports `downloadsAllTime` and `M
 assigns it, so a late sweep costs series density and nothing permanent. Only GitHub's watermark-
 folded `clones` and `views` accumulate day by day and can age out.
 
-#icicle-insights# #architecture-decision# #queues# #data-integrity# #collection#
+#icicle-insights# #Explanation# #Developer# #decisions# #collection#
 ```
 
-- [ ] **Step 9: Verify docs and run the full suite**
+- [ ] **Step 9: Register the new record in both indexes**
+
+In `docs/explanation/decisions/README.md`, add to the table:
+
+```markdown
+| [008](008-collection-backoff.md) | Failed collections back off, bounded | Accepted |
+```
+
+In `docs/README.md`, the decisions row says "Seven architecture decision records". Make it eight.
+
+- [ ] **Step 10: Verify**
 
 ```bash
-grep -rn "collection_window_exceeded\|lastCollectedAt\|CollectionSchedule" docs CLAUDE.md
 just test
 ```
 
-Expected: the new terms appear in the documents listed above, and all tests pass.
+Then confirm the documentation holds together:
 
-- [ ] **Step 10: Commit**
+```bash
+grep -rn "collection_window_exceeded\|lastCollectedAt\|CollectionSchedule" docs CLAUDE.md
+```
+
+Check that every relative link in the pages you touched resolves, that each page still ends with
+its tag line, and that no page you edited now states the cadence cap equals the retention window.
+
+- [ ] **Step 11: Commit**
 
 ```bash
 just fmt
@@ -1186,6 +1218,7 @@ does not skip."
 ```
 
 ---
+
 
 ## Self-Review
 
