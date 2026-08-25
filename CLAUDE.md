@@ -64,8 +64,11 @@ just stack        # full local container stack
 
 **Ship docs with the change.** Do not leave a feature undocumented for later.
 
-Organised on Diátaxis under `docs/`. Every page lives in one of four directories, and **nothing
-goes at the repository root** — no stray `FEATURE.md`, no notes file beside the code.
+Organised on Diátaxis under `docs/`. Every **reader-facing** page lives in one of four
+directories, and none goes at the repository root — no stray `FEATURE.md` beside the code.
+
+Working artifacts are not reader docs and this does not apply to them. Plans, specs and design
+notes may live wherever the workflow that produces them puts them.
 
 | Directory | Holds | Shape |
 |---|---|---|
