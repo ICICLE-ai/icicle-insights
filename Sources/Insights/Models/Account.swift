@@ -7,13 +7,31 @@ import struct Foundation.UUID
 enum Platform: String, Codable, CaseIterable {
   case github, ghcr, huggingface, npm, pypi
 
-  /// Longest interval that still loses no days: GitHub's traffic endpoints retain 14, the Hub
-  /// reports downloads over a trailing 30. Sweep slower and the gap days age out unrecoverably.
+  /// Longest cadence the API accepts for this platform.
+  ///
+  /// Not the same as the retention window, and deliberately shorter than it where one exists: a
+  /// cadence equal to the window leaves no headroom, so a single delayed sweep loses days. GitHub
+  /// is capped at half its 14-day window, which is room for one missed collection plus the
+  /// failure backoff. The Hub has no window to lose against, so its limit is about series
+  /// density rather than correctness.
   var maxCollectionIntervalDays: Int {
     switch self {
-    case .github: 14
+    case .github: 7
     case .huggingface: 30
     case .ghcr, .npm, .pypi: 30
+    }
+  }
+
+  /// How far back the provider still returns daily values, when its metrics are rolling windows
+  /// folded through a watermark.
+  ///
+  /// Nil means this platform cannot lose data to a window at all. The Hub reports
+  /// `downloadsAllTime` itself and `Metric.setAllTime` assigns it, so a late sweep costs nothing
+  /// permanently; only GitHub's `clones` and `views` are accumulated day by day and age out.
+  var retentionWindowDays: Int? {
+    switch self {
+    case .github: 14
+    case .ghcr, .huggingface, .npm, .pypi: nil
     }
   }
 }
