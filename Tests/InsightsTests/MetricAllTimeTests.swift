@@ -204,4 +204,44 @@ struct MetricAllTimeTests {
       #expect(totals.first?.reading == 1200)
     }
   }
+
+  /// The exact case from the defect report: at the default cadence, two consecutive failures used
+  /// to push the next successful collection to day 21, past GitHub's 14-day traffic window, and
+  /// days 1-6 appeared in no response that was ever folded.
+  @Test
+  func `Two consecutive failures keep the gap inside the retention window`() async throws {
+    try await withInsightsApp { app in
+      _ = stubNotifier(on: app)
+      let account = try await makeAccount(on: app.db, name: "icicle-ai", platform: .github)
+      let accountID = try account.requireID()
+      _ = try await makeVault(on: app.db, accountID: accountID)
+      let resource = try await makeResource(
+        on: app.db, accountID: accountID, name: "insights", type: .repository,
+        collectionIntervalDays: 7)
+
+      // Day 0: a success, seven days ago.
+      let daysAgo = { (d: Double) in Date().addingTimeInterval(-d * 86_400) }
+      resource.lastCollectedAt = daysAgo(7)
+      resource.scheduleNextCollection(from: daysAgo(7))
+      try await resource.save(on: app.db)
+
+      // Day 7 and again shortly after: two exhausted failures.
+      for _ in 0..<2 {
+        try await SyncGitHubRepoStats().error(
+          queueContext(for: app),
+          JobError.apiRequestFailed(url: "https://api.github.com", statusCode: 503, message: nil),
+          .init(id: try resource.requireID()),
+        )
+      }
+
+      let settled = try #require(try await Resource.find(resource.id, on: app.db))
+      let nextAttempt = try #require(settled.nextCollectionAt)
+      let gapAtNextAttempt = nextAttempt.timeIntervalSince(daysAgo(7))
+
+      // The whole point: the next attempt still lands inside the window, so a response then still
+      // reaches back to day 0 and nothing has aged out. Before this it was day 21.
+      #expect(gapAtNextAttempt < 14 * 86_400)
+      #expect(settled.stallNotifiedAt == nil)
+    }
+  }
 }

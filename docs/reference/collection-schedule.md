@@ -78,4 +78,14 @@ repaired token resumes collection unattended and the alert repeats until it is f
 Changing a resource's cadence does not make it due. It sets the spacing applied after the next
 successful collection.
 
+| State | Question it answers |
+|---|---|
+| `next_collection_at` | When may this be dispatched again |
+| `last_collected_at` | When did a collection last succeed |
+| `collection_interval_days` | Spacing booked after a success |
+
+The dispatch-time advance is a lease, not the schedule. A successful sync re-books from the moment
+it completed; an exhausted failure re-books on a capped backoff of 1 to 12 hours, scaled to how
+overdue the resource is. See [ADR 008](../explanation/decisions/008-collection-backoff.md).
+
 #icicle-insights# #Reference# #Administrator# #Developer# #collection#

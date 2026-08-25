@@ -66,6 +66,7 @@ Two fields answer two different questions.
 | Field | Question |
 |---|---|
 | `nextCollectionAt` | When should this be fetched again? |
+| `lastCollectedAt` | When did a collection last succeed? |
 | `countedThrough` | Which completed days are already included? |
 
 Keeping them separate is what lets a late sweep resume exactly where the last one stopped. Fuse

@@ -29,7 +29,8 @@ default.
 Re-booking is the part that matters operationally. The due date advances at dispatch, not on
 success, so without intervention a credential failure would remove a resource from collection for a
 full interval. Re-booking it about an hour out keeps the failure visible and lets a repaired token
-resume collection unattended.
+resume collection unattended. Credential failures were re-booked hourly from the start; every other
+failure was not, which [ADR 008](008-collection-backoff.md) corrects.
 
 The same alert therefore repeats hourly until the credential is fixed. That is intended, not a bug.
 
