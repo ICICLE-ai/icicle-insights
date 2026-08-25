@@ -84,6 +84,9 @@ extension QueueContext {
       retryAt = now.addingTimeInterval(CollectionSchedule.retryDelay(overdueBy: overdue))
     }
 
+    await noteRetentionWindowBreach(
+      resource, now: now, job: job, subject: subject ?? resourceID.uuidString, metadata: metadata)
+
     resource.nextCollectionAt = retryAt
     do {
       try await resource.save(on: application.db)
@@ -169,14 +172,41 @@ extension QueueContext {
     resourceID: UUID? = nil,
     accountID: UUID? = nil
   ) async {
+    await persistFailure(
+      job: job,
+      subject: subject,
+      identifier: error.alertIdentifier,
+      details: error.alertDetails,
+      severity: error.isCredentialFailure ? "critical" : "warning",
+      resourceID: resourceID,
+      accountID: accountID,
+    )
+  }
+
+  /// Persists one row of operational history from values rather than an error.
+  ///
+  /// The retention-window breach is a condition, not a thrown error — there is no `Error` to
+  /// classify — but it belongs in the same history the admin console reads.
+  ///
+  /// This must never throw. QueueWorker awaits the job's error callback before clearing the job;
+  /// propagating a database failure from here strands the failed job and can stop the worker.
+  private func persistFailure(
+    job: String,
+    subject: String,
+    identifier: String,
+    details: String,
+    severity: String,
+    resourceID: UUID? = nil,
+    accountID: UUID? = nil
+  ) async {
     let failure = JobFailure(
       resourceID: resourceID,
       accountID: accountID,
       job: job,
       subject: subject,
-      identifier: error.alertIdentifier,
-      details: error.alertDetails,
-      severity: error.isCredentialFailure ? "critical" : "warning"
+      identifier: identifier,
+      details: details,
+      severity: severity
     )
 
     do {
@@ -191,6 +221,69 @@ extension QueueContext {
         ]
       )
     }
+  }
+
+  /// Alerts, once per outage, when a resource's gap since its last success has passed the window
+  /// its provider still serves.
+  ///
+  /// This is the only place that reports data as *lost* rather than delayed. Every other failure
+  /// says an attempt did not work; this one says the days in the gap are no longer obtainable
+  /// from the provider and no watermark can reconstruct them.
+  ///
+  /// Mutates `stallNotifiedAt` on the passed resource without saving — the caller saves once,
+  /// with the re-booking, so a breach and its backoff land in the same write.
+  private func noteRetentionWindowBreach(
+    _ resource: Resource,
+    now: Date,
+    job: String,
+    subject: String,
+    metadata: Logger.Metadata
+  ) async {
+    // Nil means the platform cannot lose data to a window at all — the Hub reports its lifetime
+    // total outright, so a late sweep costs series density and nothing permanent.
+    guard let windowDays = resource.account.platform.retentionWindowDays,
+      resource.stallNotifiedAt == nil
+    else { return }
+
+    let anchor = resource.lastCollectedAt ?? resource.createdAt ?? now
+    let gap = now.timeIntervalSince(anchor)
+    guard gap > Double(windowDays) * 86_400 else { return }
+
+    let gapDays = Int(gap / 86_400)
+    let details = """
+      No collection has succeeded for \(gapDays) days, past the \(windowDays)-day window \
+      \(resource.account.platform.rawValue) still serves. Daily values older than that window are \
+      no longer returned and cannot be recovered — the all-time total for this resource is now \
+      permanently short by the days in the gap.
+      Check this account's token and the platform's status. Collection resumes on its own once a \
+      sweep succeeds; the missing days will not come back.
+      """
+
+    logger.critical(
+      "Collection gap has passed the provider's retention window",
+      metadata: metadata.merging([
+        "gap_days": .string("\(gapDays)"), "window_days": .string("\(windowDays)"),
+      ]) { _, new in new }
+    )
+    await application.notifier.notify(
+      FailureAlert(
+        severity: .critical,
+        job: job,
+        subject: subject,
+        identifier: "collection_window_exceeded",
+        details: details,
+      ))
+    await persistFailure(
+      job: job,
+      subject: subject,
+      identifier: "collection_window_exceeded",
+      details: details,
+      severity: "critical",
+      resourceID: resource.id,
+      accountID: resource.$account.id,
+    )
+
+    resource.stallNotifiedAt = now
   }
 }
 

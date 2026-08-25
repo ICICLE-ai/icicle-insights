@@ -414,6 +414,68 @@ struct JobFailureTests {
     }
   }
 
+  // MARK: - Retention window
+
+  @Test
+  func `Passing the retention window raises its own alert, once`() async throws {
+    try await withInsightsApp { app in
+      let notifier = stubNotifier(on: app)
+      let resource = try await makeDueRepo(on: app)
+      // 20 days since the last success, against GitHub's 14-day traffic window: days have already
+      // aged out and cannot be reconstructed by any watermark.
+      resource.lastCollectedAt = past(20)
+      try await resource.save(on: app.db)
+
+      try await SyncGitHubRepoStats().error(
+        queueContext(for: app),
+        JobError.apiRequestFailed(url: "https://api.github.com", statusCode: 503, message: nil),
+        .init(id: try resource.requireID()),
+      )
+
+      let breach = try #require(
+        notifier.recorded.first { $0.identifier == "collection_window_exceeded" })
+      #expect(breach.severity == .critical)
+      #expect(breach.subject == "icicle-ai/insights")
+      #expect(breach.details.contains("cannot be recovered"))
+
+      let stamped = try #require(try await Resource.find(resource.id, on: app.db))
+      #expect(stamped.stallNotifiedAt != nil)
+
+      // Second failure in the same outage: the underlying error still alerts, the breach does not
+      // repeat. The capped backoff already spaces those out; repeating this one would double it.
+      try await SyncGitHubRepoStats().error(
+        queueContext(for: app),
+        JobError.apiRequestFailed(url: "https://api.github.com", statusCode: 503, message: nil),
+        .init(id: try resource.requireID()),
+      )
+      #expect(notifier.recorded.filter { $0.identifier == "collection_window_exceeded" }.count == 1)
+    }
+  }
+
+  @Test
+  func `The Hub never raises a data-loss alert`() async throws {
+    try await withInsightsApp { app in
+      let notifier = stubNotifier(on: app)
+      let account = try await makeAccount(on: app.db, name: "icicle", platform: .huggingface)
+      let accountID = try account.requireID()
+      _ = try await makeVault(on: app.db, accountID: accountID)
+      let resource = try await makeResource(
+        on: app.db, accountID: accountID, name: "insights", type: .model)
+      // Far past any window, and still not a loss: the Hub reports downloadsAllTime outright, so
+      // the next successful sweep restores the correct total.
+      resource.lastCollectedAt = past(90)
+      try await resource.save(on: app.db)
+
+      try await SyncHuggingFaceHubStats().error(
+        queueContext(for: app),
+        JobError.apiRequestFailed(url: "https://huggingface.co", statusCode: 503, message: nil),
+        .init(id: try resource.requireID()),
+      )
+
+      #expect(!notifier.recorded.contains { $0.identifier == "collection_window_exceeded" })
+    }
+  }
+
   // MARK: - Account jobs
 
   @Test
