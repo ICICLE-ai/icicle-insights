@@ -51,7 +51,7 @@ enum CollectionSchedule {
   /// A quarter of the overdue time, clamped. Front-loaded on purpose: early attempts can still
   /// recover every day in the window, so they are worth making often, while attempts made after
   /// days of failure are recovering less and less and are not worth alerting about as often.
-  /// Retries stay hourly for roughly the first eight hours and reach the ceiling after about two
+  /// Retries stay hourly for roughly the first four hours and reach the ceiling after about two
   /// days.
   ///
   /// - Parameter overdue: Seconds past due, from ``overdue(now:lastSuccess:createdAt:intervalDays:)``.
