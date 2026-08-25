@@ -5,9 +5,9 @@ Organised on [Diátaxis](https://diataxis.fr/). Four kinds of page, two audience
 **Administrator** — you run a deployment. You use the console, the CLI, and the environment.
 **Developer** — you change the code.
 
-| | Learning | Doing | Looking up | Understanding |
-|---|---|---|---|---|
-| | Tutorial | How-to | Reference | Explanation |
+| Learning | Doing | Looking up | Understanding |
+|---|---|---|---|
+| Tutorial | How-to | Reference | Explanation |
 
 ## Start here
 
