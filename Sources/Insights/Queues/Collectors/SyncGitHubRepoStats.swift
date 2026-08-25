@@ -133,6 +133,11 @@ struct SyncGitHubRepoStats: AsyncJob, BackoffRetrying {
         days: traffic.days
       )
     }
+
+    // Last, and only on the happy path: every fetch and both folds have to have succeeded before
+    // this counts as a collection. A partial sweep must leave the schedule alone so the failure
+    // handler can book a backoff instead.
+    try await resource.recordSuccessfulCollection(on: context.application.db)
   }
 
   /// Fetches the repository snapshot using the supplied GitHub bearer token.

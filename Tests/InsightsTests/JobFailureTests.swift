@@ -53,6 +53,41 @@ struct JobFailureTests {
     }
   }
 
+  @Test
+  func `A successful sweep anchors the schedule on the success`() async throws {
+    try await withQueueApp { app in
+      let resource = try await makeDueRepo(on: app)
+      // Left over from a previous outage: a success has to clear it, or the data-loss alert
+      // would stay suppressed through the next one.
+      resource.stallNotifiedAt = Date().addingTimeInterval(-86_400)
+      try await resource.save(on: app.db)
+
+      stubAPI(
+        on: app,
+        [
+          .ok(
+            "/repos/icicle-ai/insights",
+            #"{"stargazers_count": 1, "forks_count": 1, "subscribers_count": 1}"#),
+          .ok(
+            "/repos/icicle-ai/insights/traffic/clones", #"{"count": 1, "uniques": 1, "clones": []}"#
+          ),
+          .ok(
+            "/repos/icicle-ai/insights/traffic/views", #"{"count": 1, "uniques": 1, "views": []}"#),
+        ])
+
+      try await CollectDueResources().run(context: queueContext(for: app))
+      try await app.queues.queue(.metrics).worker.run()
+
+      let settled = try #require(try await Resource.find(resource.id, on: app.db))
+      #expect(abs(try #require(settled.lastCollectedAt).timeIntervalSinceNow) < 60)
+      #expect(settled.stallNotifiedAt == nil)
+      // Re-booked a full interval out from the success, not from the dispatch that preceded it.
+      #expect(
+        abs(
+          try #require(settled.nextCollectionAt).timeIntervalSinceNow - 7 * 86_400) < 60)
+    }
+  }
+
   // MARK: - Cadence clamp
 
   /// Drives `CollectionBackoff.clampGitHubCadences` directly rather than through `prepare`:

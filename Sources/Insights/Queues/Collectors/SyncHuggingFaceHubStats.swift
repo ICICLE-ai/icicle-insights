@@ -75,6 +75,10 @@ struct SyncHuggingFaceHubStats: AsyncJob, BackoffRetrying {
       type: .downloads,
       reading: Double(stats.downloadsAllTime)
     )
+
+    // Same contract as the GitHub collector: the schedule advances only once the whole sweep has
+    // landed.
+    try await resource.recordSuccessfulCollection(on: context.application.db)
   }
 
   /// Fetches expanded rolling downloads, lifetime downloads, and likes from the Hub API.

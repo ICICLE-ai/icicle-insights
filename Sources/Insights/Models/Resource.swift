@@ -104,4 +104,22 @@ final class Resource: Model, @unchecked Sendable {
   func scheduleNextCollection(from now: Date = Date()) {
     nextCollectionAt = now.addingTimeInterval(Double(collectionIntervalDays) * 86_400)
   }
+
+  /// Records a completed collection and books the next one from it.
+  ///
+  /// The sweep advances `nextCollectionAt` when it dispatches, which is a lease rather than a
+  /// schedule: it keeps the resource out of the next sweep while an outcome is outstanding. This
+  /// is what settles it once the outcome is known, so the cadence anchors on the last success.
+  ///
+  /// Clearing `stallNotifiedAt` is what re-arms the retention-window alert. A resource that
+  /// recovered and later stalls again is a new outage and deserves to be told about again.
+  /// - Parameters:
+  ///   - db: Database to save through.
+  ///   - now: The instant the collection completed.
+  func recordSuccessfulCollection(on db: any Database, now: Date = Date()) async throws {
+    lastCollectedAt = now
+    stallNotifiedAt = nil
+    scheduleNextCollection(from: now)
+    try await save(on: db)
+  }
 }
