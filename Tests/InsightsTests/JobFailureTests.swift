@@ -81,10 +81,61 @@ struct JobFailureTests {
       let settled = try #require(try await Resource.find(resource.id, on: app.db))
       #expect(abs(try #require(settled.lastCollectedAt).timeIntervalSinceNow) < 60)
       #expect(settled.stallNotifiedAt == nil)
-      // Re-booked a full interval out from the success, not from the dispatch that preceded it.
+      // Lands one interval out from now. Dispatch and success run back-to-back in this test, so
+      // a 60-second tolerance on its own cannot tell whether the schedule anchored on the success
+      // or the dispatch that preceded it — that is what `lastCollectedAt` and `stallNotifiedAt`
+      // above establish, since only the success path writes them.
       #expect(
         abs(
           try #require(settled.nextCollectionAt).timeIntervalSinceNow - 7 * 86_400) < 60)
+    }
+  }
+
+  // MARK: - History backfill
+
+  /// Drives `CollectionBackoff.backfillLastCollectedAt` directly rather than through `prepare`,
+  /// for the same reason as the clamp tests below: migrations already ran once at app boot, so
+  /// re-invoking `prepare` here would fail on the `.field()` calls for columns the schema already
+  /// has.
+  @Test
+  func `The last-collected backfill uses the newest metric reading`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db, name: "icicle-ai", platform: .github)
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), name: "insights", type: .repository)
+      let id = try resource.requireID()
+
+      let older = try await makeMetric(on: app.db, resourceID: id, type: .stars)
+      older.recordedAt = past(3)
+      try await older.save(on: app.db)
+
+      let newestAt = past(1)
+      let newest = try await makeMetric(on: app.db, resourceID: id, type: .views)
+      newest.recordedAt = newestAt
+      try await newest.save(on: app.db)
+
+      let sql = try #require(app.db as? any SQLDatabase)
+      try await CollectionBackoff.backfillLastCollectedAt(on: sql)
+
+      let reloaded = try #require(try await Resource.find(id, on: app.db))
+      #expect(abs(try #require(reloaded.lastCollectedAt).timeIntervalSince(newestAt)) < 1)
+    }
+  }
+
+  /// A resource with no metrics at all has no evidence to backfill from, and must stay NULL
+  /// rather than falsely claim a collection happened.
+  @Test
+  func `The last-collected backfill leaves a resource with no metrics untouched`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db, name: "icicle-ai", platform: .github)
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), name: "insights", type: .repository)
+
+      let sql = try #require(app.db as? any SQLDatabase)
+      try await CollectionBackoff.backfillLastCollectedAt(on: sql)
+
+      let reloaded = try #require(try await Resource.find(resource.id, on: app.db))
+      #expect(reloaded.lastCollectedAt == nil)
     }
   }
 
@@ -441,6 +492,12 @@ struct JobFailureTests {
       let stamped = try #require(try await Resource.find(resource.id, on: app.db))
       #expect(stamped.stallNotifiedAt != nil)
 
+      // The breach persists its own `JobFailure` row, distinct from the underlying error's —
+      // they are different facts, and only asserting the alert leaves that split unpinned.
+      #expect(
+        try await JobFailure.query(on: app.db)
+          .filter(\.$identifier == "collection_window_exceeded").count() == 1)
+
       // Second failure in the same outage: the underlying error still alerts, the breach does not
       // repeat. The capped backoff already spaces those out; repeating this one would double it.
       try await SyncGitHubRepoStats().error(
@@ -449,6 +506,9 @@ struct JobFailureTests {
         .init(id: try resource.requireID()),
       )
       #expect(notifier.recorded.filter { $0.identifier == "collection_window_exceeded" }.count == 1)
+      #expect(
+        try await JobFailure.query(on: app.db)
+          .filter(\.$identifier == "collection_window_exceeded").count() == 1)
     }
   }
 
@@ -543,5 +603,21 @@ struct JobFailureTests {
       abs(
         CollectionSchedule.overdue(
           now: now, lastSuccess: nil, createdAt: tenDaysAgo, intervalDays: 7) - 3 * 86_400) < 1)
+  }
+
+  /// `CollectionSchedule.maximumRetry` staying far inside `retentionWindowDays -
+  /// maxCollectionIntervalDays` is documented in three places and checked nowhere. A future
+  /// platform with a retention window could set its cadence cap too close to it, silently.
+  @Test
+  func `The retry ceiling stays inside every platform's headroom`() {
+    for platform in Platform.allCases {
+      guard let window = platform.retentionWindowDays else { continue }
+      // Cap at half the window, so one missed collection still leaves room.
+      #expect(platform.maxCollectionIntervalDays * 2 <= window)
+      // And the backoff ceiling must never eat the remaining headroom.
+      #expect(
+        CollectionSchedule.maximumRetry
+          < Double(window - platform.maxCollectionIntervalDays) * 86_400)
+    }
   }
 }

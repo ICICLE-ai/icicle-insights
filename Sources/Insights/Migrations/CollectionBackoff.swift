@@ -7,20 +7,44 @@ import SQLKit
 ///
 /// Additive on top of `RecurringCollection`, which is already applied to deployed databases.
 struct CollectionBackoff: AsyncMigration {
-  /// Adds the history columns and clamps GitHub cadences to the new maximum.
+  /// Adds the history columns, backfills `last_collected_at` from real collection evidence, and
+  /// clamps GitHub cadences to the new maximum.
   func prepare(on database: any Database) async throws {
     try await database.schema("resources")
       .field("last_collected_at", .datetime)
       .field("stall_notified_at", .datetime)
       .update()
 
-    // Both columns stay NULL for existing rows on purpose: a NULL `last_collected_at` means "no
-    // success recorded", and the backoff falls back to `created_at`. Backfilling it with now()
-    // would claim a success that never happened and suppress the data-loss alert for one full
-    // retention window.
+    // `stall_notified_at` stays NULL for every existing row — there is no prior outage to
+    // remember, so "never notified" is simply true. `last_collected_at` gets backfilled below
+    // instead of being left NULL: without it, every existing resource reads as never having
+    // collected, which trips the retention-window alert on its very first transient failure and
+    // starts its backoff at the twelve-hour ceiling instead of the one-hour floor.
 
     guard let sql = database as? any SQLDatabase else { return }
+    try await Self.backfillLastCollectedAt(on: sql)
     try await Self.clampGitHubCadences(on: sql)
+  }
+
+  /// Backfills `last_collected_at` for existing rows from the newest metric ever recorded for
+  /// them.
+  ///
+  /// A `static func` for the same reason as ``clampGitHubCadences(on:)``: a test can drive it
+  /// directly without re-running `prepare` against an already-migrated database.
+  ///
+  /// `max(metrics.recorded_at)` is honest where `now()` would not be: it is the timestamp of a
+  /// reading that actually exists, evidence a collection genuinely succeeded at that moment. A
+  /// resource with no metrics at all is left NULL on purpose — nothing has ever collected it, and
+  /// no timestamp would be true.
+  static func backfillLastCollectedAt(on sql: any SQLDatabase) async throws {
+    try await sql.raw(
+      """
+      UPDATE resources r
+      SET last_collected_at = m.last
+      FROM (SELECT resource_id, max(recorded_at) AS last FROM metrics GROUP BY resource_id) m
+      WHERE m.resource_id = r.id
+      """
+    ).run()
   }
 
   /// Lowers every GitHub resource above the new 7-day cap down to it.

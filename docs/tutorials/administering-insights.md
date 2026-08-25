@@ -112,8 +112,8 @@ Setting the expiry is what lets the Vault credentials tile warn you before colle
 
 The resource is dispatched for collection immediately.
 
-Seven days is the right default. GitHub keeps only 14 days of daily traffic history, so the form
-will not let you go beyond that — collect less often and the days age out before anyone reads them.
+Seven days is the right default. GitHub's traffic history lasts 14 days. The form caps cadence at
+7, half that window, so a missed collection still leaves room to recover.
 
 ## 7. Collect on demand
 

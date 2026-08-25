@@ -145,7 +145,7 @@ See [just recipes](docs/reference/just-recipes.md).
 just test
 ```
 
-203 tests across 15 suites, run serially against a dedicated `test` database.
+211 tests across 15 suites, run serially against a dedicated `test` database.
 
 ## Deploying
 

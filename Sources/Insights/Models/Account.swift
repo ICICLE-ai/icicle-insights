@@ -11,9 +11,12 @@ enum Platform: String, Codable, CaseIterable {
   ///
   /// Not the same as the retention window, and deliberately shorter than it where one exists: a
   /// cadence equal to the window leaves no headroom, so a single delayed sweep loses days. GitHub
-  /// is capped at half its 14-day window, which is room for one missed collection plus the
-  /// failure backoff. The Hub has no window to lose against, so its limit is about series
-  /// density rather than correctness.
+  /// is capped at half its 14-day window. That margin is not "one missed collection" — a
+  /// genuinely missed cadence still reaches the full window with nothing left. What actually
+  /// protects it is that a failed collection re-books on a capped backoff instead of costing a
+  /// whole interval, so under this policy a miss costs at most twelve hours, never a full
+  /// cadence. The Hub has no window to lose against, so its limit is about series density rather
+  /// than correctness.
   var maxCollectionIntervalDays: Int {
     switch self {
     case .github: 7

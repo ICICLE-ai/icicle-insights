@@ -26,12 +26,12 @@ Cadence is the spacing between successful collections, not a guarantee of when o
 
 | Platform | Maximum |
 |---|---|
-| GitHub | 14 days |
+| GitHub | 7 days |
 | Hugging Face | 30 days |
 | GHCR, npm, PyPI | 30 days |
 
-The cap is the platform's retention window, and the form enforces it. Collect less often than that
-and daily traffic figures age out before they are ever read. Nothing can backfill them.
+The form enforces each cap. See [Collection schedule](../reference/collection-schedule.md) for why
+GitHub's is set where it is.
 
 Seven days is the right default. Going faster costs API allowance without adding history, because
 daily values are only counted once they complete.

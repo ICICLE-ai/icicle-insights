@@ -39,11 +39,13 @@ struct SyncGHCRStats: AsyncJob, BackoffRetrying {
     }
 
     // fetch everything, then write
+
+    try await resource.recordSuccessfulCollection(on: context.application.db)
   }
 }
 ```
 
-Follow four conventions the existing jobs share.
+Follow five conventions the existing jobs share.
 
 **Payloads carry only an identifier.** The job re-reads the row, so a resource edited between
 dispatch and execution is collected as it is now.
@@ -57,6 +59,10 @@ worker decides whether to retry from the remaining attempt count alone, so throw
 attempts across roughly ten minutes rediscovering that a row is deleted.
 
 **Resolve credentials through `SecretProvider`.** Never reach for a vault client directly.
+
+**Record success last.** Call `resource.recordSuccessfulCollection(on:)` as the final statement,
+after every fetch and fold. It anchors the backoff and the next due date on this success; called
+any earlier, a partial sweep would count as one.
 
 ## 2. Register it
 
@@ -90,8 +96,8 @@ Decide which shape the platform reports. Getting this wrong corrupts totals sile
 
 Never add a rolling window directly to a total. See [Watermarks](../explanation/watermarks.md).
 
-If the platform has a retention window, set its cap on the platform enum so cadences cannot exceed
-it.
+If the platform has a retention window, set `retentionWindowDays` on the platform enum, and cap
+`maxCollectionIntervalDays` at half of it.
 
 ## Test it
 

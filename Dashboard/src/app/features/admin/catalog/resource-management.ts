@@ -182,7 +182,7 @@ interface ResourceEditModel {
           <p class="ins-admin-form__hint">
             {{
               selectedPlatform() === 'github'
-                ? 'GitHub traffic history permits at most 14 days.'
+                ? 'GitHub cadence is capped at 7 days, half its 14-day traffic window, so a missed collection costs hours, not the whole window.'
                 : 'This registry permits at most 30 days.'
             }}
           </p>
@@ -274,7 +274,7 @@ interface ResourceEditModel {
           <p class="ins-admin-form__hint">
             {{
               editingAccountPlatform() === 'github'
-                ? 'GitHub traffic history permits at most 14 days.'
+                ? 'GitHub cadence is capped at 7 days, half its 14-day traffic window, so a missed collection costs hours, not the whole window.'
                 : 'This registry permits at most 30 days.'
             }}
           </p>
@@ -335,7 +335,7 @@ export class ResourceManagement {
     );
   });
   protected readonly maximumInterval = computed(() =>
-    this.selectedPlatform() === 'github' ? 14 : 30,
+    this.selectedPlatform() === 'github' ? 7 : 30,
   );
   protected readonly resourceForm = form(this.resourceModel, (path) => {
     required(path.name, { message: 'Enter a resource name.' });
@@ -362,7 +362,7 @@ export class ResourceManagement {
     );
   });
   private readonly editMaximumInterval = computed(() =>
-    this.editingAccountPlatform() === 'github' ? 14 : 30,
+    this.editingAccountPlatform() === 'github' ? 7 : 30,
   );
   protected readonly editForm = form(this.editModel, (path) => {
     required(path.name, { message: 'Enter a resource name.' });

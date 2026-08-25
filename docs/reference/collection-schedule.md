@@ -36,7 +36,8 @@ Routing is on the **account's platform**, not the resource's kind. Kind says wha
 which API reports on it.
 
 The cadence cap is **shorter** than the retention window, never equal to it: GitHub is capped at
-half its window, leaving room for one missed collection plus the failure backoff.
+half its window. A failed collection re-books on a capped backoff rather than costing a full
+interval, so a miss costs at most twelve hours, never the whole cadence.
 `ResourceController.create` and `update` enforce the cap.
 
 A retention window of "none" means the platform cannot lose data this way — Hugging Face reports

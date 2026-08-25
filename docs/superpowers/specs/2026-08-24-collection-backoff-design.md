@@ -123,9 +123,10 @@ The sweep's dispatch-time advance stays exactly as written and becomes, honestly
 schedule now anchors on the last success, and the lease governs only what happens while an outcome is
 outstanding. `entryVanished` still returns without writing — a deleted row is not a failed collection.
 
-`save` writes the whole row, so an admin `PATCH` landing between dispatch and settle is clobbered.
-`reportResourceSyncFailure` already carries that exposure; this change does not widen it, and
-addressing it is out of scope.
+`save`'s `_update` path calls `collectInput()` with `wantsUnmodifiedKeys == false`, so it sends
+only the columns Fluent tracks as changed, not the whole row. The failure and success paths touch
+`next_collection_at` / `last_collected_at` / `stall_notified_at`; an admin `PATCH` touches `name` /
+`type` / `collection_interval_days`. Disjoint column sets, so there is no clobbering here.
 
 ### 4. The data-loss guard
 
