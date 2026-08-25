@@ -20,10 +20,19 @@ struct CollectionBackoff: AsyncMigration {
     // retention window.
 
     guard let sql = database as? any SQLDatabase else { return }
+    try await Self.clampGitHubCadences(on: sql)
+  }
 
+  /// Lowers every GitHub resource above the new 7-day cap down to it.
+  ///
+  /// A `static func` rather than inline in `prepare` so a test can drive it directly: migrations
+  /// run once at application boot, and re-invoking `prepare` against an already-migrated test
+  /// database would fail on the `.field()` calls for columns that already exist. Nothing in this
+  /// repository seeds a resource above the cap, so this is defensive — it exists for deployed
+  /// databases, where the old 14-day ceiling is exactly what such a row would carry.
+  static func clampGitHubCadences(on sql: any SQLDatabase) async throws {
     // GitHub's accepted cadence drops from 14 days to 7, because at 14 the sweep interval equals
-    // the traffic retention window and there is no headroom for any delay at all. Nothing in the
-    // repository seeds such a row, so this is defensive.
+    // the traffic retention window and there is no headroom for any delay at all.
     try await sql.raw(
       """
       UPDATE resources

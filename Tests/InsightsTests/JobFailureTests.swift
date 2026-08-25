@@ -1,4 +1,5 @@
 import Fluent
+import FluentSQL
 import Foundation
 import Logging
 import Queues
@@ -49,6 +50,46 @@ struct JobFailureTests {
       let reloaded = try #require(try await Resource.find(resource.id, on: app.db))
       #expect(abs(try #require(reloaded.lastCollectedAt).timeIntervalSince(stamped)) < 1)
       #expect(abs(try #require(reloaded.stallNotifiedAt).timeIntervalSince(stamped)) < 1)
+    }
+  }
+
+  // MARK: - Cadence clamp
+
+  /// Drives `CollectionBackoff.clampGitHubCadences` directly rather than through `prepare`:
+  /// migrations already ran once at app boot, so re-invoking `prepare` here would fail on the
+  /// `.field()` calls for columns the schema already has. The extraction exists for exactly this.
+  @Test
+  func `The GitHub cadence clamp lowers an over-cap resource to the new maximum`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db, name: "icicle-ai", platform: .github)
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), name: "insights", type: .repository,
+        collectionIntervalDays: 14)  // The old GitHub ceiling, above the new 7-day cap.
+
+      let sql = try #require(app.db as? any SQLDatabase)
+      try await CollectionBackoff.clampGitHubCadences(on: sql)
+
+      let reloaded = try #require(try await Resource.find(resource.id, on: app.db))
+      #expect(reloaded.collectionIntervalDays == 7)
+    }
+  }
+
+  /// Proves the clamp's `platform = 'github'` predicate and `account_id` join actually
+  /// discriminate — without this, a broken WHERE clause that touched every resource above 7 would
+  /// still pass the sibling test above.
+  @Test
+  func `The GitHub cadence clamp leaves other platforms untouched`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db, name: "some-model", platform: .huggingface)
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), name: "model", type: .model,
+        collectionIntervalDays: 14)  // Above 7, but within Hugging Face's own 30-day cap.
+
+      let sql = try #require(app.db as? any SQLDatabase)
+      try await CollectionBackoff.clampGitHubCadences(on: sql)
+
+      let reloaded = try #require(try await Resource.find(resource.id, on: app.db))
+      #expect(reloaded.collectionIntervalDays == 14)
     }
   }
 
