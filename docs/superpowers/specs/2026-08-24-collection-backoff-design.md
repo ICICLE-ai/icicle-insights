@@ -97,7 +97,7 @@ overdue = now − (lastCollectedAt ?? createdAt) − collectionInterval
 retryAt = now + clamp(overdue / 4, 1 hour, 12 hours)
 ```
 
-Retries stay hourly for roughly the first eight hours, stretching to the 12-hour cap after about two
+Retries stay hourly for roughly the first four hours, stretching to the 12-hour cap after about two
 days. Front-loaded where recovery still saves every day, quiet once it clearly will not. Roughly 42
 alerts across a 14-day outage rather than 336.
 
