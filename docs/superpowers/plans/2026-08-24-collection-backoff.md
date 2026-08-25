@@ -18,7 +18,12 @@
 - **Jobs must be retry-safe.** Queue delivery is at-least-once.
 - **Secrets never enter logs or the database.**
 - **Fold only completed UTC days newer than the metric watermark.** No task here changes fold logic; if a change seems to require it, stop and re-read the spec.
-- Tests run serially against the `test` database: `just test`. A single suite: `swift test --no-parallel --filter "<Suite name>"`.
+- Tests run serially against the `test` database: `just test`. A single suite:
+  `swift test --no-parallel --filter "<TypeName>"`. **`--filter` matches the test struct's type
+  name, not its `@Suite` display string.** `--filter "JobFailureTests"` selects 14 tests;
+  `--filter "Job failure handling"` selects zero and reports a pass. A vacuous green is the one
+  test result that looks like success and proves nothing — always confirm the run reports a
+  non-zero test count.
 - `.testing` skips the Tapis tenant key fetch and vault keyset read. Nothing in this plan touches those paths, so the suite is sufficient — no staging run required.
 - Do **not** change `Metric+AllTime.swift`, `MetricWatermark`, or `CollectDueResources.swift`. The sweep's dispatch-time advance is deliberately retained.
 
@@ -67,7 +72,7 @@ func `A resource carries nullable collection-history fields`() async throws {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `swift test --no-parallel --filter "Job failure handling"`
+Run: `swift test --no-parallel --filter "JobFailureTests"`
 Expected: FAIL — compile error, `value of type 'Resource' has no member 'lastCollectedAt'`.
 
 - [ ] **Step 3: Add the model fields**
@@ -169,7 +174,7 @@ In `Sources/Insights/configure.swift`, after `app.migrations.add(JobFailures())`
 
 - [ ] **Step 6: Run the test to verify it passes**
 
-Run: `swift test --no-parallel --filter "Job failure handling"`
+Run: `swift test --no-parallel --filter "JobFailureTests"`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
@@ -241,7 +246,7 @@ func `The Hub keeps its longer cadence, having no window to lose`() {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `swift test --no-parallel --filter "Resource Controller"`
+Run: `swift test --no-parallel --filter "ResourceControllerTests"`
 Expected: FAIL — compile error, `Platform has no member 'retentionWindowDays'`.
 
 - [ ] **Step 3: Update Platform**
@@ -280,7 +285,7 @@ Replace the `maxCollectionIntervalDays` property in `Sources/Insights/Models/Acc
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `swift test --no-parallel --filter "Resource Controller"`
+Run: `swift test --no-parallel --filter "ResourceControllerTests"`
 Expected: PASS. The existing test `Update rejects a cadence beyond the account platform's retention window` uses 30 against GitHub and still expects a 400 — it stays valid under the lower cap.
 
 - [ ] **Step 5: Run the whole suite**
@@ -370,7 +375,7 @@ func `Overdue time is measured from the last success, not the last attempt`() {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `swift test --no-parallel --filter "Job failure handling"`
+Run: `swift test --no-parallel --filter "JobFailureTests"`
 Expected: FAIL — `cannot find 'CollectionSchedule' in scope`.
 
 - [ ] **Step 3: Write the implementation**
@@ -444,7 +449,7 @@ enum CollectionSchedule {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `swift test --no-parallel --filter "Job failure handling"`
+Run: `swift test --no-parallel --filter "JobFailureTests"`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -516,7 +521,7 @@ func `A successful sweep anchors the schedule on the success`() async throws {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `swift test --no-parallel --filter "Job failure handling"`
+Run: `swift test --no-parallel --filter "JobFailureTests"`
 Expected: FAIL — `lastCollectedAt` is nil, because nothing writes it yet.
 
 - [ ] **Step 3: Add the model helper**
@@ -566,7 +571,7 @@ In `Sources/Insights/Queues/Collectors/SyncHuggingFaceHubStats.swift`, at the ve
 
 - [ ] **Step 6: Run the test to verify it passes**
 
-Run: `swift test --no-parallel --filter "Job failure handling"`
+Run: `swift test --no-parallel --filter "JobFailureTests"`
 Expected: PASS.
 
 - [ ] **Step 7: Run the whole suite**
@@ -653,7 +658,7 @@ func `A long-failing resource backs off but stays inside the window`() async thr
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `swift test --no-parallel --filter "Job failure handling"`
+Run: `swift test --no-parallel --filter "JobFailureTests"`
 Expected: FAIL — the due date is unchanged a week out, so `rebooked.timeIntervalSinceNow` is about 604800, not 3600.
 
 - [ ] **Step 3: Replace the re-booking block**
@@ -701,7 +706,7 @@ In `Sources/Insights/Queues/Support/FailureReporting.swift`, replace everything 
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `swift test --no-parallel --filter "Job failure handling"`
+Run: `swift test --no-parallel --filter "JobFailureTests"`
 Expected: PASS, including the untouched `A credential failure re-books the resource for the next hourly sweep` and `An unavailable vault is not treated as a credential failure`.
 
 **Note:** `An unavailable vault is not treated as a credential failure` asserts the due date is *unchanged*. It will now fail, because a non-credential failure re-books. Update its final assertion to expect the hourly floor instead, keeping its doc comment — its point is the *severity*, not the cadence:
@@ -817,7 +822,7 @@ func `The Hub never raises a data-loss alert`() async throws {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `swift test --no-parallel --filter "Job failure handling"`
+Run: `swift test --no-parallel --filter "JobFailureTests"`
 Expected: FAIL — no alert carries `collection_window_exceeded`.
 
 - [ ] **Step 3: Split the persistence helper so it can record a non-error event**
@@ -962,7 +967,7 @@ Then add this private method to the same `extension QueueContext`:
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `swift test --no-parallel --filter "Job failure handling"`
+Run: `swift test --no-parallel --filter "JobFailureTests"`
 Expected: PASS.
 
 - [ ] **Step 6: Run the whole suite**
@@ -1053,7 +1058,7 @@ func `Two consecutive failures keep the gap inside the retention window`() async
 
 - [ ] **Step 2: Run it to verify it passes**
 
-Run: `swift test --no-parallel --filter "Metric all-time"`
+Run: `swift test --no-parallel --filter "MetricAllTimeTests"`
 Expected: PASS. (This test verifies the finished behaviour rather than driving new code — Tasks 1–6 already implement it.)
 
 - [ ] **Step 3: Update the invariants**
