@@ -1,33 +1,38 @@
 # ICICLE Insights — working notes
 
 Swift 6.3 / Vapor 4 service collecting open-source impact metrics into PostgreSQL, with Valkey
-queues, a public REST API, and a dashboard.
+queues, a public REST API, and an Angular 22 dashboard.
 
 ## Orientation
 
 | Read | When |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | System map, lifecycles, layout |
-| [docs/invariants.md](docs/invariants.md) | **Before changing behaviour** — rules that must stay true |
-| [docs/api-authentication.md](docs/api-authentication.md) | Auth, admins, webhook tokens, config |
-| [docs/testing.md](docs/testing.md) | What the suite covers, why it might not run |
-| [docs/decisions/](docs/decisions/) | Why something is the way it is, before changing it |
+| [docs/](docs/) | Documentation map, organised on Diátaxis |
+| [docs/explanation/architecture.md](docs/explanation/architecture.md) | System map, lifecycles, layout |
+| [docs/reference/invariants.md](docs/reference/invariants.md) | **Before changing behaviour** — rules that must stay true |
+| [docs/reference/http-api.md](docs/reference/http-api.md) | Routes and their guards |
+| [docs/explanation/authentication.md](docs/explanation/authentication.md) | Auth, admins, webhook tokens |
+| [docs/reference/test-suite.md](docs/reference/test-suite.md) | What the suite covers, why it might not run |
+| [docs/explanation/decisions/](docs/explanation/decisions/) | Why something is the way it is, before changing it |
+| [docs/how-to/set-up-the-dashboard-toolchain.md](docs/how-to/set-up-the-dashboard-toolchain.md) | Angular MCP server and the vendor `llms-full.txt` files |
 | [TODO.md](TODO.md) | Current state and what is left |
 
 ## Commands
 
 ```bash
-just run          # dev server, environment = development
+just              # list every recipe, grouped
+just run          # dev server
 just migrate
 just test         # serial, against the `test` database
-just fmt          # swift-format, run before committing
-just fmt-check
+just fmt          # run before committing
+just web          # Angular dev server on :4200
+just stack        # full local container stack
 ```
 
 ## Setup that bites
 
-- **`.env` must exist** or the whole suite fails in setup — `TapisConfig.fromEnvironment()` throws
-  inside `configure`. Copy `.env.example`.
+- **`.env` must exist** or the whole suite fails in setup — Tapis configuration is parsed inside
+  `configure`. Copy `.env.example`.
 - **`DATABASE_TLS=disable`** locally, or every connection fails `sslUnsupported`.
 - **Use the staging Tapis tenant for local work** (`icicleai.staging.tapis.io`). It is a separate
   vault, so `init-key` and the vault tests never touch production.
@@ -38,6 +43,8 @@ just fmt-check
   command line — that flag outranks the variable, so pinning it on one process is how a stack ends
   up with processes disagreeing about their own environment. Deployments set `production`; the
   local stacks set `development` in `.env.container` and `docker-compose.yml`.
+- **`just dns` is needed once per machine** before the first `just stack`, or containers cannot
+  resolve each other.
 
 ## Conventions
 
@@ -50,6 +57,55 @@ just fmt-check
 - `swift-format` is authoritative; `just fmt` before committing.
 - Errors that cross the API boundary conform to `AbortError` with a reason that excludes
   credentials.
+- **`docker-compose.yml` and `justfiles/apple-container.just` describe the same stack**, service for
+  service, with matching names. Change one and change the other.
+
+## Documentation
+
+**Ship docs with the change.** Do not leave a feature undocumented for later.
+
+Organised on Diátaxis under `docs/`. Every **reader-facing** page lives in one of four
+directories, and none goes at the repository root — no stray `FEATURE.md` beside the code.
+
+Working artifacts are not reader docs and this does not apply to them. Plans, specs and design
+notes may live wherever the workflow that produces them puts them.
+
+| Directory | Holds | Shape |
+|---|---|---|
+| `tutorials/` | a guided path start to finish | narrative, with checkpoints |
+| `how-to/` | one goal, for someone who knows what they want | numbered steps, verbs first |
+| `reference/` | facts to look up | tables, not prose |
+| `explanation/` | why it is built this way | prose, subheads every ~10 lines |
+
+Add the page to the index table in [docs/README.md](docs/README.md) in the same change.
+
+### The rules
+
+- **One mode per page.** A how-to states no rationale; it links to the explanation. Reference is
+  tables, not narrative. If a page starts doing two jobs, split it.
+- **Verify every claim against the code**, never against another doc. Read the controller, the
+  component, the migration. A rewrite once carried four wrong claims forward this way: a form
+  field that does not exist, CORS attributed to the wrong layer, a fixed expiry that is actually
+  configurable, and two environment variables that are defined nowhere in this repository.
+- **Do not document a UI flow you have not seen run.** Say so in `TODO.md` if you cannot.
+- Every page ends with a tag line: exactly one type tag (`#Tutorial#`, `#How-To#`, `#Reference#`,
+  `#Explanation#`) and at least one audience tag (`#Administrator#`, `#Developer#`).
+
+```
+#icicle-insights# #How-To# #Administrator# #Developer# #deployment#
+```
+
+- **Administrator** runs a deployment; **Developer** changes the code. Console and access tasks are
+  Administrator. Anything done from a terminal, or that touches the deployment, is both.
+- Open every page with one line saying what it is and who it is for.
+- Keep sentences under about 25 words, and avoid chains of em-dash clauses. The previous
+  documentation was replaced specifically because that style made it hard to follow.
+- Code blocks are complete and copy-pasteable. At most one diagram per page.
+- Budgets: how-to 30–50 lines, explanation 60–100, tutorial 80–120. Reference is as long as its
+  tables need.
+
+Screenshots live in `assets/screenshots/`, 1440×900 at 2× device scale, light theme. **Substitute
+real usernames for placeholders before capture** — this repository is public.
 
 ## Invariants worth stating here
 
@@ -68,6 +124,8 @@ just fmt-check
   authentication and rides on `TapisUser.isAdmin`.
 - **Secrets never enter logs or the database.** `Secret` redacts description and reflection;
   `service_tokens` rows hold identifiers and metadata only.
+- **`withInsightsApp` must not be renamed.** `VaporTesting`'s generic `withApp` wins overload
+  resolution for a single-expression closure and hands the test an empty app.
 
 ## Things that only fail on a real boot
 
