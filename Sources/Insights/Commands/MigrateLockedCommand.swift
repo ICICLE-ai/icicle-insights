@@ -10,18 +10,77 @@ import Vapor
 /// same reason the key is a literal string: it has to hash identically everywhere.
 private let migrationLockName = "insights:migrate"
 
+extension Application {
+  private struct MigrationLockConfigurationKey: StorageKey {
+    typealias Value = SQLPostgresConfiguration
+  }
+
+  /// The PostgreSQL settings the migration lock dials its own connection with.
+  ///
+  /// Set by `configure` from the very value the pool is built from, so the lock cannot end up
+  /// serializing against a different database than the one being migrated.
+  var migrationLockConfiguration: SQLPostgresConfiguration? {
+    get { storage[MigrationLockConfigurationKey.self] }
+    set { storage[MigrationLockConfigurationKey.self] = newValue }
+  }
+
+  /// Applies migrations while holding a PostgreSQL advisory lock, so concurrent container starts
+  /// serialize instead of racing.
+  ///
+  /// The lock is taken on a connection dialled directly, never one checked out of the pool, and
+  /// that is the whole point. Holding a pooled connection across `autoMigrate()` deadlocks:
+  /// `autoMigrate` asks the same pool for a connection, `maxConnectionsPerEventLoop` defaults to 1,
+  /// and a container pinned to a single CPU has one event loop — so the migrator waits on the
+  /// connection it is itself holding until `connectionRequestTimeout` fires and the process dies.
+  /// That took a production deployment down. It is invisible on a developer machine, where several
+  /// event loops mean `autoMigrate` usually finds a spare connection on a different one.
+  ///
+  /// The lock is session-scoped rather than transaction-scoped because a migration manages its own
+  /// transactions — there is no single one to attach to. Session scope also fails safe: PostgreSQL
+  /// drops the lock when the connection closes, so closing is the only release this needs, and it
+  /// still covers a migrator killed mid-run, where an explicit unlock would never execute. Waiting
+  /// is the correct behaviour for the losing replica: it blocks until the winner is done, then
+  /// finds every migration applied and does nothing.
+  func migrateUnderAdvisoryLock() async throws {
+    guard let configuration = migrationLockConfiguration else {
+      // Every supported deployment is PostgreSQL. Refusing beats migrating unserialized, which
+      // would look identical right up until two replicas raced.
+      throw ConfigError.unsupported(name: "DATABASE", value: "advisory locking requires PostgreSQL")
+    }
+
+    let connection = try await PostgresConnection.connect(
+      on: eventLoopGroup.any(),
+      configuration: configuration.coreConfiguration,
+      id: 0,
+      logger: logger,
+    ).get()
+
+    do {
+      logger.notice("Waiting for the migration lock.")
+      try await connection.sql().raw(
+        "SELECT pg_advisory_lock(hashtext(\(bind: migrationLockName)))"
+      ).run()
+
+      // Runs on the pool, which is untouched by the lock above and so has every connection it
+      // would ordinarily have.
+      try await autoMigrate()
+    } catch {
+      try? await connection.close()
+      throw error
+    }
+
+    // Releases the advisory lock. The session owned it, so closing is the release.
+    try await connection.close()
+    logger.notice("Migrations applied.")
+  }
+}
+
 /// Applies migrations under a PostgreSQL advisory lock, so concurrent container starts serialize
 /// instead of racing.
 ///
 /// Vapor's built-in `migrate` is the right command for an operator running one deployment step by
 /// hand. It is the wrong one for a container entrypoint: several replicas of `serve` start at once
 /// and Fluent takes no lock of its own, so they would race on the DDL and on `_fluent_migrations`.
-///
-/// The lock is session-scoped rather than transaction-scoped because a migration manages its own
-/// transactions — there is no single one to attach to. Session scope also fails safe: PostgreSQL
-/// drops the lock when the connection closes, so a migrator killed mid-run releases it rather than
-/// wedging every future start. Waiting is the correct behaviour for the losing replica: it blocks
-/// until the winner is done, then finds every migration applied and does nothing.
 struct MigrateLockedCommand: AsyncCommand {
   /// This command intentionally accepts no options; it never prompts.
   struct Signature: CommandSignature {}
@@ -38,39 +97,6 @@ struct MigrateLockedCommand: AsyncCommand {
   ///   - signature: The command's empty parsed signature.
   /// - Throws: Database errors from acquiring the lock or applying a migration.
   func run(using context: CommandContext, signature: Signature) async throws {
-    let application = context.application
-
-    guard let sql = application.db(.psql) as? any SQLDatabase else {
-      // Every supported deployment is PostgreSQL. Refusing beats migrating unserialized, which
-      // would look identical right up until two replicas raced.
-      throw ConfigError.unsupported(name: "DATABASE", value: "advisory locking requires PostgreSQL")
-    }
-
-    // One connection for the whole critical section: a session-level advisory lock belongs to the
-    // connection that took it, so acquiring and releasing on different pooled connections would
-    // leak the lock until the process exited.
-    try await sql.withSession { session in
-      application.logger.notice("Waiting for the migration lock.")
-      try await session.raw(
-        "SELECT pg_advisory_lock(hashtext(\(bind: migrationLockName)))"
-      ).run()
-
-      do {
-        // The migrations themselves run on the pool, not on this session. The lock excludes other
-        // *processes*, which is the whole requirement; it does not need to own the DDL connection.
-        try await application.autoMigrate()
-      } catch {
-        try? await session.raw(
-          "SELECT pg_advisory_unlock(hashtext(\(bind: migrationLockName)))"
-        ).run()
-        throw error
-      }
-
-      try await session.raw(
-        "SELECT pg_advisory_unlock(hashtext(\(bind: migrationLockName)))"
-      ).run()
-    }
-
-    application.logger.notice("Migrations applied.")
+    try await context.application.migrateUnderAdvisoryLock()
   }
 }
