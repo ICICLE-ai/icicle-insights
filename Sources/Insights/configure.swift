@@ -84,19 +84,24 @@ func configure(_ app: Application) async throws {
     default: Environment.get("DATABASE_NAME") ?? "vapor_database"
     }
 
-  try app.databases.use(
-    DatabaseConfigurationFactory.postgres(
-      configuration: .init(
-        hostname: Environment.get("DATABASE_HOST") ?? "localhost",
-        port: Environment.get("DATABASE_PORT").flatMap(Int.init(_:))
-          ?? SQLPostgresConfiguration.ianaPortNumber,
-        username: Environment.get("DATABASE_USERNAME") ?? "vapor_username",
-        password: Environment.get("DATABASE_PASSWORD") ?? "vapor_password",
-        database: databaseName,
-        tls: Environment.get("DATABASE_TLS") == "disable"
-          ? .disable
-          : .require(.init(configuration: tlsConfiguration)),
-      )), as: .psql)
+  // Bound to a name rather than built inline because two things need it: the pool below, and the
+  // single connection `migrate-locked` dials for its advisory lock. Sharing the value is what stops
+  // the lock connection drifting from the database everything else talks to.
+  let postgresConfiguration = try SQLPostgresConfiguration(
+    hostname: Environment.get("DATABASE_HOST") ?? "localhost",
+    port: Environment.get("DATABASE_PORT").flatMap(Int.init(_:))
+      ?? SQLPostgresConfiguration.ianaPortNumber,
+    username: Environment.get("DATABASE_USERNAME") ?? "vapor_username",
+    password: Environment.get("DATABASE_PASSWORD") ?? "vapor_password",
+    database: databaseName,
+    tls: Environment.get("DATABASE_TLS") == "disable"
+      ? .disable
+      : .require(.init(configuration: tlsConfiguration)),
+  )
+
+  app.databases.use(
+    DatabaseConfigurationFactory.postgres(configuration: postgresConfiguration), as: .psql)
+  app.migrationLockConfiguration = postgresConfiguration
 
   app.migrations.add(FirstMigration())
   app.migrations.add(RecurringCollection())
