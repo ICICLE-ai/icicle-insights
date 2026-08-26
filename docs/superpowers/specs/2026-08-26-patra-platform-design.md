@@ -5,8 +5,9 @@
 
 Patra is ICICLE's own metadata registry for models, datasets, and eventually agents, managed under
 the `icicleai` Tapis tenant. It is the institute's largest uncollected output. This adds `patra` as
-a platform, `agent` as a resource type, and one collection job that discovers the catalog and
-records how often each model has actually been run.
+a platform, `agent` as a resource type, a `patra_cards` table recording the registry's own
+identifiers, and two collection jobs — one that discovers the catalog and one that records how often
+each model has actually been run.
 
 ## What the API actually provides
 
@@ -51,7 +52,8 @@ is far smaller than its card count suggests.
 `MegaDetector for Wildlife Detection` alone is 11 cards — versions `5a`, `5b`, `5c`, `5-optimized`,
 `5a_ena`, `6b-yolov9c` and four finetuning variants — published by four different authors.
 
-**One resource per model name, one per datasheet title. 29 resources. No releases.**
+**One resource per model name, one per datasheet title — 29 resources — with all 43 cards recorded
+in `patra_cards`.**
 
 ### Why the sync creates no releases
 
@@ -68,22 +70,41 @@ filenames.
 Releases stay manual. An administrator may still cut a release against a Patra model resource
 through the existing screen, and some will. The sync never writes one.
 
-### Why no external identifier is stored
+`patra_cards` is what `Release` would have been for this data, in a table of its own. It carries the
+version, so nothing is lost, and it is invisible to every releases surface.
 
-An earlier draft stored each card's uuid to make re-syncs idempotent. Grouping by name removes the
-need: the dedup key is `(name, account_id, type)`, and `resources` already carries exactly that
-unique constraint. The sync matches an existing resource by name and skips it.
+### Why identity is the uuid, not the name
 
-This also removes what would have been the design's most awkward corner — a uuid column that was
-meaningful for datasheets, meaningless for models (a name maps to up to 11 uuids), and needed a
-partial unique index to survive soft deletes.
+The alternative was matching each card's `name` against `resources.name`. That works, but it makes a
+field Patra controls the only thing tying a card to a resource — a rename silently produces a
+duplicate resource, and there is no way to tell that from a genuine new model.
 
-The cost is that card uuids are not persisted, so the collection job must fetch deployments in the
-same pass that lists the cards. See [Collection](#collection).
+`card_uuid` is stable by construction and unique across the registry. Nothing else is: name is not
+unique, `(author, name)` collides for 7 pairs, and `(author, name, version)` still collides once —
+`anagha27 / beans-disease-classifier / 1.0` exists twice under two uuids, so 37 cards yield 36
+distinct triples.
+
+A uuid column on `resources` could not work, because a model name maps to up to 11 uuids. A child
+table is the shape the data actually has.
 
 ## Data model
 
-No schema changes. Three enum values.
+**`patra_cards`** — one row per Patra card, child of `resources`:
+
+| Column | Notes |
+|---|---|
+| `id` | |
+| `resource_id` | → `resources(id)` `ON DELETE CASCADE` |
+| `card_uuid` | `UNIQUE`. The registry's own identifier |
+| `version` | Nullable — `Yield Estimation` has none |
+| `card_updated_at` | Nullable. The card's `updated_at`, stored as given |
+| `created_at` | |
+
+Datasheets get a row too, with a null `version`. That is what gives datasheet resources exact
+matching rather than title-equality.
+
+**Soft deletes need no special handling.** A soft-deleted resource keeps its card rows, so the sync
+matches the uuid, follows it to a resource with `deleted_at` set, and skips. No partial unique index.
 
 **`Platform.patra`**, appended to the enum rather than inserted alphabetically. The existing order
 (`github, ghcr, huggingface, npm, pypi`) is already curated rather than sorted, and
@@ -112,12 +133,15 @@ rolling window, no watermark, and no all-time twin. It belongs with `forks`, `li
 
 Two, and the split is load-bearing.
 
-**`PatraPlatform`** — all environments:
+**`PatraPlatform`** — all environments. Adds the three enum values and creates `patra_cards`. Safe
+together: the new table references no enum, so nothing here *uses* a value added in the same
+transaction.
 
 ```
 ALTER TYPE platform      ADD VALUE 'patra'
 ALTER TYPE resource_type ADD VALUE 'agent'
 ALTER TYPE metric_type   ADD VALUE 'deployments'
+CREATE TABLE patra_cards …
 ```
 
 **`PatraCatalogAugust2026`** — `.development` only, registered beside `ICICLESnapshotJuly2026`.
@@ -128,14 +152,14 @@ that added it. `MigrateLockedCommand` notes that each migration manages its own 
 so no migration may both add `'patra'` and insert a row using it. Splitting costs nothing and is
 correct whatever PostgreSQL 18 permits.
 
-**The revert is one-way.** PostgreSQL has no `ALTER TYPE … DROP VALUE`. Removing `patra` would mean
-rebuilding the type and rewriting `accounts.platform`, `resources.type` and `metric_watermarks.type`
-— far too invasive for a revert path. `revert` is a no-op with a comment saying why.
-`CollectionBackoff` sets this precedent for its cadence clamp.
+**The revert is partly one-way.** It drops `patra_cards`, which is clean. It cannot remove the enum
+values — PostgreSQL has no `ALTER TYPE … DROP VALUE`, and rebuilding the type would mean rewriting
+`accounts.platform`, `resources.type` and `metric_watermarks.type`. The values are left behind with
+a comment saying why. `CollectionBackoff` sets this precedent for its cadence clamp.
 
 ### The seed
 
-29 resources and 3 deployment readings, embedded as Swift literals to match
+29 resources, 43 cards, and 3 deployment readings, embedded as Swift literals to match
 `ICICLESnapshotJuly2026`. A migration that reads files at runtime depends on the working directory
 and on those files surviving into the container image.
 
@@ -143,9 +167,12 @@ and on those files surviving into the container image.
 provenance record, the way that snapshot cites its source export. The second is renamed to
 `patra-datasheets.json` on the way, to match what the endpoint calls the record.
 
+**The seed must carry the real card uuids.** A development database seeded with invented ones, plus
+one sync, re-registers all 43 cards.
+
 **Production is populated by the first sync**, not by a script or a migration. Bootstrap is one
-manual step — an admin registers the `icicleai` account on platform `patra` — and the job creates
-all 29 resources on its first run.
+manual step — an admin registers the `icicleai` account on platform `patra` — and the catalog job
+creates all 29 resources and 43 cards on its first run.
 
 The account is `icicleai`, unhyphenated, while the existing accounts are `icicle-ai`. This is
 correct: each registry is authoritative for its own spelling, a principle already recorded in the
@@ -154,65 +181,68 @@ name.
 
 ## Collection
 
-One job. `SyncPatraCatalog`, an `AsyncJob` taking an account id, dispatched by a new
-`CollectPatraCatalog: AsyncScheduledJob` running daily.
+Two jobs, because discovery and measurement are different units.
 
-Discovery and measurement are one pass because they must be: card uuids are not persisted, so the
-only place that knows which uuids belong to `MegaDetector for Wildlife Detection` is the loop that
-just listed them.
+| Job | Level | Trigger | Writes |
+|---|---|---|---|
+| `SyncPatraCatalog` | account | new daily scheduled job | Resources, PatraCards |
+| `SyncPatraDeployments` | resource | existing hourly sweep, via `dispatchSync` | one `deployments` Metric |
 
-Not folded into `CollectAccountStats` for the reason that job gives for not folding into
+### `SyncPatraCatalog`
+
+Payload is an account id. Dispatched by `CollectPatraCatalog`, a new `AsyncScheduledJob` running
+daily. Not folded into `CollectAccountStats` for the reason that job gives for not folding into
 `CollectDueResources`: the unit differs. Monthly is right for follower counts and too slow for a
 live registry.
 
-### Sequence
+Pages `/modelcards` and `/datasheets`, groups model cards by name, then:
 
-1. Page `/modelcards` until a short page returns. Group by `name`.
-2. Page `/datasheets` the same way.
-3. For each model card, page `/modelcard/{uuid}/deployments` and count.
-4. Sum the counts per model name.
-5. Create any resource whose name is not already registered.
-6. Write one `deployments` reading per model resource.
+| Situation | Behaviour |
+|---|---|
+| `card_uuid` already in `patra_cards` | Skip. This is the idempotency guarantee |
+| Model name unseen | Create Resource (`type: .model`), then its card row |
+| Model name known | Attach the card row to the existing Resource |
+| Datasheet title unseen | Create Resource (`type: .dataset`), then its card row |
+| `is_private == true` | Skip the card entirely |
+| Card's resource is soft-deleted | Skip. An admin deleting a resource means "stop tracking this" |
+| Card absent upstream | Keep both rows, log a warning. Deletion stays an admin action |
+| Known uuid, changed name | Keep the existing attachment, log the rename for an admin |
+
+`version` may be null and is stored as null. `Yield Estimation` carries a null `version` and a null
+`categories`; the latter is never read.
+
+**Renames are logged, never applied.** A resource groups up to 11 cards, so renaming it because one
+of them changed would be wrong, and rewriting a resource name orphans its metric history against a
+name nobody recognises. Recording the uuid is what makes the rename *visible* — which was the whole
+argument for this table over name matching.
+
+New resources get `nextCollectionAt` set to now so the next sweep measures them.
+
+**It does not call `recordSuccessfulCollection`.** That is a deliberate break from the convention in
+[add-a-collector.md](../../how-to/add-a-collector.md) and needs a comment saying so. The method
+anchors metric cadence and backoff per resource; this job is account-level and writes no metrics.
 
 Fetch everything, then write — the existing convention, and it matters more here than for the metric
 collectors. A failure partway through a catalog write leaves half a registry.
 
-### Rules
+### `SyncPatraDeployments`
 
-| Situation | Behaviour |
-|---|---|
-| Model name unseen | Create Resource (`type: .model`) |
-| Datasheet title unseen | Create Resource (`type: .dataset`) |
-| Name already registered | Skip creation, still record the reading |
-| `is_private == true` | Skip the card entirely |
-| Match is soft-deleted | Skip. An admin deleting a resource means "stop tracking this" |
-| Card absent upstream | Keep the resource, log a warning. Deletion stays an admin action |
-| Model with no deployments | Write a reading of 0 — the endpoint answered, and 0 is what it said |
-| Datasheet resource | No reading at all. There is no datasheet deployments endpoint |
+Routes through `dispatchSync` like every other per-resource collector, so it inherits the capped
+backoff, the failure classification, and the retention guard rather than reimplementing them. This
+is possible only because `patra_cards` lets a resource answer which uuids are its own.
 
-`version` is read only for grouping context and is not stored. `Yield Estimation` carries a null
-`version` and a null `categories`; neither field reaching the database means neither can break it.
+It reads its resource's card rows, pages `/modelcard/{uuid}/deployments` for each, sums the counts,
+and writes one `deployments` reading. Summing is the honest resource-level figure: MegaDetector's 38
+runs on `6b-yolov9c` and 14 on `5a (OSA finetuning)` are 52 runs of MegaDetector.
 
-**The job creates; it does not update.** An existing resource is left as it is, even if the card's
-name has changed upstream. Rewriting a resource name would orphan its metric history against a name
-nobody recognises, and this design has no evidence about how often Patra names churn. Renames
-surface as a new resource beside the old one — visible and correctable by an admin — rather than as
-a silent mutation.
-
-**Patra resources carry `nextCollectionAt = nil`** and are skipped by `dispatchSync`, exactly as
-GHCR, npm and PyPI are. Their metrics arrive from this account-level job instead of the hourly
-per-resource sweep. `add-a-resource.md` already documents a null due date as the correct state for a
-platform the dispatcher does not route.
-
-### Deployment counts
-
-Summing across a name's cards is the honest resource-level figure: MegaDetector's 38 runs on
-`6b-yolov9c` and 14 on `5a (OSA finetuning)` are 52 runs of MegaDetector.
+A `.dataset` resource has no deployments endpoint. The job records the collection as successful and
+writes no reading.
 
 Today's readings would be MegaDetector 52, ResNet50 16, MobileNetV2 1, and 0 for the other 20 model
-resources.
+resources. A model with no deployments records 0 rather than nothing: the endpoint answered, and 0
+is what it said.
 
-This is an N+1 fetch by construction — one request per card, 37 today. At a daily cadence that is
+This is an N+1 fetch by construction — one request per card. At 37 cards on a weekly cadence that is
 negligible, and there is no bulk endpoint.
 
 ### Pagination is mandatory
@@ -229,7 +259,7 @@ This is the defect most likely to ship working and break silently later:
 ### No credential path
 
 No `Vault` lookup, no `SecretProvider`, no `JobError.missingToken`. Patra is the first collector in
-this codebase that needs no credential, so the job carries a comment stating the omission is
+this codebase that needs no credential, so both jobs carry a comment stating the omission is
 deliberate.
 
 Authenticating would be actively harmful: a JWT-bearing caller sees private records, and this
@@ -252,6 +282,9 @@ renders "Hugging Face + Patra", and `spansMultipleRegistries` already handles mu
 — it was written for npm + pypi. The comment in `labels.ts` explaining why the group cannot be split
 stays true and gains Patra as a second example.
 
+**`patra_cards` is not exposed through the API or the dashboard.** It is collection bookkeeping.
+Surfacing card versions is a later change with its own design, not a side effect of this one.
+
 **`deployments` needs no `METRIC_LABELS` entry.** That map exists only for metrics whose bare name
 overstates their window. A deployment count is a lifetime total and its name is honest.
 
@@ -262,28 +295,30 @@ components handle metric-less resources today.
 
 | Suite | Adds |
 |---|---|
-| `SyncJobTests` | Happy path against a stubbed API, plus 422, decode failure, and vanished account |
-| `SyncJobTests` | **Idempotency** — run the job twice, assert 29 resources both times, not 58 |
+| `SyncJobTests` | Both jobs against a stubbed API: happy path, 422, decode failure, vanished subject |
+| `SyncJobTests` | **Idempotency** — run the catalog job twice, assert 29 resources and 43 cards both times |
 | `SyncJobTests` | **Pagination** — stub 60 cards, assert the loop pages past the 50 default |
-| `SyncJobTests` | Grouping — 11 MegaDetector cards produce one resource whose reading is their sum |
-| `SyncJobTests` | A soft-deleted resource is not resurrected; a private card is not registered |
+| `SyncJobTests` | Grouping — 11 MegaDetector cards produce one resource with 11 card rows |
+| `SyncJobTests` | Deployments sum across a resource's cards; a `.dataset` resource writes no reading |
+| `SyncJobTests` | Null `version` stored as null; private card skipped; soft-deleted resource not resurrected |
+| `SyncJobTests` | A known uuid arriving under a new name logs and does not rename or duplicate |
+| `QueueSweepTests` | `patra` routes to `SyncPatraDeployments` and re-books correctly |
 | `labels.spec.ts` | The new platform, resource type, and metric type |
 
-`stubAPI` matches paths exactly, so assert the URLs the job builds including `skip` and `limit`.
-The pagination and grouping tests are the two that justify this design; without them both defects
-ship green.
+`stubAPI` matches paths exactly, so assert the URLs the jobs build including `skip` and `limit`.
+Pagination, grouping and the rename case are the three that justify this design; without them the
+defects ship green.
 
 ## Documentation
 
 Ship with the change, per CLAUDE.md.
 
-`collection-schedule.md` (Patra's metric, cadence, job name), `data-model.md` (the card-to-resource
-mapping and why versions are not stored), `add-a-resource.md` (kind list), `glossary.md` (Patra,
-datasheet, deployment), `register-an-account.md`, `admin-console.md`, and the index in
-`docs/README.md`.
+`collection-schedule.md` (Patra's metric, cadence, job names), `data-model.md` (`patra_cards`, the
+card-to-resource mapping), `add-a-resource.md` (kind list), `glossary.md` (Patra, datasheet,
+deployment, card), `register-an-account.md`, `admin-console.md`, and the index in `docs/README.md`.
 
-`add-a-collector.md` needs a note that Patra is the first credential-free collector, and the first
-whose job is account-level and therefore does not call `recordSuccessfulCollection`.
+`add-a-collector.md` needs a note that Patra is the first credential-free collector, and that its
+catalog half is account-level and therefore does not call `recordSuccessfulCollection`.
 
 `TODO.md` records the `agent` gap.
 
@@ -291,19 +326,19 @@ whose job is account-level and therefore does not call `recordSuccessfulCollecti
 
 Recorded because they are real, not because this change addresses them.
 
-- **Card versions are not stored anywhere.** MegaDetector's 11 variants become one resource with one
-  summed count, and the fact that there were 11 is not recorded. This is the deliberate cost of
-  keeping `Release` meaning an ICICLE software release.
+- **Card versions are stored but not shown.** `patra_cards.version` holds all 43, and nothing
+  renders them. Surfacing "this model has 11 variants" is a dashboard change with its own design.
 - **Agents have no endpoint.** `ResourceType.agent` lands so agents can be registered by hand and so
   the dashboard knows the type, but nothing in the API publishes them. `/agent-tools/*` are AI
-  tooling routes, not agent records. The job grows a third endpoint when Patra ships one.
+  tooling routes, not agent records. The catalog job grows a third endpoint when Patra ships one.
 - **Per-deployment quality metrics are not collected.** `precision`, `recall`, `f1_score`, `map_50`
   and `map_50_95` describe model quality, not project impact, and Insights has no shape for them.
 - **`author` is deliberately not stored.** The field conflates uploader with origin — `Google
   DeepMind` is listed as an author — includes a `Demo Author` test account, and splits real people
   across handles: `habg21` and `Harikesh Byrandurga Gopinath` both publish Unet++ variants, as do
   `swathivm` and `Swathi V` on Yolo. The export shows 18 authors where the truth is nearer 12, so
-  any count over the column would be quietly wrong.
+  any count over the column would be quietly wrong. `patra_cards` is where it would go if that
+  changes.
 - **Upstream holds name variants that grouping cannot fix.** `Yolo Object Detecion - for detecting a
   soft toy` and `Yolo_Object_Detecion__SoftToy` are the same model under two names, and will become
   two resources. That is Patra's data, not this mapping.
