@@ -229,4 +229,36 @@ struct ResourceControllerTests {
       )
     }
   }
+
+  @Test
+  func `Create rejects a GitHub cadence with no headroom for delay`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db, platform: .github)
+      // 14 was accepted before: it equals the traffic retention window exactly, so any delay at
+      // all loses days and no backoff value can protect it.
+      let payload = Resource.Create(
+        name: "insights", type: .repository, accountID: try account.requireID(),
+        collectionIntervalDays: 14)
+
+      try await app.testing().test(
+        .POST,
+        "api/resources",
+        headers: app.adminAuth,
+        beforeRequest: { req in try req.content.encode(payload) },
+        afterResponse: { res async throws in
+          #expect(res.status == .badRequest)
+        },
+      )
+    }
+  }
+
+  @Test
+  func `The Hub keeps its longer cadence, having no window to lose`() {
+    // The Hub reports downloadsAllTime outright, so a missed sweep costs series density and never
+    // all-time correctness. Restricting it would buy nothing.
+    #expect(Platform.huggingface.maxCollectionIntervalDays == 30)
+    #expect(Platform.huggingface.retentionWindowDays == nil)
+    #expect(Platform.github.maxCollectionIntervalDays == 7)
+    #expect(Platform.github.retentionWindowDays == 14)
+  }
 }

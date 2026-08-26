@@ -2,7 +2,7 @@
 
 What the suite covers. For developers.
 
-**195 tests across 15 suites**, all in `Tests/InsightsTests/`.
+**211 tests across 15 suites**, all in `Tests/InsightsTests/`.
 
 ```bash
 just test
@@ -16,17 +16,17 @@ and their absence fails every test, not one.
 | Suite | Tests | Covers |
 |---|---|---|
 | `HardeningTests` | 40 | Headers, CORS, rate limits, request IDs, key rotation, admins, absent keyset |
+| `JobFailureTests` | 26 | Failure classification, retries, backoff, re-booking |
 | `MetricControllerTests` | 24 | Metric CRUD, filters, validation, admin guard |
 | `AuthenticationTests` | 22 | Both credential paths and where they cross |
 | `VaultControllerTests` | 15 | Name normalisation, validation, upstream status mapping, rollback |
-| `JobFailureTests` | 13 | Failure classification, retries, backoff, re-booking |
+| `ResourceControllerTests` | 13 | Resource CRUD, cadence caps, admin guard |
 | `SyncJobTests` | 11 | Each platform's sweep against stubbed APIs, and every error branch |
-| `ResourceControllerTests` | 11 | Resource CRUD, cadence caps, admin guard |
 | `ReleaseControllerTests` | 10 | Release CRUD and validation |
 | `ServiceTokenControllerTests` | 10 | Minting over HTTP, revocation, refusals |
 | `AccountControllerTests` | 9 | Account CRUD and validation |
 | `ServiceTokenExpiryTests` | 8 | The daily expiry warning and its thresholds |
-| `MetricAllTimeTests` | 7 | Double-count prevention and the watermark fold |
+| `MetricAllTimeTests` | 8 | Double-count prevention and the watermark fold |
 | `QueueSweepTests` | 7 | Which job a platform dispatches, and how due dates advance |
 | `AdminInsightControllerTests` | 4 | The admin-only operational projections |
 | `TrafficDecodingTests` | 4 | The `clones`/`views` array-key split |

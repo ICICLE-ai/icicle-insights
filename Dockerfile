@@ -97,6 +97,9 @@ WORKDIR /app
 # Copy built executable and any staged resources from builder
 COPY --from=build --chown=vapor:vapor /staging /app
 
+# Wraps the command: migrates first when this container is the one serving. See the script.
+COPY --chown=vapor:vapor --chmod=755 docker-entrypoint.sh /app/docker-entrypoint.sh
+
 # Provide configuration needed by the built-in crash reporter and some sensible default behaviors.
 ENV SWIFT_BACKTRACE=enable=yes,sanitize=yes,threads=all,images=all,interactive=no,swift-backtrace=./swift-backtrace-static
 
@@ -114,5 +117,13 @@ USER vapor:vapor
 # Let Docker bind to port 8080
 EXPOSE 8080
 
-ENTRYPOINT ["./Insights"]
+# The entrypoint applies migrations when the command is `serve`, then execs the binary with
+# whatever arguments it was given — so `queues`, `migrate` and the one-shot commands are
+# unaffected by it.
+#
+# No flags on CMD. `serve` reads its hostname and port from SERVER_HOSTNAME and SERVER_PORT for
+# the same reason VAPOR_ENV carries no `--env`: a command-line flag outranks the variable, so
+# pinning one here would make this image quietly ignore what the rest of the stack is configured
+# with.
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["serve"]

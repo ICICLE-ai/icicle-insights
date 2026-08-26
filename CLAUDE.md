@@ -112,6 +112,9 @@ real usernames for placeholders before capture** — this repository is public.
 - **The scheduler runs exactly one replica.** Queue workers scale freely; the scheduler does not,
   or scheduled work dispatches twice.
 - **Jobs must be retry-safe.** Delivery is at-least-once.
+- **Failures re-book, they do not skip.** `CollectDueResources` advances `nextCollectionAt` at
+  dispatch, which is a lease. An exhausted failure must replace it with a capped backoff, or two
+  failures put a resource past its provider's retention window and the gap days are gone.
 - **Watermarks prevent double counting.** Rolling windows overlap between sweeps;
   `MetricWatermark.countedThrough` records what has already been folded into an all-time total.
   Changing fold logic without understanding this corrupts history silently.

@@ -74,6 +74,18 @@ Repeat step 1 on any deploy carrying a migration. The API's readiness probe fail
 have run, because it queries a real table — so an un-migrated rollout stays out of the load balancer
 rather than serving errors.
 
+Step 1 is belt and braces rather than strictly required. The image's entrypoint runs
+`migrate-locked` itself when the command is `serve`, so an API container migrates before it serves
+even if the one-shot was skipped. That command takes a PostgreSQL advisory lock around
+`autoMigrate`, so scaling the API past one replica makes the extra replicas wait rather than race;
+the lock is session-scoped, so a migrator that dies releases it when its connection closes rather
+than wedging the next start.
+
+Only `serve` migrates. The worker, the scheduler and the one-shot commands run the same image with
+their own argument lists and are untouched by it — migrating unconditionally in the entrypoint
+would mean three concurrent migrators on every stack start. Running step 1 explicitly still buys
+you a migration failure that surfaces in its own job, before any container is rolled.
+
 ### First deployment only
 
 ```bash

@@ -34,6 +34,8 @@ erDiagram
 |---|---|
 | `next_collection_at` | When this resource may next be dispatched. Null means never |
 | `collection_interval_days` | Spacing booked after a successful dispatch. Default 7 |
+| `last_collected_at` | When a collection last *succeeded*. Null until the first one |
+| `stall_notified_at` | When the retention-window alert last fired. Cleared on the next success |
 
 **`metric_watermarks`** — one row per `(resource, metric type)`.
 
@@ -93,6 +95,7 @@ Applied in order, all registered in `configure.swift`.
 | `ServiceTokens` | Webhook token rows |
 | `Admins` | Granted administrator access |
 | `JobFailures` | Durable failure records |
+| `CollectionBackoff` | Collection history, and clamps GitHub cadences to the current cap |
 | `ICICLESnapshotJuly2026` | Seed data. **Development only** |
 
 The seed migration is registered only when `VAPOR_ENV=development`, so it targets `dev` and can

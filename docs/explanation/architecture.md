@@ -92,7 +92,10 @@ Sources/Insights/
 ├── Middlewares/    authenticators, Require, limits, headers, request IDs
 ├── Migrations/     schema and the development seed
 ├── Models/         Fluent persistence
-├── Queues/         scheduled sweeps, jobs, routing, watermark folds
+├── Queues/         queue names and watermark folds
+│   ├── Scheduled/      the clock: sweeps that only enqueue
+│   ├── Collectors/     the work: per-platform syncs, and the routing that picks one
+│   └── Support/        shared machinery: retry backoff, failure reporting, heartbeat
 ├── Services/
 │   ├── Admins/         who holds administrative access
 │   ├── Notifications/  failure alerting

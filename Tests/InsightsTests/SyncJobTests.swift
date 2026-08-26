@@ -228,6 +228,11 @@ struct SyncJobTests {
       }
       #expect(statusCode == 403)
       #expect(try await Metric.query(on: app.db).count() == 0)
+
+      // Only the happy path anchors the schedule on success — a failed sweep, even one that
+      // wrote nothing, must not be mistaken for a collection.
+      let reloaded = try #require(try await Resource.find(id, on: app.db))
+      #expect(reloaded.lastCollectedAt == nil)
     }
   }
 
@@ -297,6 +302,12 @@ struct SyncJobTests {
 
       let second = try await readings(on: app.db, id)
       #expect(second[.likes] == 9)
+
+      // The Hub collector carries the identical `recordSuccessfulCollection` call as GitHub's,
+      // but nothing else drives it through `dequeue` — this is the only place it is proven.
+      let reloaded = try #require(try await Resource.find(id, on: app.db))
+      #expect(reloaded.lastCollectedAt != nil)
+      #expect(reloaded.stallNotifiedAt == nil)
     }
   }
 

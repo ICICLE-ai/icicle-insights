@@ -79,6 +79,6 @@ Why the system is shaped the way it is.
 | [Queues and scheduling](explanation/queues-and-scheduling.md) | One scheduler, many workers |
 | [Secret providers](explanation/secret-providers.md) | Why credentials sit behind an interface |
 | [The dashboard](explanation/the-dashboard.md) | How the Angular application is served |
-| [Decisions](explanation/decisions/) | Seven architecture decision records |
+| [Decisions](explanation/decisions/) | Eight architecture decision records |
 
 #icicle-insights# #Reference# #Administrator# #Developer# #documentation-index#

@@ -64,7 +64,7 @@ Each resource belongs to one account and carries its own collection cadence.
 | Cadence | Days between successful collections. Default 7 |
 | Next collection | When it next becomes eligible. `Not set` means it is never swept |
 
-Cadence is capped per platform by that platform's retention window. See
+Cadence is capped per platform, at half that platform's retention window where one exists. See
 [Collection schedule](collection-schedule.md) and [Add a resource](../how-to/add-a-resource.md).
 
 ### Releases and Metrics

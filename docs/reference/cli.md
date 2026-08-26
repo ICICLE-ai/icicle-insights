@@ -27,8 +27,14 @@ that every process agrees.
 |---|---|
 | `migrate --yes` | Applies every pending migration |
 | `migrate --revert --yes` | Rolls back the most recent batch |
+| `migrate-locked` | The same, under a PostgreSQL advisory lock, without prompting |
 
 Run `migrate` once before the first `serve`, and after any deploy carrying a migration.
+
+`migrate-locked` is what the container entrypoint runs when the command is `serve`. The advisory
+lock is session-scoped: extra API replicas starting together wait rather than race, and a migrator
+that dies releases it when its connection closes. Use plain `migrate` for a deliberate deployment
+step — see [Deploy Insights](../how-to/deploy-insights.md).
 
 ## Collection
 

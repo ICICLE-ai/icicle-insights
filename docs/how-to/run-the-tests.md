@@ -6,7 +6,7 @@ Get the suite passing locally. For developers.
 just test
 ```
 
-195 tests across 15 suites. Expect a few minutes; it runs serially by design.
+211 tests across 15 suites. Expect a few minutes; it runs serially by design.
 
 ## Two settings that are not optional
 

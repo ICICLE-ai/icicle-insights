@@ -6,9 +6,9 @@ Three files. Registration gives workers a decoder; routing puts the payload on a
 
 | # | File | Does |
 |---|---|---|
-| 1 | `Sources/Insights/Queues/SyncXStats.swift` | The work |
+| 1 | `Sources/Insights/Queues/Collectors/SyncXStats.swift` | The work |
 | 2 | `Sources/Insights/configure.swift` | Registers the job so workers can decode it |
-| 3 | `Sources/Insights/Queues/Queue+SyncDispatch.swift` | Routes a platform to the job |
+| 3 | `Sources/Insights/Queues/Collectors/SyncDispatch.swift` | Routes a platform to the job |
 
 **Controllers need no change.** Both the hourly sweep and creation-time collection call the same
 routing extension, so wiring step 3 lights up both at once.
@@ -39,11 +39,13 @@ struct SyncGHCRStats: AsyncJob, BackoffRetrying {
     }
 
     // fetch everything, then write
+
+    try await resource.recordSuccessfulCollection(on: context.application.db)
   }
 }
 ```
 
-Follow four conventions the existing jobs share.
+Follow five conventions the existing jobs share.
 
 **Payloads carry only an identifier.** The job re-reads the row, so a resource edited between
 dispatch and execution is collected as it is now.
@@ -58,6 +60,10 @@ attempts across roughly ten minutes rediscovering that a row is deleted.
 
 **Resolve credentials through `SecretProvider`.** Never reach for a vault client directly.
 
+**Record success last.** Call `resource.recordSuccessfulCollection(on:)` as the final statement,
+after every fetch and fold. It anchors the backoff and the next due date on this success; called
+any earlier, a partial sweep would count as one.
+
 ## 2. Register it
 
 In `configure.swift`, beside the others:
@@ -70,7 +76,7 @@ Without this the worker cannot decode the payload and the job fails at dequeue.
 
 ## 3. Route the platform
 
-In `Queue+SyncDispatch.swift`, move the platform out of the skipped list:
+In `Collectors/SyncDispatch.swift`, move the platform out of the skipped list:
 
 ```swift
 case .ghcr:
@@ -90,8 +96,8 @@ Decide which shape the platform reports. Getting this wrong corrupts totals sile
 
 Never add a rolling window directly to a total. See [Watermarks](../explanation/watermarks.md).
 
-If the platform has a retention window, set its cap on the platform enum so cadences cannot exceed
-it.
+If the platform has a retention window, set `retentionWindowDays` on the platform enum, and cap
+`maxCollectionIntervalDays` at half of it.
 
 ## Test it
 

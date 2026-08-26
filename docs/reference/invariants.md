@@ -15,7 +15,8 @@ not a patch.
 | Scheduled jobs only enqueue | A slow platform call delays the next tick |
 | Sync jobs back off between attempts | An immediate requeue hammers a struggling API |
 | `FailureNotifier.notify` never throws | The worker clears a job only after `error()` returns, so a failing alert channel strands the job |
-| A credential failure re-books inside the sweep interval | A repaired token would wait a full cadence to resume |
+| Every exhausted resource failure re-books its resource | The sweep's dispatch-time due date stands, so one failure costs a full cadence and gaps compound past the retention window |
+| The failure backoff ceiling stays well inside `retentionWindowDays - maxCollectionIntervalDays` | The retry policy itself becomes the cause of a lost day |
 
 Named workers may scale freely. Valkey claims each available payload atomically, so two workers
 cannot take the same one.
@@ -29,7 +30,8 @@ cannot take the same one.
 | Fold only completed UTC days newer than the watermark | Today banked while still partial, then skipped once complete |
 | Advance watermarks only through completed days | The same |
 | Lock `(resource, metric type)` before a read-modify-write fold | Two workers corrupt one all-time value |
-| Cadence never exceeds the platform's retention window | Days age out and cannot be reconstructed |
+| Cadence stays at most half the platform's retention window | No headroom for a missed collection: one delayed sweep ages days out |
+| A gap past the retention window raises `collection_window_exceeded`, once per outage | Data loss stays silent |
 
 `Metric.foldDailyIntoAllTime` takes a transaction-scoped `pg_advisory_xact_lock`. FluentKit has no
 row locking in this version. The hash uses PostgreSQL's `hashtext`, not Swift's `hashValue`, which

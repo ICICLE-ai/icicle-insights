@@ -65,7 +65,7 @@ struct ResourceController: RouteCollection {
       throw Abort(.badRequest, reason: "Account with ID: \(resource.$account.id), not found.")
     }
 
-    // Bounded by the platform's retention window; beyond it, gap days age out unrecoverably.
+    // Capped deliberately below the retention window, leaving headroom for a missed collection.
     resource.collectionIntervalDays = try requireInRange(
       resource.collectionIntervalDays,
       1...account.platform.maxCollectionIntervalDays,

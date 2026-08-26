@@ -204,4 +204,47 @@ struct MetricAllTimeTests {
       #expect(totals.first?.reading == 1200)
     }
   }
+
+  /// The case from the defect report. `CollectDueResources` advances the due date when it
+  /// dispatches, so before the fix a non-credential failure left that advance standing and cost a
+  /// full interval: day 7 booked day 14, day 14 booked day 21, and the response on day 21 no
+  /// longer reached back to day 0. Days 1-6 were in no folded response and could not be recovered.
+  @Test
+  func `A failed collection is pulled back inside the retention window`() async throws {
+    try await withInsightsApp { app in
+      _ = stubNotifier(on: app)
+      let account = try await makeAccount(on: app.db, name: "icicle-ai", platform: .github)
+      let accountID = try account.requireID()
+      _ = try await makeVault(on: app.db, accountID: accountID)
+      let resource = try await makeResource(
+        on: app.db, accountID: accountID, name: "insights", type: .repository,
+        collectionIntervalDays: 7)
+
+      let daysAgo = { (d: Double) in Date().addingTimeInterval(-d * 86_400) }
+
+      // Day 0 collected. Day 7 is due, and the sweep advances the lease a full interval before the
+      // job runs. That advance is what the fix has to pull back.
+      resource.lastCollectedAt = daysAgo(7)
+      resource.scheduleNextCollection()
+      try await resource.save(on: app.db)
+      let leased = try #require(resource.nextCollectionAt)
+      #expect(leased.timeIntervalSinceNow > 6 * 86_400)
+
+      try await SyncGitHubRepoStats().error(
+        queueContext(for: app),
+        JobError.apiRequestFailed(url: "https://api.github.com", statusCode: 503, message: nil),
+        .init(id: try resource.requireID()),
+      )
+
+      let settled = try #require(try await Resource.find(resource.id, on: app.db))
+      let nextAttempt = try #require(settled.nextCollectionAt)
+
+      // Before the fix this stayed a week out, and a second failure pushed it to day 21.
+      #expect(nextAttempt.timeIntervalSinceNow <= CollectionSchedule.maximumRetry + 60)
+      // The gap since the last success stays inside GitHub's 14-day traffic window, so the next
+      // response still reaches back to day 0.
+      #expect(nextAttempt.timeIntervalSince(daysAgo(7)) < 14 * 86_400)
+      #expect(settled.stallNotifiedAt == nil)
+    }
+  }
 }

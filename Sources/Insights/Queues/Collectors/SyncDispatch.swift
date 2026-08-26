@@ -4,12 +4,6 @@ import Queues
 
 import struct Foundation.UUID
 
-extension QueueName {
-  /// Drained by `queues --queue metrics`. Off `.default` so a sweep's backlog cannot starve
-  /// unrelated work queued behind it.
-  static let metrics = QueueName(string: "metrics")
-}
-
 extension Queue {
   /// Routes a resource to the sync job for its account's platform.
   ///
