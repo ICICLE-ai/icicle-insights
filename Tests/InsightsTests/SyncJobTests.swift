@@ -945,6 +945,80 @@ struct SyncJobTests {
     }
   }
 
+  /// `accounts` is unique on `(name, platform)`, not `name` alone — the checked-in dev seed
+  /// genuinely reuses `icicle-ai` across five platforms — so matching an account by name without
+  /// also constraining its platform lets a Hugging Face location resolve into a same-named
+  /// resource under, say, the GitHub account instead. This is the real shape from the live seed:
+  /// two `icicle-ai` accounts, one per platform, each owning a resource named `can-benchmark`.
+  /// The location's own host has to decide which one the card links to.
+  @Test
+  func
+    `Resolution picks the account on the location's own platform, not a same-named one elsewhere`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let ghAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .github)
+      let ghResource = try await makeResource(
+        on: app.db, accountID: try ghAccount.requireID(), name: "can-benchmark",
+        type: .repository)
+
+      let hfAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .huggingface)
+      let hfResource = try await makeResource(
+        on: app.db, accountID: try hfAccount.requireID(), name: "can-benchmark", type: .dataset)
+
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        modelCards: "[\(modelCardJSON(uuid: "collision-1", name: "CAN Benchmark"))]",
+        details: [
+          "collision-1": detailJSON(location: "https://huggingface.co/icicle-ai/can-benchmark")
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "collision-1").first())
+      #expect(try card.$hubResource.id == hfResource.requireID())
+      #expect(card.$repositoryResource.id == nil)
+      // The regression this guards against: matching by name alone would have linked the GitHub
+      // resource instead, since it shares the name and would have been a candidate too.
+      #expect(try card.$hubResource.id != ghResource.requireID())
+    }
+  }
+
+  /// `Platform` has no `.gitlab` case, so a `gitlab.com` location — recognized as
+  /// repository-shaped, the same as `github.com` — has no platform to filter an account against
+  /// and must fail closed: `sourceURL` stored, both foreign keys nil. A same-named GitHub
+  /// resource exists in this fixture specifically to prove an unfiltered match does not pick it
+  /// up.
+  @Test
+  func `A gitlab_com location stores sourceURL and resolves nothing`() async throws {
+    try await withInsightsApp { app in
+      let ghAccount = try await makeAccount(on: app.db, name: "acme", platform: .github)
+      _ = try await makeResource(
+        on: app.db, accountID: try ghAccount.requireID(), name: "vision-model-src",
+        type: .repository)
+
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        modelCards: "[\(modelCardJSON(uuid: "gl-1", name: "Vision Model"))]",
+        details: [
+          "gl-1": detailJSON(location: "https://gitlab.com/acme/vision-model-src")
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "gl-1").first())
+      #expect(card.sourceURL == "https://gitlab.com/acme/vision-model-src")
+      #expect(card.$hubResource.id == nil)
+      #expect(card.$repositoryResource.id == nil)
+    }
+  }
+
   /// `training_datasheet_uuid` is captured free from the same detail response that carries
   /// `location` — Patra's own model-to-datasheet link, unrelated to cross-registry resolution.
   @Test

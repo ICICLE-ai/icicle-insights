@@ -210,14 +210,20 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
     var hubResourceID: Resource.IDValue?
     var repositoryResourceID: Resource.IDValue?
     if let location = detail.aiModel?.location, let parsed = Self.parseLocation(location) {
-      if Self.hubHosts.contains(parsed.host) {
+      switch Self.ProvenanceTarget.of(host: parsed.host) {
+      case .hub(let platform):
         hubResourceID = try await Self.resolveResource(
-          owner: parsed.owner, name: parsed.name, on: db
+          owner: parsed.owner, name: parsed.name, platform: platform, on: db
         )?.requireID()
-      } else if Self.repositoryHosts.contains(parsed.host) {
+      case .repository(let platform?):
         repositoryResourceID = try await Self.resolveResource(
-          owner: parsed.owner, name: parsed.name, on: db
+          owner: parsed.owner, name: parsed.name, platform: platform, on: db
         )?.requireID()
+      case .repository(nil), nil:
+        // A known repository-shaped host (`gitlab.com`) with no `Platform` to filter an account
+        // against — see `ProvenanceTarget`'s doc comment — or a host this job does not
+        // recognize at all. Either way: no match, not "match anything."
+        break
       }
     }
     card.$hubResource.id = hubResourceID
@@ -226,14 +232,38 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
     try await card.save(on: db)
   }
 
-  /// Hosts whose location resolves into `hubResource`.
-  private static let hubHosts: Set<String> = ["huggingface.co"]
+  /// Which of the two foreign keys a location's host resolves into, and which `Platform` its
+  /// owning account has to carry for that resolution to be correct rather than coincidental.
+  ///
+  /// `accounts` is unique on `(name, platform)`, not `name` alone (`FirstMigration.swift`), and
+  /// the same organization legitimately owns accounts under one name across several platforms —
+  /// the checked-in dev seed creates `icicle-ai` on `.github`, `.ghcr`, `.npm`, `.huggingface`,
+  /// and `.pypi`. Resolving on name alone let a Hugging Face location match whichever `icicle-ai`
+  /// resource happened to share the name, GitHub included, with no error and no log: the exact
+  /// silently-wrong cross-registry link this whole feature exists to prevent. `platform` is what
+  /// `resolveResource` filters accounts on, and since that pair is unique, at most one account
+  /// can ever match.
+  private enum ProvenanceTarget {
+    case hub(Platform)
+    /// `Platform?`, not `Platform`: `github.com` and `gitlab.com` share this column and the shape
+    /// of a repository location — see `PatraCard.repositoryResource`'s doc comment, which is
+    /// about the *column* not encoding a platform, because the UI reads it off the resolved
+    /// resource's account. That is a statement about storage and display, not license for the
+    /// *resolver* to match a platform that does not exist. `Platform` has no `.gitlab` case
+    /// (`github, ghcr, huggingface, npm, pypi, patra`), so `gitlab.com` carries `nil` here: known
+    /// as repository-shaped, with nothing to filter an account against, so it can never resolve
+    /// — `sourceURL` still gets stored, exactly like any other host this job cannot place.
+    case repository(Platform?)
 
-  /// Hosts whose location resolves into `repositoryResource`. `gitlab.com` shares the shape with
-  /// `github.com` and the same column — see `PatraCard.repositoryResource`'s doc comment — even
-  /// though nothing in `Platform` names a GitLab account today, so a GitLab location is parsed
-  /// the same way and simply never finds a match.
-  private static let repositoryHosts: Set<String> = ["github.com", "gitlab.com"]
+    static func of(host: String) -> ProvenanceTarget? {
+      switch host {
+      case "huggingface.co": .hub(.huggingface)
+      case "github.com": .repository(.github)
+      case "gitlab.com": .repository(nil)
+      default: nil
+      }
+    }
+  }
 
   /// Splits a Patra `location` value into its host and the first two path components — owner and
   /// repo/model name — ignoring anything after them. Returns nil when the value is not a URL
@@ -252,28 +282,32 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
     return (host.lowercased(), String(segments[0]), String(segments[1]))
   }
 
-  /// Finds a registered `Resource` whose owning account is named `owner` and whose own name is
-  /// `name`.
+  /// Finds a registered `Resource` whose owning account is named `owner` on `platform`, and whose
+  /// own name is `name`.
+  ///
+  /// `platform` is required, not inferred, precisely because `(name, platform)` — not `name`
+  /// alone — is what `accounts` treats as identifying: see `ProvenanceTarget`'s doc comment for
+  /// the reused-name case this exists to rule out. Filtering on the pair also means at most one
+  /// account can match, so this never depends on an unordered `.first()` choosing among several
+  /// same-named candidates.
   ///
   /// Compared case-insensitively against already-lowercased storage — `Account.Create.toModel()`
   /// and `Resource.Create.toModel()` both lowercase on write — so lowercasing the parsed URL
   /// segments here is enough, with no need for a case-insensitive SQL comparison.
-  ///
-  /// Deliberately platform-agnostic: nothing here requires the owning account's `platform` to
-  /// match the URL's host that chose which column to resolve into. The UI reads the actual
-  /// platform off the resolved resource's own account, not off which of `hubResource` /
-  /// `repositoryResource` it landed in.
   private static func resolveResource(
-    owner: String, name: String, on db: any Database
+    owner: String, name: String, platform: Platform, on db: any Database
   ) async throws -> Resource? {
-    let accounts = try await Account.query(on: db)
-      .filter(\.$name == owner.lowercased())
-      .all()
-    let accountIDs = try accounts.map { try $0.requireID() }
-    guard !accountIDs.isEmpty else { return nil }
+    guard
+      let account = try await Account.query(on: db)
+        .filter(\.$name == owner.lowercased())
+        .filter(\.$platform == platform)
+        .first()
+    else {
+      return nil
+    }
 
     return try await Resource.query(on: db)
-      .filter(\.$account.$id ~~ accountIDs)
+      .filter(\.$account.$id == (try account.requireID()))
       .filter(\.$name == name.lowercased())
       .first()
   }
