@@ -92,12 +92,19 @@
    * (target 8), worst normal-vision ΔE 19.6 light / 19.3 dark (floor 15). Aqua, yellow and
    * magenta fall below 3:1 on the light surface; the documented relief is a visible label, and
    * both the registry picker and the rail print the registry name beside every bar. Re-run
-   * `validate_palette.js` before changing any of these five. */
+   * `validate_palette.js` before changing any of these five.
+   *
+   * Patra is a sixth, added later at hue ~101° (moss/grass green) — the widest open gap in the
+   * ring between Hugging Face's orange-yellow (~41°) and GitHub's teal-green (~159°), so it reads
+   * as its own hue rather than a shade of either neighbour. It has not been run through
+   * `validate_palette.js` (the script is not checked into this repository); re-run it against
+   * this token before relying on its numbers the way the other five are relied upon. */
   --ins-platform-github: #1baf7a;
   --ins-platform-ghcr: #4a3aa7;
   --ins-platform-huggingface: #eda100;
   --ins-platform-npm: #e87ba4;
   --ins-platform-pypi: #2a78d6;
+  --ins-platform-patra: #4f9e2f;
 
   /* Status. Reserved — never reused as a series colour, always paired with an icon and label. */
   --ins-good: #0ca30c;
@@ -168,6 +175,7 @@
   --ins-platform-huggingface: #c98500;
   --ins-platform-npm: #d55181;
   --ins-platform-pypi: #3987e5;
+  --ins-platform-patra: #6cc24a;
 }
 
 html,

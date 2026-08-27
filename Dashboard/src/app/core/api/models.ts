@@ -10,7 +10,7 @@
  */
 
 /** Providers Insights collects from. Mirrors `Platform` in `Models/Account.swift`. */
-export type Platform = 'github' | 'ghcr' | 'huggingface' | 'npm' | 'pypi';
+export type Platform = 'github' | 'ghcr' | 'huggingface' | 'npm' | 'pypi' | 'patra';
 
 /**
  * Catalog classification of a resource. Mirrors `ResourceType` in `Models/Resource.swift`.
@@ -18,18 +18,27 @@ export type Platform = 'github' | 'ghcr' | 'huggingface' | 'npm' | 'pypi';
  * Note there is no `image` member. The previous dashboard listed one in its display ordering,
  * which silently sorted a type the API can never return.
  */
-export type ResourceType = 'container' | 'dataset' | 'model' | 'package' | 'repository' | 'service';
+export type ResourceType =
+  | 'agent'
+  | 'container'
+  | 'dataset'
+  | 'model'
+  | 'package'
+  | 'repository'
+  | 'service';
 
 /**
  * Semantic kind of a reading. Mirrors `MetricType` in `Models/Metric.swift`.
  *
  * The `*AllTime` members are running totals the collector folds up from rolling windows; the
  * bare members are whatever the platform reported for its own window, which differs per platform
- * and is why `metricLabel` exists.
+ * and is why `metricLabel` exists. `deployments` has no `AllTime` twin: Patra's count is read
+ * whole on every sweep, so there is no rolling window to fold.
  */
 export type MetricType =
   | 'authentications'
   | 'clones'
+  | 'deployments'
   | 'downloads'
   | 'forks'
   | 'likes'

@@ -69,6 +69,7 @@ const FALLBACK: ChartPalette = {
     huggingface: '#eda100',
     npm: '#e87ba4',
     pypi: '#2a78d6',
+    patra: '#4f9e2f',
   },
 };
 
