@@ -38,16 +38,24 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
     // service's API and dashboard are public, so sending a token would leak exactly what
     // `is_private` exists to hide. Filtering `is_private` per card in `register` below is what
     // an anonymous caller needs instead.
+    //
+    // Fetch everything, THEN write everything — across both catalogs, not just within one.
+    // `PatraAPI.page` already fetches every page of a single endpoint before returning, so within
+    // `/modelcards` this held for free; but writing model cards immediately and only afterward
+    // requesting `/datasheets` reopened the same hole one level up. A `/datasheets` failure after
+    // the model half had already landed left exactly the half-registry this convention exists to
+    // prevent — model resources persisted, zero datasets, until a backoff-delayed retry. Both
+    // requests now complete before either `register` loop runs a single write.
     let modelCards = try await PatraAPI.page(
       context, path: "/modelcards", as: PatraModelCard.self)
+    let datasheets = try await PatraAPI.page(
+      context, path: "/datasheets", as: PatraDatasheet.self)
+
     for card in modelCards {
       try await register(
         cardUUID: card.uuid, name: card.name, version: card.version, updatedAt: card.updatedAt,
         isPrivate: card.isPrivate, type: .model, accountID: accountID, context: context)
     }
-
-    let datasheets = try await PatraAPI.page(
-      context, path: "/datasheets", as: PatraDatasheet.self)
     for sheet in datasheets {
       try await register(
         cardUUID: sheet.uuid, name: sheet.title, version: sheet.version,

@@ -553,6 +553,49 @@ struct SyncJobTests {
     }
   }
 
+  /// Fetch everything, then write everything — across both catalogs, not just within one page
+  /// loop. `/modelcards` succeeds and would, on its own, register a resource; `/datasheets` then
+  /// fails. If the job wrote model cards before requesting datasheets, this would land a
+  /// half-registry: model resources persisted, no datasets, until a backoff-delayed retry. The
+  /// fix is fetching both lists before writing either, so a later failure leaves nothing written
+  /// at all.
+  @Test
+  func `A failed datasheets fetch writes no catalog rows at all`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+
+      let requests = stubPagedAPI(on: app) { url in
+        if url.contains("/modelcards"), url.contains("skip=0") {
+          return self.jsonResponse(
+            .ok, "[\(self.modelCardJSON(uuid: "would-land", name: "Would Land"))]")
+        }
+        if url.contains("/datasheets") {
+          return self.jsonResponse(.internalServerError, #"{"detail":"boom"}"#)
+        }
+        return nil
+      }
+
+      let error = await thrownJobError {
+        try await SyncPatraCatalog().dequeue(
+          queueContext(for: app), .init(id: try account.requireID()))
+      }
+
+      guard case .apiRequestFailed? = error else {
+        Issue.record("expected apiRequestFailed, got \(String(describing: error?.description))")
+        return
+      }
+
+      // Nothing from the model half landed either, even though it fetched and would have
+      // registered cleanly on its own.
+      #expect(try await Resource.query(on: app.db).count() == 0)
+      #expect(try await PatraCard.query(on: app.db).count() == 0)
+
+      let paths = requests.withLockedValue { $0.map(\.url.path) }
+      #expect(paths.contains("/modelcards"))
+      #expect(paths.contains("/datasheets"))
+    }
+  }
+
   /// `is_private == true` skips the card entirely — no `Resource`, no `PatraCard` — rather than
   /// registering it and hiding it later. A public dashboard has no business creating a row for
   /// something the registry says is private.

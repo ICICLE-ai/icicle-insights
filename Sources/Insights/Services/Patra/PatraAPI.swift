@@ -45,8 +45,8 @@ struct PatraDeployment: Content {}
 /// Patra's HTTP surface: wire types shared by both list endpoints, and the paging loop that reads
 /// them off `context.application.client`.
 ///
-/// A namespace, not a job — `SyncPatraModelCards` and `SyncPatraDatasheets` (added in later
-/// tasks) both page through this rather than building their own request loop.
+/// A namespace, not a job — `SyncPatraCatalog` (added in a later task) pages both endpoints
+/// through this rather than building its own request loop.
 enum PatraAPI {
   /// Patra has no environment-specific deployment today, unlike Tapis's per-tenant hosts — so
   /// this is a constant, not a config knob, matching `SyncHuggingFaceHubStats`'s hardcoded
