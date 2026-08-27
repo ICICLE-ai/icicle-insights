@@ -1,0 +1,50 @@
+[
+    {
+        "uuid": "2a7b541d-d3d4-4969-8639-576830ad3d95",
+        "title": "Continually Adapt or Not (CAN) Benchmark",
+        "creator": "ICICLE AI Institute",
+        "category": "Camera trap",
+        "is_private": false,
+        "updated_at": "2026-06-03T22:28:37.608303+00:00"
+    },
+    {
+        "uuid": "ab55bd2e-5146-4509-b862-cc0292626456",
+        "title": "HLO Feature Dataset for Deep Learning Resource Estimation",
+        "creator": "ICICLE AI Institute",
+        "category": "Graph machine learning",
+        "is_private": false,
+        "updated_at": "2026-06-03T22:28:37.608303+00:00"
+    },
+    {
+        "uuid": "d169e2ed-2435-49f0-93ef-207abcc44ede",
+        "title": "Lorem Picsum Sample Images",
+        "creator": "Marby, David",
+        "category": "Placeholder images",
+        "is_private": false,
+        "updated_at": "2026-07-29T21:37:55.768238+00:00"
+    },
+    {
+        "uuid": "49fff6a8-b6a7-4e6c-997a-f1ea4724ec5f",
+        "title": "Ohio Small Animals",
+        "creator": "Balasubramaniam, Sowbaranika",
+        "category": "camera traps",
+        "is_private": false,
+        "updated_at": "2026-07-10T19:24:49.200602+00:00"
+    },
+    {
+        "uuid": "2c29fa56-7cc5-4264-a429-e30afc357af4",
+        "title": "Organization SIC Code Dataset",
+        "creator": "ICICLE AI Institute",
+        "category": "Standard Industrial Classification (SIC)",
+        "is_private": false,
+        "updated_at": "2026-06-03T22:28:37.608303+00:00"
+    },
+    {
+        "uuid": "b56b258e-50bd-421f-9374-d9de88a1cb3e",
+        "title": "Snapshot Karoo",
+        "creator": "Sarah Huebner",
+        "category": "camera traps",
+        "is_private": false,
+        "updated_at": "2026-07-17T15:56:55.062294+00:00"
+    }
+]

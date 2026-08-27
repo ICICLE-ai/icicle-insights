@@ -113,10 +113,11 @@ func configure(_ app: Application) async throws {
 
   // Development-only seed data so the dashboard has something to render. Only ever
   // registered in `.development`, so it targets `dev` and never the `test` database.
-  // Real ICICLE figures only: the snapshot is a single point in time, so trend series
+  // Real figures only: each snapshot is a single point in time, so trend series
   // have one point each until a second sweep is recorded.
   if app.environment == .development {
     app.migrations.add(ICICLESnapshotJuly2026())
+    app.migrations.add(PatraCatalogAugust2026())
   }
 
   // Jobs live in Redis rather than Postgres: the worker's poll is a blocking pop instead of a
