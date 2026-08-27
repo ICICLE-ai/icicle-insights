@@ -216,6 +216,16 @@ const NODE_SIZE = { width: 140, fontSize: 12, fontWeight: 650, paddingX: 14, pad
   `,
 })
 export class ProvenanceGraph {
+  /**
+   * The full catalog, deliberately unscoped by the dashboard's current filter selection.
+   *
+   * A link is only ever recorded on the Patra-side `Resource` — its GitHub/Hugging Face
+   * counterparts never own a `PatraCard`, so their own `links` is always empty (see
+   * `buildProvenanceGraph`). Pass `DashboardStore.scopedResources()` here instead and the graph
+   * empties itself the moment someone clicks one of those counterpart nodes: selecting a node
+   * narrows the dashboard's resource filter to just that one resource, which is exactly the input
+   * this component needs to stay whole. Always wire this to `store.catalog().resources`.
+   */
   readonly resources = input.required<readonly Resource[]>();
   /** Resource id → the platform of the account that owns it, from `DashboardStore.catalog()`.
    * Needed because a resource's own platform is not carried on `Resource` itself — only a

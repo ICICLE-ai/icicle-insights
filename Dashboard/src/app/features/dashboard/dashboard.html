@@ -250,8 +250,13 @@
     aria-labelledby="dashboard-heading-provenance"
   >
     <h2 id="dashboard-heading-provenance" class="ins-eyebrow ins-section">Provenance</h2>
+    <!-- Unscoped resources deliberately, not `store.scopedResources()`: a provenance cluster is
+         inherently cross-resource (the GitHub/Hugging Face counterparts never own the Patra card
+         that carries the link), so narrowing this to the current scope would drop most of a
+         cluster's own nodes the moment one of them is selected. Clicking a node still scopes the
+         rest of the dashboard via `selectProvenanceResource`; only the graph itself stays whole. -->
     <app-provenance-graph
-      [resources]="store.scopedResources()"
+      [resources]="store.catalog().resources"
       [resourcePlatform]="store.catalog().resourcePlatform"
       (resourceSelect)="selectProvenanceResource($event)"
     />

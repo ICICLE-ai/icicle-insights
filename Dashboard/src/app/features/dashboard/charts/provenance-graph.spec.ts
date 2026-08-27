@@ -1,8 +1,12 @@
-import { provideZonelessChangeDetection } from '@angular/core';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { Component, inject, provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
-import type { Platform, Resource, ResourceLink } from '../../../core/api/models';
+import type { Account, Platform, Resource, ResourceLink } from '../../../core/api/models';
+import { INSIGHTS_CONFIG, defaultInsightsConfig } from '../../../core/config';
+import { DashboardStore } from '../dashboard-store';
 import {
   ProvenanceGraph,
   buildProvenanceGraph,
@@ -188,5 +192,179 @@ describe('ProvenanceGraph component', () => {
     const root = await render([resource], platformMap([['patra-1', 'patra']]));
 
     expect(root.querySelector('.ins-provenance-graph__empty')).toBeNull();
+  });
+});
+
+/**
+ * A test-only stand-in for the `dashboard.html` section that hosts `app-provenance-graph`.
+ *
+ * Mirrors that section's exact bindings — unscoped `store.catalog().resources`, and
+ * `resourceSelect` wired straight to `store.setResourceFilter`, the same call
+ * `Dashboard.selectProvenanceResource` makes. Kept intentionally this small (no `AppNav`, no
+ * `Router`, no `SessionStore` probe) so the click-through test below stays about this one wiring
+ * decision rather than the whole page's unrelated dependency graph.
+ */
+@Component({
+  selector: 'app-provenance-graph-host-fixture',
+  imports: [ProvenanceGraph],
+  template: `
+    <app-provenance-graph
+      [resources]="store.catalog().resources"
+      [resourcePlatform]="store.catalog().resourcePlatform"
+      (resourceSelect)="store.setResourceFilter($event)"
+    />
+  `,
+})
+class ProvenanceGraphHostFixture {
+  protected readonly store = inject(DashboardStore);
+}
+
+/**
+ * Regression coverage for a defect code review caught: clicking a provenance node calls
+ * `DashboardStore.setResourceFilter`, which narrows `scopedResources()` to that one resource. A
+ * `PatraCard`'s `resource_id` is always the Patra-side resource (`PatraCard.swift`), so a link is
+ * only ever recorded on *that* resource's own `links` — its GitHub/Hugging Face counterparts
+ * never own a card, so their `links` is always `[]`. Feeding the graph `scopedResources()`
+ * therefore meant clicking two of every three nodes in a real cluster emptied the graph and
+ * showed "No cross-registry links recorded yet" — the same message as the genuinely-empty state.
+ *
+ * `buildProvenanceGraph`'s own unit tests above never exercised this: they only ever handed it
+ * hand-built multi-resource arrays, never the single-resource list the real click handler
+ * actually produces via the real store. The two tests below close that gap from different angles:
+ * one proves the mechanism through the real `DashboardStore`'s own narrowing, the other drives an
+ * actual DOM click through a real Angular template binding and confirms the rendered chart
+ * survives it.
+ */
+describe('provenance graph survives selecting one of its own nodes (regression)', () => {
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [ProvenanceGraphHostFixture],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: INSIGHTS_CONFIG, useValue: defaultInsightsConfig },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  /** `resource()` kicks off from an effect, which does not run in a zoneless test until change
+   * detection is pumped — see `dashboard-store.spec.ts`'s identical helper. */
+  async function startLoad(): Promise<void> {
+    TestBed.tick();
+    await Promise.resolve();
+  }
+
+  /**
+   * Loads a CAN-Benchmark-shaped catalog into a real `DashboardStore`: a Patra datasheet whose
+   * own `links` name a GitHub and a Hugging Face counterpart, and those two counterparts with
+   * empty `links` of their own — exactly what the real backend returns, per the doc comment
+   * above.
+   */
+  async function loadCanBenchmarkCatalog(): Promise<void> {
+    await startLoad();
+
+    const accounts: Account[] = [
+      { id: 'acc-gh', name: 'icicle-ai', platform: 'github' },
+      { id: 'acc-hf', name: 'icicle-ai', platform: 'huggingface' },
+      { id: 'acc-patra', name: 'icicle-ai', platform: 'patra' },
+    ];
+    const resources: Resource[] = [
+      { id: 'gh-1', accountID: 'acc-gh', name: 'can-benchmark', type: 'repository', links: [] },
+      { id: 'hf-1', accountID: 'acc-hf', name: 'can_benchmark', type: 'dataset', links: [] },
+      {
+        id: 'patra-1',
+        accountID: 'acc-patra',
+        name: 'Continually Adapt or Not (CAN) Benchmark',
+        type: 'dataset',
+        links: [
+          { id: 'gh-1', name: 'can-benchmark', platform: 'github' },
+          { id: 'hf-1', name: 'can_benchmark', platform: 'huggingface' },
+        ],
+      },
+    ];
+
+    http.expectOne((r) => r.url.endsWith('/accounts')).flush(accounts);
+    http.expectOne((r) => r.url.endsWith('/resources')).flush(resources);
+    http.expectOne((r) => r.url.endsWith('/releases')).flush([]);
+    for (const call of http.match((r) => r.url.endsWith('/metrics'))) {
+      call.flush([]);
+    }
+
+    // A macrotask turn, not just microtasks: the resolved `Promise.all` travels through the
+    // resource's own internal scheduling before its signals update — same as
+    // `dashboard-store.spec.ts`'s failure test.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    TestBed.tick();
+  }
+
+  it('keeps the whole cluster in the graph’s real input once a click narrows the dashboard’s resource filter', async () => {
+    const store = TestBed.inject(DashboardStore);
+    await loadCanBenchmarkCatalog();
+
+    expect(store.catalog().resources).toHaveLength(3);
+
+    // The exact call `Dashboard.selectProvenanceResource` makes when a node is clicked — the
+    // real scope path a click actually drives, not a hand-rolled re-implementation of
+    // `scopedResources`'s own filter.
+    store.setResourceFilter('gh-1');
+
+    expect(store.scopedResources()).toHaveLength(1);
+    expect(store.scopedResources()[0]?.id).toBe('gh-1');
+
+    // What the graph used to be fed (the bug): only the clicked resource survives scoping, and
+    // it owns no `links` of its own, so the graph empties itself even though the cluster is real.
+    const scopedGraph = buildProvenanceGraph(
+      store.scopedResources(),
+      store.catalog().resourcePlatform,
+    );
+    expect(scopedGraph.vertices).toHaveLength(0);
+    expect(scopedGraph.edges).toHaveLength(0);
+
+    // What the graph is fed now (the fix): the unscoped catalog survives the same click intact.
+    const catalogGraph = buildProvenanceGraph(
+      store.catalog().resources,
+      store.catalog().resourcePlatform,
+    );
+    expect(catalogGraph.vertices).toHaveLength(3);
+    expect(catalogGraph.edges).toHaveLength(2);
+  });
+
+  it('keeps rendering the chart, not the empty state, after an actual DOM click on a linked node', async () => {
+    const fixture = TestBed.createComponent(ProvenanceGraphHostFixture);
+    await loadCanBenchmarkCatalog();
+    await fixture.whenStable();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.ins-provenance-graph__empty')).toBeNull();
+    expect(root.querySelectorAll('tbody tr')).toHaveLength(2);
+
+    // The GitHub counterpart's row link in the paired table — clicking it is the same
+    // `resourceSelect` emission a click on its chart node produces (`selectResource` in
+    // `ProvenanceGraph`), routed here through the host's real `(resourceSelect)` binding into
+    // `store.setResourceFilter`, exactly as `dashboard.html` wires it.
+    const links = Array.from(
+      root.querySelectorAll<HTMLButtonElement>('.ins-provenance-graph__resource-link'),
+    );
+    const githubNodeLink = links.find((button) => button.textContent?.includes('can-benchmark'));
+    expect(githubNodeLink).toBeDefined();
+
+    githubNodeLink?.click();
+    await fixture.whenStable();
+
+    // The click narrowed the dashboard's resource filter to just the GitHub resource — confirms
+    // the click actually did what a real one does, not that nothing happened.
+    const store = TestBed.inject(DashboardStore);
+    expect(store.scopedResources()).toHaveLength(1);
+    expect(store.scopedResources()[0]?.id).toBe('gh-1');
+
+    // The regression itself: the graph must still show the whole cluster, not the same "No
+    // cross-registry links recorded yet" message the genuinely-empty state shows.
+    expect(root.querySelector('.ins-provenance-graph__empty')).toBeNull();
+    expect(root.textContent).not.toContain('No cross-registry links recorded yet');
+    expect(root.querySelectorAll('tbody tr')).toHaveLength(2);
   });
 });
