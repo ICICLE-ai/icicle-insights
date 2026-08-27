@@ -425,7 +425,8 @@ struct SyncJobTests {
     on app: Application,
     modelCards: String = "[]",
     datasheets: String = "[]",
-    details: [String: String] = [:]
+    details: [String: String] = [:],
+    datasheetDetails: [String: String] = [:]
   ) -> NIOLockedValueBox<[ClientRequest]> {
     stubPagedAPI(on: app) { url in
       if url.contains("/modelcards"), url.contains("skip=0") {
@@ -437,6 +438,13 @@ struct SyncJobTests {
       if url.hasPrefix("\(PatraAPI.baseURL)/modelcard/") {
         let uuid = String(url.dropFirst("\(PatraAPI.baseURL)/modelcard/".count))
         return self.jsonResponse(.ok, details[uuid] ?? self.emptyDetailJSON)
+      }
+      // `/datasheet/{uuid}`, singular — distinct from the `/datasheets` list matched above
+      // because that path has no trailing slash before its query string, so the two never
+      // collide on a shared prefix.
+      if url.hasPrefix("\(PatraAPI.baseURL)/datasheet/") {
+        let uuid = String(url.dropFirst("\(PatraAPI.baseURL)/datasheet/".count))
+        return self.jsonResponse(.ok, datasheetDetails[uuid] ?? self.emptyDatasheetDetailJSON)
       }
       return nil
     }
@@ -454,6 +462,34 @@ struct SyncJobTests {
     let datasheetJSON = trainingDatasheetUUID.map { #""\#($0)""# } ?? "null"
     return
       #"{"ai_model":{"location":\#(locationJSON)},"training_datasheet_uuid":\#(datasheetJSON)}"#
+  }
+
+  /// A `/datasheet/{uuid}` detail response naming no identifiers at all — the default for any
+  /// test that registers a public datasheet without asserting on its provenance. Matches Patra's
+  /// real shape for a datasheet with no cross-registry identifiers, not just this test double's
+  /// convenience: both arrays present but empty.
+  private var emptyDatasheetDetailJSON: String {
+    #"{"related_identifiers":[],"alternate_identifiers":[]}"#
+  }
+
+  /// One DataCite-style related identifier, in the shape `/datasheet/{uuid}` sends it.
+  /// `identifierType` is fixed at `"URL"` — the only type any live related identifier carries —
+  /// since nothing in `SyncPatraCatalog` reads that field.
+  private func relatedIdentifierJSON(_ identifier: String, relationType: String) -> String {
+    #"{"related_identifier":"\#(identifier)","related_identifier_type":"URL","relation_type":"\#(relationType)"}"#
+  }
+
+  /// One DataCite-style alternate identifier, in the shape `/datasheet/{uuid}` sends it.
+  private func alternateIdentifierJSON(_ identifier: String, type: String) -> String {
+    #"{"alternate_identifier":"\#(identifier)","alternate_identifier_type":"\#(type)"}"#
+  }
+
+  /// A `/datasheet/{uuid}` detail response assembled from pre-built `related_identifier`/
+  /// `alternate_identifier` JSON fragments (see the two helpers above). Omitting either argument
+  /// sends an empty array, not a missing key — a datasheet with no alternate identifiers at all is
+  /// covered by `emptyDatasheetDetailJSON` and the "absent key" test below instead.
+  private func datasheetDetailJSON(related: [String] = [], alternate: [String] = []) -> String {
+    #"{"related_identifiers":[\#(related.joined(separator: ","))],"alternate_identifiers":[\#(alternate.joined(separator: ","))]}"#
   }
 
   /// A Patra account with no vault: collection here is deliberately anonymous, so none of these
@@ -1145,6 +1181,249 @@ struct SyncJobTests {
       let links = try #require(loaded.toPublic().links)
       #expect(links.count == 1)
       #expect(links.first?.id == hubResourceID)
+    }
+  }
+
+  // MARK: - SyncPatraCatalog / datasheet provenance resolution
+
+  /// The live CAN Benchmark shape: an `alternate_identifier` of type `HuggingFace` naming the
+  /// same dataset, alongside a `related_identifier` (`yolov9-animals-AE-data`, `IsReferencedBy`)
+  /// naming a *different* artifact that merely trains on it. `chooseDatasheetCandidate` must pick
+  /// the alternate identifier outright rather than the related one, and the resolved resource's
+  /// name (`can_benchmark`) must come from lowercasing `CAN_Benchmark`, not from stripping its
+  /// underscore — proving the existing case-insensitive resolver carries through unchanged.
+  @Test
+  func `An alternate_identifier of type HuggingFace resolves to a registered HF dataset resource`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let hfAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .huggingface)
+      let hubResource = try await makeResource(
+        on: app.db, accountID: try hfAccount.requireID(), name: "can_benchmark", type: .dataset)
+
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        datasheets:
+          #"[{"uuid":"sheet-can","title":"CAN Benchmark","version":null,"is_private":false}]"#,
+        datasheetDetails: [
+          "sheet-can": datasheetDetailJSON(
+            related: [
+              relatedIdentifierJSON(
+                "https://huggingface.co/ICICLE-AI/yolov9-animals-AE-data",
+                relationType: "IsReferencedBy")
+            ],
+            alternate: [
+              alternateIdentifierJSON("ICICLE-AI/CAN_Benchmark", type: "HuggingFace")
+            ])
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "sheet-can").first())
+      #expect(card.sourceURL == "ICICLE-AI/CAN_Benchmark")
+      #expect(try card.$hubResource.id == hubResource.requireID())
+      #expect(card.$repositoryResource.id == nil)
+    }
+  }
+
+  /// Absent an alternate identifier, a `related_identifier` whose `relation_type` is
+  /// `IsVariantFormOf` is trusted as a same-artifact fallback — and, unlike every other datasheet
+  /// test here, this one points at a GitHub URL, proving the fallback resolves into
+  /// `repositoryResource` just as readily as `hubResource` rather than being Hugging-Face-only.
+  @Test
+  func `A related_identifier with IsVariantFormOf resolves when no alternate identifier exists`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let ghAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .github)
+      let repoResource = try await makeResource(
+        on: app.db, accountID: try ghAccount.requireID(), name: "camera-trap-data",
+        type: .repository)
+
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        datasheets:
+          #"[{"uuid":"sheet-variant","title":"Camera Trap Data","version":null,"is_private":false}]"#,
+        datasheetDetails: [
+          "sheet-variant": datasheetDetailJSON(
+            related: [
+              relatedIdentifierJSON(
+                "https://github.com/icicle-ai/camera-trap-data", relationType: "IsVariantFormOf")
+            ])
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "sheet-variant").first())
+      #expect(card.sourceURL == "https://github.com/icicle-ai/camera-trap-data")
+      #expect(try card.$repositoryResource.id == repoResource.requireID())
+      #expect(card.$hubResource.id == nil)
+    }
+  }
+
+  /// A Hugging Face **dataset** URL carries an extra `/datasets/` path segment a model URL does
+  /// not — `huggingface.co/datasets/{owner}/{name}` versus `huggingface.co/{owner}/{name}` — which
+  /// `parseLocation`'s original two-segments-from-the-front logic would have misread as
+  /// owner="datasets". Also exercises the other accepted relation type, `IsIdenticalTo`, so both
+  /// members of `sameArtifactRelationTypes` are proven, not just `IsVariantFormOf`.
+  @Test
+  func `An HF dataset URL with the datasets segment parses correctly`() async throws {
+    try await withInsightsApp { app in
+      let hfAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .huggingface)
+      let hubResource = try await makeResource(
+        on: app.db, accountID: try hfAccount.requireID(), name: "resourceestimation_hlogencnn",
+        type: .dataset)
+
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        datasheets:
+          #"[{"uuid":"sheet-hlo","title":"HLO Feature Dataset","version":null,"is_private":false}]"#,
+        datasheetDetails: [
+          "sheet-hlo": datasheetDetailJSON(
+            related: [
+              relatedIdentifierJSON(
+                "https://huggingface.co/datasets/icicle-ai/resourceestimation_hlogencnn",
+                relationType: "IsIdenticalTo")
+            ])
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "sheet-hlo").first())
+      #expect(
+        card.sourceURL
+          == "https://huggingface.co/datasets/icicle-ai/resourceestimation_hlogencnn")
+      #expect(try card.$hubResource.id == hubResource.requireID())
+    }
+  }
+
+  /// The false-claim guard this whole feature exists for. `IsReferencedBy` means the identified
+  /// resource merely cites this datasheet — a different artifact — so it must not resolve even
+  /// though a resource matching its owner/name is registered and would otherwise be a clean match.
+  /// `IsDocumentedBy` and `IsSupplementTo` fall through the same allowlist for the same reason;
+  /// only one relation is asserted directly since all three take the identical code path.
+  @Test
+  func `A related_identifier with IsReferencedBy does NOT resolve`() async throws {
+    try await withInsightsApp { app in
+      let hfAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .huggingface)
+      _ = try await makeResource(
+        on: app.db, accountID: try hfAccount.requireID(), name: "yolov9-animals-ae-data",
+        type: .model)
+
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        datasheets:
+          #"[{"uuid":"sheet-ref","title":"Referenced Dataset","version":null,"is_private":false}]"#,
+        datasheetDetails: [
+          "sheet-ref": datasheetDetailJSON(
+            related: [
+              relatedIdentifierJSON(
+                "https://huggingface.co/ICICLE-AI/yolov9-animals-AE-data",
+                relationType: "IsReferencedBy")
+            ])
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "sheet-ref").first())
+      // No candidate was ever chosen, so there is nothing to be auditable about either — unlike
+      // the "unknown host" case below, where a *trusted* candidate simply fails to resolve.
+      #expect(card.sourceURL == nil)
+      #expect(card.$hubResource.id == nil)
+      #expect(card.$repositoryResource.id == nil)
+    }
+  }
+
+  /// A trusted candidate (accepted relation type) whose host is not one Insights resolves —
+  /// `storage.googleapis.com`, one of the live catalog's actual hosts — still stores `sourceURL`
+  /// for audit, exactly like a model card's location on an unrecognized host does. The FK stays
+  /// nil because there is nothing to link it to, not because the candidate was distrusted.
+  @Test
+  func `A non-registry identifier stores source_url and leaves the FK nil`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        datasheets:
+          #"[{"uuid":"sheet-gcs","title":"Bucket Dataset","version":null,"is_private":false}]"#,
+        datasheetDetails: [
+          "sheet-gcs": datasheetDetailJSON(
+            related: [
+              relatedIdentifierJSON(
+                "https://storage.googleapis.com/icicle-bucket/dataset.zip",
+                relationType: "IsVariantFormOf")
+            ])
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "sheet-gcs").first())
+      #expect(card.sourceURL == "https://storage.googleapis.com/icicle-bucket/dataset.zip")
+      #expect(card.$hubResource.id == nil)
+      #expect(card.$repositoryResource.id == nil)
+    }
+  }
+
+  /// A datasheet with no identifiers at all — both arrays present but empty, matching
+  /// `emptyDatasheetDetailJSON` — registers cleanly with nothing to resolve, and does not throw.
+  @Test
+  func `A datasheet with no identifiers at all is handled without throwing`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        datasheets:
+          #"[{"uuid":"sheet-empty","title":"Bare Dataset","version":null,"is_private":false}]"#
+      )
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "sheet-empty").first())
+      #expect(card.sourceURL == nil)
+      #expect(card.$hubResource.id == nil)
+      #expect(card.$repositoryResource.id == nil)
+    }
+  }
+
+  /// The other live shape for "no identifiers": `alternate_identifiers` omitted from the response
+  /// entirely rather than sent as `[]`. `PatraDatasheetDetail.alternateIdentifiers` is `nil`-typed
+  /// precisely for this — a missing key must decode to `nil`, not fail the whole response.
+  @Test
+  func `A datasheet whose alternate_identifiers key is absent decodes without throwing`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        datasheets:
+          #"[{"uuid":"sheet-no-alt","title":"No Alternates","version":null,"is_private":false}]"#,
+        datasheetDetails: [
+          "sheet-no-alt": #"{"related_identifiers":[]}"#
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "sheet-no-alt").first())
+      #expect(card.sourceURL == nil)
     }
   }
 

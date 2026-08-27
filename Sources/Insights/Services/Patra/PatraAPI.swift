@@ -67,6 +67,55 @@ struct PatraModelCardDetail: Content {
   }
 }
 
+/// One DataCite-style related identifier from a datasheet's detail response.
+///
+/// `related_identifiers` names *other* artifacts, not necessarily this one under another name —
+/// `relation_type` is what tells them apart. A card whose relation is `IsReferencedBy` or
+/// `IsDocumentedBy` merely cites this datasheet (the live example: a model trained on it); one
+/// whose relation is `IsVariantFormOf` or `IsIdenticalTo` names the same artifact elsewhere. See
+/// `SyncPatraCatalog.resolveDatasheetProvenance` for which relations this job trusts.
+struct PatraRelatedIdentifier: Content {
+  let identifier: String
+  let relationType: String
+
+  enum CodingKeys: String, CodingKey {
+    case identifier = "related_identifier"
+    case relationType = "relation_type"
+  }
+}
+
+/// One DataCite-style alternate identifier from a datasheet's detail response.
+///
+/// Unlike `PatraRelatedIdentifier`, an alternate identifier is *by definition* the same artifact
+/// under a different name — there is no relation type to check. `identifierType` says what kind
+/// of identifier it is; only `"HuggingFace"` (a bare `owner/name` pair, not a URL) is one this job
+/// knows how to resolve. Others (`"URL"`, `"DOI"`, ...) decode without error but resolve nothing.
+struct PatraAlternateIdentifier: Content {
+  let identifier: String
+  let identifierType: String
+
+  enum CodingKeys: String, CodingKey {
+    case identifier = "alternate_identifier"
+    case identifierType = "alternate_identifier_type"
+  }
+}
+
+/// Full detail for one Patra datasheet, from `GET /datasheet/{uuid}`.
+///
+/// Not `PatraDatasheet`, the `/datasheets` list summary: `related_identifiers` and
+/// `alternate_identifiers` only appear here, the same relationship `PatraModelCardDetail` has to
+/// `PatraModelCard`. Both arrays are optional, not just possibly-empty — a live datasheet can omit
+/// `alternate_identifiers` outright rather than sending `[]`.
+struct PatraDatasheetDetail: Content {
+  let relatedIdentifiers: [PatraRelatedIdentifier]?
+  let alternateIdentifiers: [PatraAlternateIdentifier]?
+
+  enum CodingKeys: String, CodingKey {
+    case relatedIdentifiers = "related_identifiers"
+    case alternateIdentifiers = "alternate_identifiers"
+  }
+}
+
 /// Patra's HTTP surface: wire types shared by both list endpoints, and the paging loop that reads
 /// them off `context.application.client`.
 ///
@@ -131,6 +180,25 @@ enum PatraAPI {
     }
     do {
       return try response.content.decode(PatraModelCardDetail.self)
+    } catch {
+      throw JobError.decodingFailed(url: url.string, underlying: error)
+    }
+  }
+
+  /// Fetches one datasheet's full detail — the only source of `related_identifiers` and
+  /// `alternate_identifiers`, both absent from `/datasheets`. Unpaginated, matching `detail(_:uuid:)`
+  /// above; the mirror-image request that makes datasheet provenance resolvable the same way model
+  /// card provenance already is.
+  static func datasheetDetail(
+    _ context: QueueContext, uuid: String
+  ) async throws -> PatraDatasheetDetail {
+    let url = URI(string: "\(baseURL)/datasheet/\(uuid)")
+    let response = try await context.application.client.get(url)
+    guard response.status == .ok else {
+      throw JobError.apiRequestFailed(url: url, response: response)
+    }
+    do {
+      return try response.content.decode(PatraDatasheetDetail.self)
     } catch {
       throw JobError.decodingFailed(url: url.string, underlying: error)
     }

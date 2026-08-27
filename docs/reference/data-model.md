@@ -57,10 +57,18 @@ version) pair, not a distinct model, so one resource commonly owns several.
 | `card_uuid` | Patra's own identifier. Unique — the only stable key; name alone is not |
 | `version` | The card's version string, as Patra reports it. Not exposed by the API |
 | `card_updated_at` | The card's own `updated_at`, as Patra reports it |
-| `source_url` | Patra's raw `location` for the artifact. Stored even when it resolves to nothing |
+| `source_url` | The chosen cross-registry identifier for the artifact. Stored even when it resolves to nothing |
 | `hub_resource_id` | The Hugging Face resource `source_url` names, when it resolves |
 | `repository_resource_id` | The GitHub (or other code host) resource `source_url` names, when it resolves |
 | `training_datasheet_uuid` | Patra's model-to-datasheet link. Stored, unused by the API today |
+
+`source_url` is a model card's raw `ai_model.location` for a model. For a dataset it is the one
+datasheet identifier `SyncPatraCatalog` chose to trust.
+
+A datasheet lists several DataCite-style identifiers. Most name a *different* artifact that only
+cites it. Only an `alternate_identifier` of type `HuggingFace`, or a `related_identifier` whose
+`relation_type` is `IsVariantFormOf` or `IsIdenticalTo`, counts as the same artifact elsewhere. See
+`SyncPatraCatalog.resolveDatasheetProvenance` for the full rule.
 
 **`service_tokens`**
 

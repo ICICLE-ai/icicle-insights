@@ -58,10 +58,17 @@ unverified against a live system:
   the light and dark theme. `provenance-graph.spec.ts` covers the layout mechanism, but nobody has
   loaded the running page against seeded or live data.
 
-Provenance links are expected to render empty either way: Patra's real `location` values resolve
-for most of its live cards, but none name an account this deployment tracks (its Hugging Face URLs
-are third-party, and its GitHub URLs name `camera_traps`, not the `Camera_Trap` Insights collects).
-That is documented behaviour, not something this check would be looking to fix.
+Model card provenance is expected to render empty either way: Patra's real `location` values
+resolve for most of its live model cards, but none name an account this deployment tracks (its
+Hugging Face URLs are third-party, and its GitHub URLs name `camera_traps`, not the `Camera_Trap`
+Insights collects). That is documented behaviour, not something this check would be looking to
+fix.
+
+Datasheet provenance is different: three datasheets (CAN Benchmark, the HLO feature dataset, and
+the Organization SIC Code dataset) carry a Hugging Face `alternate_identifier` or
+`related_identifier` naming a dataset under the `icicle-ai` account Insights already tracks, so
+those three edges are expected to render — the one part of the graph this check should actually
+see filled in.
 
 ### `ResourceType.agent` has no publisher
 
