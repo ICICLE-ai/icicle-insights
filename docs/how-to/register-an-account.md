@@ -10,7 +10,7 @@ credential. Register the account first; resources attach to it afterwards.
 1. Open **Administration → Catalog → Accounts**.
 2. Select **Add account**.
 3. Enter the account name exactly as the platform spells it.
-4. Choose the registry: GitHub, GHCR, Hugging Face, npm, or PyPI.
+4. Choose the registry: GitHub, GHCR, Hugging Face, npm, PyPI, or Patra.
 5. Save.
 
 The registry decides which API collects for every resource under this account. It is not the same
@@ -54,6 +54,9 @@ at once and re-books hourly. Fix the credential and it resumes unattended.
 
 - One credential per account. Resources inherit it.
 - GHCR, npm, and PyPI accounts can be registered but are not collected yet. They need no credential.
+- Patra accounts need no credential either, but unlike those three, Patra **is** collected. Its
+  jobs call the public API anonymously by design — a token would let them see records Patra marks
+  private, and this dashboard is public. Skip **Add its credential** for a Patra account.
 - Deleting an account deletes its resources and their history. There is no undo.
 
 #icicle-insights# #How-To# #Administrator# #catalog#

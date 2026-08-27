@@ -77,6 +77,20 @@ byte-identical to production but loses hot reload. The proxy is the better defau
 
 Proxy configuration is read only at startup. Restart after changing it.
 
+## The provenance graph
+
+Patra imports models and datasets that already live in another registry. The Provenance tab's
+`provenance-graph.ts` draws one node per `Resource` and one edge per link a Patra card recorded
+between them, so the same real artifact under two registries reads as one connected pair, not two
+disconnected catalog rows. There is no hub node: a resource earns a place in the graph only by
+taking part in an edge, and its label is its name over `platformLabel(platform)`.
+
+**The graph is empty today, and that is correct, not a bug.** Patra resolves a `location` for most
+of its live cards, but none name an account this deployment tracks. Its Hugging Face URLs belong
+to third-party accounts, and its GitHub URLs name `ICICLE-ai/camera_traps`, a different repository
+from the `ICICLE-ai/Camera_Trap` Insights actually collects. The graph fills in once someone
+registers the matching accounts and resources.
+
 ## Accessibility is a gate, not a goal
 
 Every chart ships with an exact table alternative, keyboard support, and an accessible name. New
