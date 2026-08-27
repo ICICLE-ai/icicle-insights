@@ -7,7 +7,7 @@ import struct Foundation.UUID
 ///
 /// `CaseIterable` makes SwiftOpenAPI emit the allowed values instead of a bare string.
 enum ResourceType: String, Codable, CaseIterable {
-  case container, dataset, model, package, repository, service
+  case agent, container, dataset, model, package, repository, service
 }
 
 /// A collectable artifact owned by a platform account.

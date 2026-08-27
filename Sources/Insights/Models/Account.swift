@@ -5,7 +5,10 @@ import struct Foundation.UUID
 
 /// A hosting provider that owns accounts and determines resource collection routing.
 enum Platform: String, Codable, CaseIterable {
-  case github, ghcr, huggingface, npm, pypi
+  // Append order, not alphabetical: `composition-chart.ts:125` colours by
+  // `PLATFORM_ORDER.indexOf`, so inserting a new case mid-array recolours every platform after
+  // it. A new platform always goes last.
+  case github, ghcr, huggingface, npm, pypi, patra
 
   /// Longest cadence the API accepts for this platform.
   ///
@@ -22,6 +25,7 @@ enum Platform: String, Codable, CaseIterable {
     case .github: 7
     case .huggingface: 30
     case .ghcr, .npm, .pypi: 30
+    case .patra: 30
     }
   }
 
@@ -35,6 +39,7 @@ enum Platform: String, Codable, CaseIterable {
     switch self {
     case .github: 14
     case .ghcr, .huggingface, .npm, .pypi: nil
+    case .patra: nil
     }
   }
 }

@@ -109,6 +109,7 @@ func configure(_ app: Application) async throws {
   app.migrations.add(Admins())
   app.migrations.add(JobFailures())
   app.migrations.add(CollectionBackoff())
+  app.migrations.add(PatraPlatform())
 
   // Development-only seed data so the dashboard has something to render. Only ever
   // registered in `.development`, so it targets `dev` and never the `test` database.

@@ -5,7 +5,8 @@ import struct Foundation.UUID
 
 /// A collected measurement or its materialized all-time counterpart.
 enum MetricType: String, Codable, CaseIterable {
-  case authentications, clones, downloads, forks, likes, pulls, stars, subscribers, views
+  case authentications, clones, deployments, downloads, forks, likes, pulls, stars, subscribers,
+    views
 
   // All Time / Totals
   case authenticationsAllTime, clonesAllTime, downloadsAllTime, pullsAllTime, viewsAllTime
@@ -20,7 +21,9 @@ enum MetricType: String, Codable, CaseIterable {
     case .downloads, .downloadsAllTime: .downloadsAllTime
     case .pulls, .pullsAllTime: .pullsAllTime
     case .views, .viewsAllTime: .viewsAllTime
-    case .forks, .likes, .stars, .subscribers: nil
+    // `deployments` joins this line for the same reason: Patra's count is read whole on every
+    // sweep, so there is no rolling window, no watermark, and no all-time twin to fold into.
+    case .deployments, .forks, .likes, .stars, .subscribers: nil
     }
   }
 
