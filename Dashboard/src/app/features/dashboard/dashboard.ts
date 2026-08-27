@@ -23,6 +23,7 @@ import {
 import { DashboardStore } from './dashboard-store';
 import { FilterBar } from './filter-bar';
 import { PlatformPicker } from './platform-picker';
+import { ProvenanceGraph } from './charts/provenance-graph';
 import { ReleaseGraph } from './charts/release-graph';
 import { ScopeProfile, type ScopeProfileStat } from './scope-profile';
 
@@ -38,7 +39,7 @@ interface HeadlineMetric {
   readonly coverage: number;
 }
 
-type DashboardSectionId = 'headline' | 'reach' | 'trends' | 'releases';
+type DashboardSectionId = 'headline' | 'reach' | 'trends' | 'releases' | 'provenance';
 
 interface DashboardSectionOption {
   readonly id: DashboardSectionId;
@@ -71,6 +72,7 @@ const DASHBOARD_SECTION_OPTIONS: readonly DashboardSectionOption[] = [
   { id: 'reach', label: 'Top Resources' },
   { id: 'trends', label: 'Trends' },
   { id: 'releases', label: 'Releases' },
+  { id: 'provenance', label: 'Provenance' },
 ];
 
 @Component({
@@ -81,6 +83,7 @@ const DASHBOARD_SECTION_OPTIONS: readonly DashboardSectionOption[] = [
     FilterBar,
     Paginator,
     PlatformPicker,
+    ProvenanceGraph,
     ReleaseGraph,
     ScopeProfile,
     StatTile,
@@ -488,6 +491,13 @@ export class Dashboard {
   }
 
   protected selectReleasedResource(resourceID: string): void {
+    this.store.setResourceFilter(resourceID);
+  }
+
+  /** Same scoping action as `selectReleasedResource`, named for the provenance graph's own
+   * vertices rather than a release — a node there is not necessarily anything that ever shipped
+   * a release, so reusing the release-flavoured name would misdescribe what triggered it. */
+  protected selectProvenanceResource(resourceID: string): void {
     this.store.setResourceFilter(resourceID);
   }
 

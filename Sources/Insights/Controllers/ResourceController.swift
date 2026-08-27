@@ -50,9 +50,23 @@ struct ResourceController: RouteCollection {
   }
 
   @Sendable
-  /// Lists all active resources.
+  /// Lists all active resources, with the same cross-registry `links` eager load `show` uses.
+  ///
+  /// Fluent batches an eager load per query, not per row, so this is a fixed handful of extra
+  /// queries for the whole list — not N+1 — and it is what lets the dashboard's provenance graph
+  /// see links at all, since nothing in the dashboard ever calls `show`.
   func index(req: Request) async throws -> [Resource.Public] {
-    try await Resource.query(on: req.db).all().map { $0.toPublic() }
+    try await Resource.query(on: req.db)
+      .with(\.$patraCards) { card in
+        card.with(\.$hubResource) { hub in
+          hub.with(\.$account)
+        }
+        card.with(\.$repositoryResource) { repository in
+          repository.with(\.$account)
+        }
+      }
+      .all()
+      .map { $0.toPublic() }
   }
 
   @Sendable

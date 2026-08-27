@@ -242,4 +242,18 @@
       />
     }
   </section>
+
+  <section
+    id="dashboard-section-provenance"
+    class="ins-dashboard-section"
+    [hidden]="!showDashboardSection('provenance')"
+    aria-labelledby="dashboard-heading-provenance"
+  >
+    <h2 id="dashboard-heading-provenance" class="ins-eyebrow ins-section">Provenance</h2>
+    <app-provenance-graph
+      [resources]="store.scopedResources()"
+      [resourcePlatform]="store.catalog().resourcePlatform"
+      (resourceSelect)="selectProvenanceResource($event)"
+    />
+  </section>
 }

@@ -73,12 +73,31 @@ export interface Resource {
   type?: ResourceType;
   metrics?: Metric[];
   releases?: Release[];
+  /**
+   * Other registries this artifact is also known under, deduplicated across this resource's
+   * loaded Patra cards. `undefined` means not requested by this endpoint; an empty array means
+   * requested and none found — the same "loaded vs. not" contract every other relationship here
+   * keeps. Both `GET /resources` and `GET /resources/:id` load this.
+   */
+  links?: ResourceLink[];
   /** Earliest instant the due-resource sweep may dispatch it. Past-dated means overdue. */
   nextCollectionAt?: string;
   collectionIntervalDays?: number;
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string;
+}
+
+/**
+ * One registry where a resource's artifact is also known to exist, per a Patra card.
+ *
+ * Flattened server-side from the Patra card that recorded the relationship — this carries just
+ * enough to draw a graph node and an edge, not the card itself.
+ */
+export interface ResourceLink {
+  id?: string;
+  name?: string;
+  platform?: Platform;
 }
 
 /** One observation of one metric for one resource. */

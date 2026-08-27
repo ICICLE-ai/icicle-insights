@@ -132,6 +132,38 @@ struct ResourceControllerTests {
   }
 
   @Test
+  func `Index returns links for a resource whose Patra card names a hub resource`() async throws {
+    try await withInsightsApp { app in
+      let hfAccount = try await makeAccount(on: app.db, name: "hf", platform: .huggingface)
+      let hubResource = try await makeResource(
+        on: app.db, accountID: try hfAccount.requireID(), name: "can_benchmark", type: .dataset)
+
+      let patraAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .patra)
+      let datasheet = try await makeResource(
+        on: app.db, accountID: try patraAccount.requireID(),
+        name: "continually-adapt-or-not-can-benchmark", type: .dataset)
+      try await makePatraCard(
+        on: app.db, resourceID: try datasheet.requireID(),
+        hubResourceID: try hubResource.requireID())
+
+      try await app.testing().test(
+        .GET,
+        "api/resources",
+        afterResponse: { res async throws in
+          #expect(res.status == .ok)
+          let returned = try res.content.decode([Resource.Public].self)
+          let found = try #require(returned.first { $0.id == datasheet.id })
+          let links = try #require(found.links)
+          #expect(links.count == 1)
+          #expect(links.first?.id == hubResource.id)
+          #expect(links.first?.name == "can_benchmark")
+          #expect(links.first?.platform == .huggingface)
+        },
+      )
+    }
+  }
+
+  @Test
   func `Show resource by ID`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
