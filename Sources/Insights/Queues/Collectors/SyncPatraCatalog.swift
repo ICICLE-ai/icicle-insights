@@ -122,7 +122,12 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
       .with(\.$resource, withDeleted: true)
       .first()
     {
-      if existing.resource.name != name {
+      if existing.resource.name != name.lowercased() {
+        // Compared lowercased, not raw: `existing.resource.name` is always stored lowercase (see
+        // the creation branch below), but `name` is whatever case Patra sent, so comparing
+        // without lowercasing would fire this notice on every sweep for any name with an
+        // uppercase letter — a false "renamed upstream" for a card that never changed at all.
+        //
         // Not applied, only recorded: a resource can already carry cards from other authors
         // under this name (name is not unique), so renaming it because one card changed
         // upstream would be presumptuous, and it would orphan metric history against a name
@@ -148,10 +153,19 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
     // `.withDeleted()`: a name match has to see soft-deleted resources too, or a resource an
     // admin deleted looks "unseen" here and the next card under that name collides with it on
     // `resources`' (name, account_id, type) unique index instead of being skipped cleanly below.
+    //
+    // `name.lowercased()`, matching the creation branch below and `resolveResource`'s own
+    // comparison further down this file: `Resource.Create.toModel()` and `ResourceController
+    // .update` both lowercase on write, so every resource this job did not itself just create
+    // under raw Patra casing is stored lowercase already. Comparing against raw `name` here used
+    // to match nothing once an admin edited a Patra-created resource's name (which lowercases it)
+    // or once this job's own fix below started storing lowercase from the start — the next card
+    // under that same name would find no match and create a duplicate resource instead of
+    // attaching, silently forking that artifact's metric history in two.
     let match = try await Resource.query(on: db)
       .withDeleted()
       .filter(\.$account.$id == accountID)
-      .filter(\.$name == name)
+      .filter(\.$name == name.lowercased())
       .filter(\.$type == type)
       .first()
 
@@ -164,8 +178,12 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
       }
       resourceID = try match.requireID()
     } else {
+      // Lowercased on creation for the same reason `Resource.Create.toModel()` lowercases: every
+      // other path that writes a resource name normalizes it, and a Patra-created resource is no
+      // exception — it is just as reachable from `ResourceController.update`, whose lowercasing
+      // this has to match or a later admin edit desyncs the two.
       let resource = Resource(
-        name: name,
+        name: name.lowercased(),
         type: type,
         accountID: accountID,
         // Due now, not nil: `CollectDueResources` filters on `nextCollectionAt <= now` and skips

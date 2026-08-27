@@ -125,3 +125,78 @@ struct PatraAPITests {
     }
   }
 }
+
+/// Nothing above exercises `PatraAPI.timestamps` itself — every stub in `PatraAPITests` above
+/// omits `updated_at` entirely. That left the formatter asserted by no test even though two
+/// consumers depend on it: `SyncPatraCatalog.register` silently drops a parse failure into a
+/// permanently NULL `card_updated_at` (`.flatMap`), and `PatraCatalogAugust2026` force-unwraps it,
+/// which would crash every `.development` boot — a migration nothing in `just test` ever runs,
+/// since it is Postgres-seed-only and registered outside `.testing` (see `configure.swift`).
+@Suite("PatraAPI.timestamps")
+struct PatraAPITimestampsTests {
+  @Test
+  func `Parses a real Patra value with a colon-separated UTC offset`() throws {
+    // Taken verbatim from the live API via `data/patra-modelcards.json`. Patra's own `updated_at`
+    // always ends `+00:00` — an offset with a colon — never `Z`, which is the shape the formatter
+    // most obviously supports at a glance. `ISO8601DateFormatter`'s `.withInternetDateTime`
+    // already parses a colon-separated offset without needing `.withColonSeparatorInTimeZone`
+    // added explicitly, confirmed here rather than assumed.
+    let raw = "2026-07-30T16:38:28.157335+00:00"
+    let parsed = try #require(PatraAPI.timestamps.date(from: raw))
+
+    let expected = DateComponents(
+      calendar: Calendar(identifier: .gregorian),
+      timeZone: TimeZone(secondsFromGMT: 0),
+      year: 2026, month: 7, day: 30, hour: 16, minute: 38, second: 28,
+    ).date!.addingTimeInterval(0.157)
+
+    // Within a millisecond, not exact: `.withFractionalSeconds` keeps three fractional digits,
+    // so Patra's microseconds (`157335`) truncate to `157` rather than rejecting the value.
+    #expect(abs(parsed.timeIntervalSince(expected)) < 0.001)
+  }
+
+  @Test
+  func `Parses every updated_at value the August 2026 seed carries, with no crash`() throws {
+    // `PatraCatalogAugust2026`'s `CardSpec.updatedAt` literals are hand-transcribed from these
+    // same two files (see its doc comment) and fed to `PatraAPI.timestamps.date(from:)!` — a
+    // force-unwrap, because "every string here is a literal copied from the captured export" is
+    // exactly the assumption this test checks rather than trusts. The migration's own values are
+    // `private`, so this reads the real captured JSON directly instead of duplicating them by
+    // hand a third time.
+    let repoRoot = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()  // PatraAPITests.swift
+      .deletingLastPathComponent()  // InsightsTests
+      .deletingLastPathComponent()  // Tests
+    let fixtures = [
+      "data/patra-modelcards.json",
+      "data/patra-datasheets.json",
+    ]
+
+    struct RawCatalogEntry: Decodable {
+      let updatedAt: String
+      enum CodingKeys: String, CodingKey {
+        case updatedAt = "updated_at"
+      }
+    }
+
+    var checked = 0
+    for fixture in fixtures {
+      let url = repoRoot.appendingPathComponent(fixture)
+      let data = try Data(contentsOf: url)
+      let entries = try JSONDecoder().decode([RawCatalogEntry].self, from: data)
+      #expect(!entries.isEmpty)
+
+      for entry in entries {
+        #expect(
+          PatraAPI.timestamps.date(from: entry.updatedAt) != nil,
+          "Failed to parse \(entry.updatedAt) from \(fixture)",
+        )
+        checked += 1
+      }
+    }
+
+    // Guards the guard: if both files were empty or unreadable, every `#expect` above would have
+    // passed vacuously and this test would prove nothing.
+    #expect(checked == 43)
+  }
+}

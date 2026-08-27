@@ -23,7 +23,7 @@ import {
 import { DashboardStore } from './dashboard-store';
 import { FilterBar } from './filter-bar';
 import { PlatformPicker } from './platform-picker';
-import { ProvenanceGraph } from './charts/provenance-graph';
+import { ProvenanceGraph, buildProvenanceGraph } from './charts/provenance-graph';
 import { ReleaseGraph } from './charts/release-graph';
 import { ScopeProfile, type ScopeProfileStat } from './scope-profile';
 
@@ -457,6 +457,15 @@ export class Dashboard {
     ),
   );
 
+  /** Whether the provenance graph has anything to draw — the same gate `ProvenanceGraph.hasLinks`
+   * applies internally, computed here too so the section navigator can hide the tab rather than
+   * offer a view that only ever renders the empty state. Built from the unscoped catalog, matching
+   * `app-provenance-graph`'s own binding in the template: see the comment there for why. */
+  protected readonly hasProvenanceLinks = computed(() => {
+    const catalog = this.store.catalog();
+    return buildProvenanceGraph(catalog.resources, catalog.resourcePlatform).edges.length > 0;
+  });
+
   /** The section navigator only offers views backed by visible content. */
   protected readonly dashboardSections = computed<readonly DashboardSectionOption[]>(() =>
     DASHBOARD_SECTION_OPTIONS.filter((section) => {
@@ -467,6 +476,8 @@ export class Dashboard {
           return this.trendSections().length > 0;
         case 'releases':
           return this.store.scopedReleases().length > 0;
+        case 'provenance':
+          return this.hasProvenanceLinks();
         default:
           return true;
       }

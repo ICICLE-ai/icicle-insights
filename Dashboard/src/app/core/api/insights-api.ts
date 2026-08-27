@@ -21,6 +21,7 @@ export const METRIC_PAGE_LIMIT = 1000;
 export const ALL_METRIC_TYPES: readonly MetricType[] = [
   'authentications',
   'clones',
+  'deployments',
   'downloads',
   'forks',
   'likes',

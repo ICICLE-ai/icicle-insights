@@ -527,7 +527,10 @@ struct SyncJobTests {
       let resources = try await Resource.query(on: app.db).filter(\.$type == .model).all()
       #expect(resources.count == 1)
       let resource = try #require(resources.first)
-      #expect(resource.name == "MegaDetector")
+      // Lowercased on creation, matching `Resource.Create.toModel()` and `ResourceController
+      // .update` — the register match below has to compare lowercased too, or a later card whose
+      // incoming name differs only by case fails to find this row and forks a duplicate resource.
+      #expect(resource.name == "megadetector")
 
       let cardRows = try await PatraCard.query(on: app.db)
         .filter(\.$resource.$id == (try resource.requireID()))
@@ -650,13 +653,19 @@ struct SyncJobTests {
   /// that resource's old name must not resurrect it, and must not create a second resource with
   /// the same name either — the (name, account_id, type) unique index would reject that anyway,
   /// but the correct behaviour is to skip the card, not to fail the sweep.
+  ///
+  /// The stored resource is deliberately lowercase while the incoming card names it in Patra's
+  /// original mixed case: that is what a soft-deleted resource actually looks like in production,
+  /// since `Resource.Create.toModel()`/`ResourceController.update` both lowercase on write, and it
+  /// is what proves the case-insensitive match still finds — and still respects the soft-delete on
+  /// — a resource whose case no longer matches the incoming card verbatim.
   @Test
   func `A card whose resource is soft-deleted is not resurrected`() async throws {
     try await withInsightsApp { app in
       let account = try await makePatraAccount(on: app)
       let accountID = try account.requireID()
       let deleted = try await makeResource(
-        on: app.db, accountID: accountID, name: "Retired Model", type: .model)
+        on: app.db, accountID: accountID, name: "retired model", type: .model)
       try await deleted.delete(on: app.db)
 
       stubPatraCatalog(
@@ -711,7 +720,8 @@ struct SyncJobTests {
 
       let firstResource = try #require(
         try await Resource.query(on: app.db).filter(\.$type == .model).first())
-      #expect(firstResource.name == "Old Name")
+      // Lowercased on creation, matching every other write path — see `register`'s doc comment.
+      #expect(firstResource.name == "old name")
 
       stubPatraCatalog(
         on: app, modelCards: "[\(modelCardJSON(uuid: "stable-uuid", name: "New Name"))]")
@@ -720,7 +730,41 @@ struct SyncJobTests {
       #expect(try await Resource.query(on: app.db).count() == 1)
       #expect(try await PatraCard.query(on: app.db).count() == 1)
       let reloaded = try #require(try await Resource.find(firstResource.id, on: app.db))
-      #expect(reloaded.name == "Old Name")
+      #expect(reloaded.name == "old name")
+    }
+  }
+
+  /// A *new* `card_uuid` (unlike the previous test) whose name only differs by case from an
+  /// already-registered resource must attach to that resource rather than fork a duplicate.
+  /// `register`'s name-matching fallback used to compare Patra's raw-case name against a stored
+  /// name that `Resource.Create.toModel()`/`ResourceController.update` always lowercase, so any
+  /// resource an admin had touched — or, after this fix, any resource this job itself created —
+  /// stopped matching the moment Patra's own name kept its original case, silently forking that
+  /// artifact's metric history across two resources.
+  @Test
+  func `A new card under a name that only differs by case attaches to the existing resource`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      let accountID = try account.requireID()
+
+      // Stands in for a resource this job already created (lowercased by the fix above) or one an
+      // admin renamed through `ResourceController.update` (which lowercases too).
+      let existing = try await makeResource(
+        on: app.db, accountID: accountID, name: "bioclip 2 (via pybioclip)", type: .model)
+
+      stubPatraCatalog(
+        on: app,
+        modelCards:
+          "[\(modelCardJSON(uuid: "second-version", name: "BioCLIP 2 (via pybioclip)"))]")
+
+      try await SyncPatraCatalog().dequeue(queueContext(for: app), .init(id: accountID))
+
+      #expect(try await Resource.query(on: app.db).count() == 1)
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "second-version").first())
+      #expect(try card.$resource.id == existing.requireID())
     }
   }
 
@@ -742,7 +786,7 @@ struct SyncJobTests {
 
       let resource = try #require(
         try await Resource.query(on: app.db).filter(\.$type == .dataset).first())
-      #expect(resource.name == "Camera Trap Corpus")
+      #expect(resource.name == "camera trap corpus")
 
       let card = try #require(
         try await PatraCard.query(on: app.db).filter(\.$cardUUID == "sheet-1").first())
@@ -1075,7 +1119,7 @@ struct SyncJobTests {
       let resource = try #require(
         try await Resource.query(on: app.db)
           .filter(\.$type == .model)
-          .filter(\.$name == "MegaDetector")
+          .filter(\.$name == "megadetector")
           .first())
       let resourceID = try resource.requireID()
       // Two cards, both resolved — the fixture actually exercises the dedup this test is about,

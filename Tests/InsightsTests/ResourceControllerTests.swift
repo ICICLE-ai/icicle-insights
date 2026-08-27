@@ -377,6 +377,52 @@ struct ResourceControllerTests {
   }
 
   @Test
+  func `Index still succeeds after a Patra card's linked resource is soft-deleted`() async throws {
+    try await withInsightsApp { app in
+      // Reproduces the eager-load trap `SyncPatraCatalog.register` already documents on its own
+      // `.with(\.$resource, withDeleted: true)`: `hubResource`/`repositoryResource` are
+      // `@OptionalParent`, and Fluent throws `missingParentError` — not "nil parent" — for a
+      // non-nil id whose row a plain (non-`withDeleted`) eager load excludes. `ResourceController
+      // .delete` is a soft delete, so this is reachable from the admin console with no raw SQL.
+      let hfAccount = try await makeAccount(on: app.db, name: "hf", platform: .huggingface)
+      let hubResource = try await makeResource(
+        on: app.db, accountID: try hfAccount.requireID(), name: "can_benchmark", type: .dataset)
+      let hubResourceID = try hubResource.requireID()
+
+      let patraAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .patra)
+      let datasheet = try await makeResource(
+        on: app.db, accountID: try patraAccount.requireID(),
+        name: "continually-adapt-or-not-can-benchmark", type: .dataset)
+      try await makePatraCard(
+        on: app.db, resourceID: try datasheet.requireID(), hubResourceID: hubResourceID)
+
+      // Soft delete, exactly what `ResourceController.delete` does — not `force: true`, which
+      // would sidestep the bug by removing the row (and the foreign key) outright.
+      try await app.testing().test(
+        .DELETE,
+        "api/resources/\(hubResourceID)",
+        headers: app.adminAuth,
+        afterResponse: { res async throws in
+          #expect(res.status == .noContent)
+        },
+      )
+
+      try await app.testing().test(
+        .GET,
+        "api/resources",
+        afterResponse: { res async throws in
+          // Before the fix, this 500s — the eager load of the soft-deleted `hubResource` throws
+          // `missingParentError` and every caller of the catalog's only list endpoint is broken,
+          // including the admin console that would otherwise let someone notice and fix it.
+          #expect(res.status == .ok)
+          let returned = try res.content.decode([Resource.Public].self)
+          #expect(returned.contains { $0.id == datasheet.id })
+        },
+      )
+    }
+  }
+
+  @Test
   func `The Hub keeps its longer cadence, having no window to lose`() {
     // The Hub reports downloadsAllTime outright, so a missed sweep costs series density and never
     // all-time correctness. Restricting it would buy nothing.
