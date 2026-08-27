@@ -51,13 +51,28 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
     let datasheets = try await PatraAPI.page(
       context, path: "/datasheets", as: PatraDatasheet.self)
 
+    // Provenance detail is a second request per model card — `location` and
+    // `training_datasheet_uuid` only live on `/modelcard/{uuid}`, not the list just fetched —
+    // and it holds the same "fetch everything, then write" line the two list fetches above do.
+    // A failure partway through this loop must leave the catalog exactly as untouched as a
+    // failed `/datasheets` call already does; skipping private cards here matches `register`
+    // skipping them below, so an anonymous caller never spends a request on a card it would
+    // discard anyway.
+    var details: [String: PatraModelCardDetail] = [:]
+    for card in modelCards where card.isPrivate != true {
+      details[card.uuid] = try await PatraAPI.detail(context, uuid: card.uuid)
+    }
+
     for card in modelCards {
-      try await register(
+      let patraCard = try await register(
         cardUUID: card.uuid, name: card.name, version: card.version, updatedAt: card.updatedAt,
         isPrivate: card.isPrivate, type: .model, accountID: accountID, context: context)
+      if let patraCard, let detail = details[card.uuid] {
+        try await resolveProvenance(detail, for: patraCard, on: context.application.db)
+      }
     }
     for sheet in datasheets {
-      try await register(
+      _ = try await register(
         cardUUID: sheet.uuid, name: sheet.title, version: sheet.version,
         updatedAt: sheet.updatedAt, isPrivate: sheet.isPrivate, type: .dataset,
         accountID: accountID, context: context)
@@ -75,6 +90,12 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
   /// `card_uuid` always short-circuits, a private card is skipped before any resource is
   /// touched, and a soft-deleted resource is never resurrected by a new card arriving under its
   /// old name.
+  ///
+  /// Returns the card that now exists under `cardUUID`, or nil when this entry was skipped
+  /// (private, or its resource is soft-deleted) and so has no row for a caller to act on further.
+  /// `dequeue` uses the return value to attach this sweep's provenance resolution to the right
+  /// row, whether that row was just created here or already existed from an earlier sweep.
+  @discardableResult
   private func register(
     cardUUID: String,
     name: String,
@@ -84,7 +105,7 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
     type: ResourceType,
     accountID: UUID,
     context: QueueContext
-  ) async throws {
+  ) async throws -> PatraCard? {
     let db = context.application.db
 
     // `card_uuid` is the only stable key — name collides for seven (author, name) pairs, and
@@ -115,13 +136,13 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
           ]
         )
       }
-      return
+      return existing
     }
 
     guard isPrivate != true else {
       // Skip entirely — no resource, no card. A card the registry later makes public is
       // indistinguishable from a new card on some later sweep, which is the correct outcome.
-      return
+      return nil
     }
 
     // `.withDeleted()`: a name match has to see soft-deleted resources too, or a resource an
@@ -139,7 +160,7 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
       guard match.deletedAt == nil else {
         // An admin deletion means "stop tracking this" — a new card arriving under the same
         // name does not undo that decision.
-        return
+        return nil
       }
       resourceID = try match.requireID()
     } else {
@@ -157,11 +178,103 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
       resourceID = try resource.requireID()
     }
 
-    try await PatraCard(
+    let card = PatraCard(
       resourceID: resourceID,
       cardUUID: cardUUID,
       version: version,
       cardUpdatedAt: updatedAt.flatMap { PatraAPI.timestamps.date(from: $0) },
-    ).create(on: db)
+    )
+    try await card.create(on: db)
+    return card
+  }
+
+  /// Resolves `detail`'s cross-registry location onto `card` and saves it.
+  ///
+  /// **This is the one place `SyncPatraCatalog` updates an existing row.** Everything in
+  /// `register` above is create-only by design — a card renamed upstream is logged, not applied,
+  /// because a resource can already group cards from other authors and there is no single
+  /// correct name to reconcile toward. Provenance is different: it only ever fills a null link
+  /// or corrects one to a resource that has since moved, and it never touches `name`, `version`,
+  /// or a metric, so overwriting it on every sweep is safe in a way overwriting the name would
+  /// not be. That is also why it has to run every sweep rather than only at creation — a card
+  /// collected before its Hugging Face counterpart is registered must resolve to nil on this
+  /// pass and link itself on a later one, once that counterpart exists.
+  private func resolveProvenance(
+    _ detail: PatraModelCardDetail, for card: PatraCard, on db: any Database
+  ) async throws {
+    card.sourceURL = detail.aiModel?.location
+    card.trainingDatasheetUUID = detail.trainingDatasheetUUID
+
+    // Recomputed from scratch rather than only filled when nil: a stale link has to be able to
+    // clear itself too, not just gain one, if Patra's own record of the location moves on.
+    var hubResourceID: Resource.IDValue?
+    var repositoryResourceID: Resource.IDValue?
+    if let location = detail.aiModel?.location, let parsed = Self.parseLocation(location) {
+      if Self.hubHosts.contains(parsed.host) {
+        hubResourceID = try await Self.resolveResource(
+          owner: parsed.owner, name: parsed.name, on: db
+        )?.requireID()
+      } else if Self.repositoryHosts.contains(parsed.host) {
+        repositoryResourceID = try await Self.resolveResource(
+          owner: parsed.owner, name: parsed.name, on: db
+        )?.requireID()
+      }
+    }
+    card.$hubResource.id = hubResourceID
+    card.$repositoryResource.id = repositoryResourceID
+
+    try await card.save(on: db)
+  }
+
+  /// Hosts whose location resolves into `hubResource`.
+  private static let hubHosts: Set<String> = ["huggingface.co"]
+
+  /// Hosts whose location resolves into `repositoryResource`. `gitlab.com` shares the shape with
+  /// `github.com` and the same column — see `PatraCard.repositoryResource`'s doc comment — even
+  /// though nothing in `Platform` names a GitLab account today, so a GitLab location is parsed
+  /// the same way and simply never finds a match.
+  private static let repositoryHosts: Set<String> = ["github.com", "gitlab.com"]
+
+  /// Splits a Patra `location` value into its host and the first two path components — owner and
+  /// repo/model name — ignoring anything after them. Returns nil when the value is not a URL
+  /// Insights can resolve anything from.
+  ///
+  /// Fails closed rather than throwing: Patra sent the literal six-character string `"test"`
+  /// (quote marks included) as a `location` on one live card, and `URLComponents` simply reports
+  /// no host for it, the same as for any other string with no scheme — there is no malformed-URL
+  /// case that reaches here as a thrown error.
+  private static func parseLocation(_ raw: String) -> (host: String, owner: String, name: String)? {
+    guard let components = URLComponents(string: raw), let host = components.host else {
+      return nil
+    }
+    let segments = components.path.split(separator: "/", omittingEmptySubsequences: true)
+    guard segments.count >= 2 else { return nil }
+    return (host.lowercased(), String(segments[0]), String(segments[1]))
+  }
+
+  /// Finds a registered `Resource` whose owning account is named `owner` and whose own name is
+  /// `name`.
+  ///
+  /// Compared case-insensitively against already-lowercased storage — `Account.Create.toModel()`
+  /// and `Resource.Create.toModel()` both lowercase on write — so lowercasing the parsed URL
+  /// segments here is enough, with no need for a case-insensitive SQL comparison.
+  ///
+  /// Deliberately platform-agnostic: nothing here requires the owning account's `platform` to
+  /// match the URL's host that chose which column to resolve into. The UI reads the actual
+  /// platform off the resolved resource's own account, not off which of `hubResource` /
+  /// `repositoryResource` it landed in.
+  private static func resolveResource(
+    owner: String, name: String, on db: any Database
+  ) async throws -> Resource? {
+    let accounts = try await Account.query(on: db)
+      .filter(\.$name == owner.lowercased())
+      .all()
+    let accountIDs = try accounts.map { try $0.requireID() }
+    guard !accountIDs.isEmpty else { return nil }
+
+    return try await Resource.query(on: db)
+      .filter(\.$account.$id ~~ accountIDs)
+      .filter(\.$name == name.lowercased())
+      .first()
   }
 }

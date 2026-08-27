@@ -414,11 +414,18 @@ struct SyncJobTests {
   /// Answers `/modelcards` and `/datasheets` from fixed bodies, for tests whose whole catalog
   /// fits on one page. `stubPagedAPI`, not `stubAPI`: `PatraAPI.page` always asks with a query
   /// string, which `stubAPI`'s path-only matching cannot see.
+  ///
+  /// Every public model card in `modelCards` now costs a `GET /modelcard/{uuid}` detail request
+  /// too — that is what this task adds — so this stub answers those as well, from `details`
+  /// (keyed by uuid) when a test cares about the provenance in the response, and with an empty,
+  /// no-location body otherwise. Without that default, every test written before this task that
+  /// registers a public model card would 404 on a request it never anticipated.
   @discardableResult
   private func stubPatraCatalog(
     on app: Application,
     modelCards: String = "[]",
-    datasheets: String = "[]"
+    datasheets: String = "[]",
+    details: [String: String] = [:]
   ) -> NIOLockedValueBox<[ClientRequest]> {
     stubPagedAPI(on: app) { url in
       if url.contains("/modelcards"), url.contains("skip=0") {
@@ -427,8 +434,26 @@ struct SyncJobTests {
       if url.contains("/datasheets"), url.contains("skip=0") {
         return self.jsonResponse(.ok, datasheets)
       }
+      if url.hasPrefix("\(PatraAPI.baseURL)/modelcard/") {
+        let uuid = String(url.dropFirst("\(PatraAPI.baseURL)/modelcard/".count))
+        return self.jsonResponse(.ok, details[uuid] ?? self.emptyDetailJSON)
+      }
       return nil
     }
+  }
+
+  /// A `/modelcard/{uuid}` detail response naming no `ai_model` and no training datasheet — the
+  /// default for any test that registers a public model card without asserting on its provenance.
+  private var emptyDetailJSON: String {
+    #"{"ai_model":null,"training_datasheet_uuid":null}"#
+  }
+
+  /// A `/modelcard/{uuid}` detail response carrying a specific location and/or datasheet link.
+  private func detailJSON(location: String? = nil, trainingDatasheetUUID: String? = nil) -> String {
+    let locationJSON = location.map { #""\#($0)""# } ?? "null"
+    let datasheetJSON = trainingDatasheetUUID.map { #""\#($0)""# } ?? "null"
+    return
+      #"{"ai_model":{"location":\#(locationJSON)},"training_datasheet_uuid":\#(datasheetJSON)}"#
   }
 
   /// A Patra account with no vault: collection here is deliberately anonymous, so none of these
@@ -528,6 +553,12 @@ struct SyncJobTests {
         .joined(separator: ",")
 
       let requests = stubPagedAPI(on: app) { url in
+        // Every one of the 105 public cards costs its own `/modelcard/{uuid}` detail request
+        // once the list fetch above has landed — answered with no location, since this test is
+        // about pagination, not provenance.
+        if url.hasPrefix("\(PatraAPI.baseURL)/modelcard/") {
+          return self.jsonResponse(.ok, self.emptyDetailJSON)
+        }
         guard url.contains("/modelcards") || url.contains("/datasheets") else { return nil }
         if url.contains("/datasheets") { return self.jsonResponse(.ok, "[]") }
         if url.contains("skip=0") { return self.jsonResponse(.ok, "[\(firstPage)]") }
@@ -731,6 +762,271 @@ struct SyncJobTests {
       try await SyncPatraCatalog().dequeue(queueContext(for: app), .init(id: UUID()))
 
       #expect(requests.withLockedValue { $0 }.isEmpty)
+    }
+  }
+
+  // MARK: - SyncPatraCatalog / provenance resolution
+
+  /// A `huggingface.co` location whose first two path components — owner, then model name —
+  /// match a registered resource under a Hugging Face account lands in `hubResource`, and
+  /// `sourceURL` holds the raw location regardless.
+  @Test
+  func `A huggingface_co location resolves into hubResource`() async throws {
+    try await withInsightsApp { app in
+      let hfAccount = try await makeAccount(on: app.db, name: "acme", platform: .huggingface)
+      let hubResource = try await makeResource(
+        on: app.db, accountID: try hfAccount.requireID(), name: "vision-model", type: .model)
+
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        modelCards: "[\(modelCardJSON(uuid: "hf-1", name: "Vision Model"))]",
+        details: [
+          "hf-1": detailJSON(location: "https://huggingface.co/acme/vision-model")
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "hf-1").first())
+      #expect(card.sourceURL == "https://huggingface.co/acme/vision-model")
+      #expect(try card.$hubResource.id == hubResource.requireID())
+      #expect(card.$repositoryResource.id == nil)
+    }
+  }
+
+  /// A `github.com` location resolves the same way, into `repositoryResource` instead — the
+  /// trailing path beyond owner/repo (`/raw/main/model.pt`) is ignored.
+  @Test
+  func `A github_com location resolves into repositoryResource`() async throws {
+    try await withInsightsApp { app in
+      let ghAccount = try await makeAccount(on: app.db, name: "acme", platform: .github)
+      let repoResource = try await makeResource(
+        on: app.db, accountID: try ghAccount.requireID(), name: "vision-model-src",
+        type: .repository)
+
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        modelCards: "[\(modelCardJSON(uuid: "gh-1", name: "Vision Model"))]",
+        details: [
+          "gh-1": detailJSON(
+            location: "https://github.com/acme/vision-model-src/raw/main/model.pt")
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "gh-1").first())
+      #expect(try card.$repositoryResource.id == repoResource.requireID())
+      #expect(card.$hubResource.id == nil)
+    }
+  }
+
+  /// `download.pytorch.org` is one of the live catalog's actual hosts, and matches neither rule.
+  /// `sourceURL` is still stored — that is the whole point of keeping it separate from the two
+  /// foreign keys, since a bare null on those cannot distinguish this from Patra claiming
+  /// nothing at all.
+  @Test
+  func `An unknown host stores sourceURL and resolves neither link`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        modelCards: "[\(modelCardJSON(uuid: "pt-1", name: "Detector"))]",
+        details: [
+          "pt-1": detailJSON(location: "https://download.pytorch.org/models/resnet.pth")
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "pt-1").first())
+      #expect(card.sourceURL == "https://download.pytorch.org/models/resnet.pth")
+      #expect(card.$hubResource.id == nil)
+      #expect(card.$repositoryResource.id == nil)
+    }
+  }
+
+  /// The live catalog's one non-URL `location`: Patra answered with the literal six-character
+  /// string `"test"`, quote marks included, on a real model card. `URLComponents` reports no
+  /// host for it — the same as for any other scheme-less string — so this must store the raw
+  /// value and resolve nothing, without the sweep throwing.
+  @Test
+  func `A malformed location is stored without resolving or throwing`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        modelCards: "[\(modelCardJSON(uuid: "malformed-1", name: "Odd Card"))]",
+        details: [
+          "malformed-1": #"{"ai_model":{"location":"\"test\""},"training_datasheet_uuid":null}"#
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "malformed-1").first())
+      #expect(card.sourceURL == "\"test\"")
+      #expect(card.$hubResource.id == nil)
+      #expect(card.$repositoryResource.id == nil)
+    }
+  }
+
+  /// Resolution depends on both sides existing, and re-runs every sweep to prove it: a card
+  /// collected before its Hugging Face counterpart is registered resolves to nil on the first
+  /// pass, and links itself on the next one once that counterpart shows up — with no new card or
+  /// resource created in between.
+  @Test
+  func `Provenance resolves on a later sweep once its counterpart is registered`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        modelCards: "[\(modelCardJSON(uuid: "late-1", name: "Late Bloomer"))]",
+        details: [
+          "late-1": detailJSON(location: "https://huggingface.co/acme/late-bloomer")
+        ])
+
+      let job = SyncPatraCatalog()
+      try await job.dequeue(queueContext(for: app), .init(id: try account.requireID()))
+
+      let firstPass = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "late-1").first())
+      #expect(firstPass.$hubResource.id == nil)
+
+      let hfAccount = try await makeAccount(on: app.db, name: "acme", platform: .huggingface)
+      let hubResource = try await makeResource(
+        on: app.db, accountID: try hfAccount.requireID(), name: "late-bloomer", type: .model)
+
+      // Same stubbed client, same catalog — this is purely a second sweep finding a counterpart
+      // that now exists, not a change in what Patra reports.
+      try await job.dequeue(queueContext(for: app), .init(id: try account.requireID()))
+
+      let secondPass = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "late-1").first())
+      #expect(try secondPass.$hubResource.id == hubResource.requireID())
+      // Still exactly one card — resolving the link is not a rediscovery.
+      #expect(try await PatraCard.query(on: app.db).count() == 1)
+    }
+  }
+
+  /// Resource names are stored lowercased (`Resource.Create.toModel()` calls `.lowercased()`),
+  /// so a location whose owner/repo case differs from storage must still resolve.
+  @Test
+  func `Repository resolution matches case-insensitively against the lowercased stored name`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      // Already-lowercase, standing in for what a real `Create` request would have written —
+      // `makeAccount`/`makeResource` do not lowercase on a test's behalf.
+      let ghAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .github)
+      let repoResource = try await makeResource(
+        on: app.db, accountID: try ghAccount.requireID(), name: "camera_trap", type: .repository)
+
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        modelCards: "[\(modelCardJSON(uuid: "case-1", name: "Camera Trap Detector"))]",
+        details: [
+          "case-1": detailJSON(location: "https://github.com/ICICLE-ai/Camera_Trap")
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "case-1").first())
+      #expect(try card.$repositoryResource.id == repoResource.requireID())
+    }
+  }
+
+  /// `training_datasheet_uuid` is captured free from the same detail response that carries
+  /// `location` — Patra's own model-to-datasheet link, unrelated to cross-registry resolution.
+  @Test
+  func `training_datasheet_uuid is captured from the detail response`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        modelCards: "[\(modelCardJSON(uuid: "linked-1", name: "Linked Model"))]",
+        details: [
+          "linked-1": detailJSON(trainingDatasheetUUID: "sheet-uuid-123")
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "linked-1").first())
+      #expect(card.trainingDatasheetUUID == "sheet-uuid-123")
+    }
+  }
+
+  /// A previous review flagged this exact case as untested: two cards under the same resource
+  /// (two versions of `MegaDetector`, matching the live catalog's shape) both resolving to the
+  /// same hub resource must produce one edge in `Resource.Public.links`, not two.
+  /// `links(from:)`'s own dedup-by-id logic is exercised elsewhere against hand-built fixtures;
+  /// this proves the sync job actually feeds it data that needs deduping.
+  @Test
+  func `Two cards of the same resource resolving to the same hub resource produce one link`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let hfAccount = try await makeAccount(on: app.db, name: "acme", platform: .huggingface)
+      let hubResource = try await makeResource(
+        on: app.db, accountID: try hfAccount.requireID(), name: "mega-detector", type: .model)
+
+      let account = try await makePatraAccount(on: app)
+      let cards = [
+        modelCardJSON(uuid: "mega-1", name: "MegaDetector", version: "v1"),
+        modelCardJSON(uuid: "mega-2", name: "MegaDetector", version: "v2"),
+      ].joined(separator: ",")
+      let location = "https://huggingface.co/acme/mega-detector"
+      stubPatraCatalog(
+        on: app,
+        modelCards: "[\(cards)]",
+        details: [
+          "mega-1": detailJSON(location: location),
+          "mega-2": detailJSON(location: location),
+        ])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let resource = try #require(
+        try await Resource.query(on: app.db)
+          .filter(\.$type == .model)
+          .filter(\.$name == "MegaDetector")
+          .first())
+      let resourceID = try resource.requireID()
+      // Two cards, both resolved — the fixture actually exercises the dedup this test is about,
+      // rather than only having one card to begin with.
+      let hubResourceID = try hubResource.requireID()
+      let resolvedCount = try await PatraCard.query(on: app.db)
+        .filter(\.$resource.$id == resourceID)
+        .filter(\.$hubResource.$id == hubResourceID)
+        .count()
+      #expect(resolvedCount == 2)
+
+      // The same eager-load `ResourceController.show`/`index` use, so this proves what the API
+      // actually returns rather than only what `PatraCard` rows say in isolation.
+      let loaded = try #require(
+        try await Resource.query(on: app.db)
+          .filter(\.$id == resourceID)
+          .with(\.$patraCards) { card in
+            card.with(\.$hubResource) { $0.with(\.$account) }
+            card.with(\.$repositoryResource) { $0.with(\.$account) }
+          }
+          .first())
+
+      let links = try #require(loaded.toPublic().links)
+      #expect(links.count == 1)
+      #expect(links.first?.id == hubResourceID)
     }
   }
 

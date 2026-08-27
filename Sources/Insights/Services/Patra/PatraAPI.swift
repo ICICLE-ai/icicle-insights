@@ -42,6 +42,31 @@ struct PatraDatasheet: Content {
 /// changed type upstream cannot break the metric.
 struct PatraDeployment: Content {}
 
+/// The AI model Patra imported, nested inside `PatraModelCardDetail`.
+///
+/// `location` is the only field read here — Patra's own record of where it pulled the model
+/// from — and it is optional in both senses: the object can be present with a nil location, and
+/// on one live card the value is not a URL at all (the literal string `"test"`, quote marks
+/// included). Decoding never rejects that; only the URL parser downstream has to survive it.
+struct PatraAIModel: Content {
+  let location: String?
+}
+
+/// Full detail for one Patra model card, from `GET /modelcard/{uuid}`.
+///
+/// Not `PatraModelCard`, the `/modelcards` list summary: `ai_model` (and so `location`) and
+/// `training_datasheet_uuid` only appear on this detail response, which is why resolving
+/// provenance costs one extra request per card rather than riding along with the list fetch.
+struct PatraModelCardDetail: Content {
+  let aiModel: PatraAIModel?
+  let trainingDatasheetUUID: String?
+
+  enum CodingKeys: String, CodingKey {
+    case aiModel = "ai_model"
+    case trainingDatasheetUUID = "training_datasheet_uuid"
+  }
+}
+
 /// Patra's HTTP surface: wire types shared by both list endpoints, and the paging loop that reads
 /// them off `context.application.client`.
 ///
@@ -92,6 +117,22 @@ enum PatraAPI {
       all += batch
       if batch.count < limit { return all }
       skip += limit
+    }
+  }
+
+  /// Fetches one model card's full detail — the only source of `location` and
+  /// `training_datasheet_uuid`, both absent from `/modelcards`. Unpaginated: this is a single
+  /// object, not a list.
+  static func detail(_ context: QueueContext, uuid: String) async throws -> PatraModelCardDetail {
+    let url = URI(string: "\(baseURL)/modelcard/\(uuid)")
+    let response = try await context.application.client.get(url)
+    guard response.status == .ok else {
+      throw JobError.apiRequestFailed(url: url, response: response)
+    }
+    do {
+      return try response.content.decode(PatraModelCardDetail.self)
+    } catch {
+      throw JobError.decodingFailed(url: url.string, underlying: error)
     }
   }
 }
