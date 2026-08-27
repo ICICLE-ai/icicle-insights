@@ -124,7 +124,10 @@ build: builder
     mkdir -p "$PWD/.container"
     context="$(mktemp -d "$PWD/.container/build-context.XXXXXX")"
     trap 'rm -rf -- "$context"' EXIT
-    cp Dockerfile .dockerignore Package.swift Package.resolved "$context/"
+    # docker-entrypoint.sh belongs here because the Dockerfile COPYs it by name. Leaving it out
+    # fails the build at that layer, not at `cd`, so the error names a cache key rather than the
+    # missing file.
+    cp Dockerfile .dockerignore Package.swift Package.resolved docker-entrypoint.sh "$context/"
     # Tests is included because SwiftPM errors when a declared target's directory
     # is missing, even building only the Insights product.
     cp -R Sources Tests Public "$context/"
