@@ -482,6 +482,33 @@ func stubAPI(
   return requests
 }
 
+/// `stubAPI` for endpoints whose *query* decides the answer.
+///
+/// `StubRoute` deliberately ignores the query string so the Hub's `expand[]` can vary freely.
+/// Paging is the opposite case: `?skip=0` and `?skip=100` must answer differently, or a loop
+/// that never advances still passes.
+///
+/// `respond` sees the full URL, so it can switch on the query itself — building bodies with the
+/// same private `jsonResponse` helper `stubAPI` uses — and returns `nil` for anything it does not
+/// recognize. Matches `stubAPI`'s other two contracts: both `app.client` and `app.secrets` are
+/// replaced (`configure` builds the Tapis adapter from `app.client` at boot, so swapping only the
+/// client factory would leave it holding the real one), and a `nil` answers 404, so a job asking
+/// for a URL the test did not anticipate surfaces rather than silently succeeding.
+@discardableResult
+func stubPagedAPI(
+  on app: Application,
+  _ respond: @escaping @Sendable (String) -> ClientResponse?
+) -> NIOLockedValueBox<[ClientRequest]> {
+  let requests = NIOLockedValueBox<[ClientRequest]>([])
+  let stub = StubHTTPClient(eventLoop: app.eventLoopGroup.any(), requests: requests) { request in
+    respond(request.url.string) ?? ClientResponse(status: .notFound)
+  }
+
+  app.clients.use { _ in stub }
+  app.secrets = TapisClient(client: stub, config: tapisConfig(on: app)).vaults
+  return requests
+}
+
 // MARK: - Alert channel stub
 
 /// Captures alerts instead of sending them, so a test can assert on what an operator would have
@@ -633,4 +660,58 @@ func makeVault(
   let vault = Vault(accountID: accountID, name: name)
   try await vault.create(on: db)
   return vault
+}
+
+// MARK: - stubPagedAPI
+
+/// A minimal decodable used only to prove `stubPagedAPI` round-trips a body; no production type
+/// depends on it.
+private struct StubPagedCard: Content, Equatable {
+  let uuid: String
+}
+
+/// Exercises `stubPagedAPI` directly, without a job or collector in front of it — none exists
+/// yet for a paginated platform, and this helper should not need one to be trustworthy.
+@Suite("stubPagedAPI")
+struct StubPagedAPITests {
+  /// The case `StubRoute` cannot express: two requests share a path and differ only by `skip`.
+  /// Against the old, path-only `stubAPI` these would collide on one registered route and the
+  /// second page would silently repeat the first — a pagination loop that never advances would
+  /// still pass. Asserting the bodies differ is what makes that regression visible.
+  @Test
+  func `Two skips on the same path answer with two different bodies`() async throws {
+    try await withInsightsApp { app in
+      let requests = stubPagedAPI(on: app) { url in
+        if url.contains("skip=0") { return jsonResponse(.ok, #"[{"uuid":"first"}]"#) }
+        if url.contains("skip=100") { return jsonResponse(.ok, #"[{"uuid":"second"}]"#) }
+        return nil
+      }
+
+      let firstPage = try await app.client.get(
+        URI(string: "https://patra.example/modelcards?skip=0&limit=100"))
+      let secondPage = try await app.client.get(
+        URI(string: "https://patra.example/modelcards?skip=100&limit=100"))
+
+      #expect(firstPage.status == .ok)
+      #expect(secondPage.status == .ok)
+      #expect(try firstPage.content.decode([StubPagedCard].self) == [StubPagedCard(uuid: "first")])
+      #expect(
+        try secondPage.content.decode([StubPagedCard].self) == [StubPagedCard(uuid: "second")])
+      #expect(requests.withLockedValue { $0.count } == 2)
+    }
+  }
+
+  /// Matches `stubAPI`'s contract: a query `respond` does not recognize answers 404 rather than
+  /// succeeding silently, so a job asking for a page this test forgot to describe fails loudly.
+  @Test
+  func `An unrecognized query answers 404`() async throws {
+    try await withInsightsApp { app in
+      stubPagedAPI(on: app) { _ in nil }
+
+      let response = try await app.client.get(
+        URI(string: "https://patra.example/modelcards?skip=0&limit=100"))
+
+      #expect(response.status == .notFound)
+    }
+  }
 }
