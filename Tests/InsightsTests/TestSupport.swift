@@ -672,7 +672,7 @@ private struct StubPagedCard: Content, Equatable {
 
 /// Exercises `stubPagedAPI` directly, without a job or collector in front of it — none exists
 /// yet for a paginated platform, and this helper should not need one to be trustworthy.
-@Suite("stubPagedAPI")
+@Suite("stubPagedAPI", .serialized)
 struct StubPagedAPITests {
   /// The case `StubRoute` cannot express: two requests share a path and differ only by `skip`.
   /// Against the old, path-only `stubAPI` these would collide on one registered route and the
