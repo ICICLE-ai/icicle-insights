@@ -101,3 +101,35 @@ struct CollectAccountsNowCommand: AsyncCommand {
     context.application.logger.notice("Immediate account collection sweep completed")
   }
 }
+
+/// Runs the Patra catalog discovery sweep once without changing its daily schedule.
+///
+/// Every Patra account is paged again, the same as the 04:00 sweep, because the catalog carries
+/// no due date; discovery is idempotent, so paging early costs nothing beyond the API calls. This
+/// is the escape hatch for the gap `CollectPatraCatalog`'s fixed schedule otherwise leaves: an
+/// administrator who registers a new Patra resource, or the GitHub repository a Patra card points
+/// at, has no way to make the cross-registry link resolve before the next 04:00 run except this
+/// command. The command exits after enqueueing; the persistent `metrics` worker performs the
+/// catalog sync.
+struct CollectPatraCatalogNowCommand: AsyncCommand {
+  /// This command intentionally accepts no command-line options.
+  struct Signature: CommandSignature {}
+
+  /// A concise description displayed by Vapor's command-line help.
+  var help: String {
+    "Dispatch the Patra catalog discovery sweep immediately."
+  }
+
+  /// Dispatches the registered Patra catalog synchronization job for every Patra account.
+  ///
+  /// - Parameters:
+  ///   - context: Vapor's command context containing the configured application.
+  ///   - signature: The command's empty parsed signature.
+  /// - Throws: Database or queue errors that prevent the catalog job from being dispatched.
+  func run(using context: CommandContext, signature: Signature) async throws {
+    try await CollectPatraCatalog().run(
+      context: scheduledQueueContext(for: context.application)
+    )
+    context.application.logger.notice("Immediate Patra catalog sweep completed")
+  }
+}

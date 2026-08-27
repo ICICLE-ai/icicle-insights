@@ -373,6 +373,39 @@ services:
       valkey:
         condition: service_healthy
 
+  # Bypasses the daily 04:00 clock so a newly registered Patra resource, or the GitHub
+  # repository a Patra card points at, can resolve its cross-registry link right away.
+  collect-patra-catalog-now:
+    image: insights:latest
+    build:
+      context: .
+    command: ["collect-patra-catalog"]
+    deploy:
+      replicas: 0
+    environment:
+      TAPIS_BASE_URL: ${TAPIS_BASE_URL}
+      TAPIS_TENANT: ${TAPIS_TENANT}
+      TAPIS_TOKEN: ${TAPIS_TOKEN}
+      TAPIS_USER: ${TAPIS_USER}
+      ROOT_ADMIN_USERNAME: ${ROOT_ADMIN_USERNAME}
+      VAPOR_ENV: ${VAPOR_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      SECRET_PROVIDER: ${SECRET_PROVIDER:-tapis}
+      DATABASE_HOST: db
+      DATABASE_PORT: '5432'
+      DATABASE_NAME: vapor_database
+      DATABASE_USERNAME: vapor_username
+      DATABASE_PASSWORD: vapor_password
+      DATABASE_TLS: disable
+      REDIS_HOST: valkey
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
   # ==========================================================================
   # Backing services
   # ==========================================================================

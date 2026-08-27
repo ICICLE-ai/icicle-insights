@@ -2,7 +2,8 @@
 
 Collect now instead of waiting for the schedule. For administrators and developers.
 
-Useful after adding a resource, after fixing a credential, or when verifying a deployment.
+Useful after adding a resource, after fixing a credential, after registering a Patra resource or
+its linked GitHub repository, or when verifying a deployment.
 
 ## Prerequisite
 
@@ -16,6 +17,7 @@ collecting. Without one, jobs pile up in Valkey and nothing is written.
 | `collect-resources` | Resources already due | Advances each dispatched resource |
 | `collect-resources --force` | Every active resource | Advances every one, shifting all cadences forward |
 | `collect-accounts` | Every GitHub account's followers | No |
+| `collect-patra-catalog` | Every Patra account's catalog | No; the catalog carries no due date |
 
 ## Locally
 
@@ -29,6 +31,10 @@ just collect --force
 
 ```bash
 just collect-accounts
+```
+
+```bash
+just collect-patra-catalog
 ```
 
 ## In the container stack
@@ -45,6 +51,10 @@ just collect-all-now
 just collect-accounts-now
 ```
 
+```bash
+just collect-patra-catalog-now
+```
+
 ## In a deployment
 
 ```bash
@@ -52,6 +62,7 @@ docker compose run --rm collect-now
 ```
 
 Or run `Insights collect-resources` in a one-shot container against the deployment's environment.
+The same applies to `collect-accounts` and `collect-patra-catalog`.
 
 ## Watch it happen
 
@@ -77,6 +88,11 @@ dispatching zero jobs is a normal outcome when nothing is due.
 
 Use `--force` only when you intend to reset every resource's cadence. It shifts every next-collection
 date forward from now, so a weekly resource will not collect again for another week.
+
+Use `collect-patra-catalog` after registering a Patra resource, or the GitHub repository a Patra
+card points at, so the cross-registry provenance link resolves without waiting for the daily
+`CollectPatraCatalog` sweep at 04:00. See
+[Collection schedule](../reference/collection-schedule.md).
 
 ## This cannot double count
 

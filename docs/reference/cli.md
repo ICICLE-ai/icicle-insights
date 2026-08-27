@@ -43,8 +43,9 @@ step — see [Deploy Insights](../how-to/deploy-insights.md).
 | `collect-resources` | Resources with `nextCollectionAt <= now` | Advances each dispatched resource by its cadence |
 | `collect-resources --force` | Every active resource | Marks all due, dispatches, then advances each |
 | `collect-accounts` | Every GitHub account | None; accounts carry no due date |
+| `collect-patra-catalog` | Every Patra account | None; the catalog carries no due date |
 
-All three only enqueue. A `queues --queue metrics` worker must be running or nothing is collected.
+All four only enqueue. A `queues --queue metrics` worker must be running or nothing is collected.
 Watermarks still apply, so a forced run cannot double count. See
 [Run collection immediately](../how-to/run-collection-immediately.md).
 

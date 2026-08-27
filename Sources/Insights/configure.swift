@@ -270,6 +270,7 @@ func configure(_ app: Application) async throws {
   // same scheduled job types without changing or waiting for the production clocks above.
   app.asyncCommands.use(CollectResourcesNowCommand(), as: "collect-resources")
   app.asyncCommands.use(CollectAccountsNowCommand(), as: "collect-accounts")
+  app.asyncCommands.use(CollectPatraCatalogNowCommand(), as: "collect-patra-catalog")
 
   // Credential minting stays off the HTTP surface — see `ServiceTokenCommand`.
   app.asyncCommands.use(ServiceTokenCommand(), as: "service-token")

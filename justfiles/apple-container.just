@@ -238,6 +238,14 @@ collect-accounts-now: build
         {{ app_env }} \
         '{{ image }}' collect-accounts
 
+# Run the daily Patra catalog discovery sweep once.
+[group('collect')]
+collect-patra-catalog-now: build
+    container run --rm --name collect-patra-catalog-now \
+        --network '{{ network }}' \
+        {{ app_env }} \
+        '{{ image }}' collect-patra-catalog
+
 # ---------------------------------------------------------------------------
 # Stack
 # ---------------------------------------------------------------------------
@@ -277,7 +285,7 @@ destroy: runtime
     # One-shot containers are --rm but survive a failed run. Volumes and images
     # cannot be deleted while a container still references them.
     for name in scheduled queues app valkey db migrate revert \
-                collect-now collect-all-now collect-accounts-now; do
+                collect-now collect-all-now collect-accounts-now collect-patra-catalog-now; do
         container stop "$name" >/dev/null 2>&1 || true
         container delete --force "$name" >/dev/null 2>&1 || true
     done

@@ -36,6 +36,7 @@ around itself, so any overlap has one suite reverting the schema out from under 
 | `just token <args>` | `Insights service-token …` |
 | `just collect [--force]` | `Insights collect-resources` |
 | `just collect-accounts` | `Insights collect-accounts` |
+| `just collect-patra-catalog` | `Insights collect-patra-catalog` |
 
 See [CLI](cli.md) for the arguments each accepts.
 
@@ -91,6 +92,7 @@ is collected.
 | `just collect-now` | Resources already due |
 | `just collect-all-now` | Every active resource. Shifts every cadence forward |
 | `just collect-accounts-now` | Every GitHub account |
+| `just collect-patra-catalog-now` | Every Patra account |
 
 ## stack
 
