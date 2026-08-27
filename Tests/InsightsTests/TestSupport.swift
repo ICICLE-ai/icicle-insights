@@ -652,6 +652,24 @@ func makeRelease(
 }
 
 @discardableResult
+func makePatraCard(
+  on db: any Database,
+  resourceID: Resource.IDValue,
+  cardUUID: String = UUID().uuidString,
+  hubResourceID: Resource.IDValue? = nil,
+  repositoryResourceID: Resource.IDValue? = nil,
+) async throws -> PatraCard {
+  let card = PatraCard(
+    resourceID: resourceID,
+    cardUUID: cardUUID,
+    hubResourceID: hubResourceID,
+    repositoryResourceID: repositoryResourceID,
+  )
+  try await card.create(on: db)
+  return card
+}
+
+@discardableResult
 func makeVault(
   on db: any Database,
   accountID: Account.IDValue,

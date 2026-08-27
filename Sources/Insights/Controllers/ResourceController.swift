@@ -91,10 +91,30 @@ struct ResourceController: RouteCollection {
   }
 
   @Sendable
-  /// Returns one resource by identifier.
+  /// Returns one resource by identifier, with the other registries it also exists under, when
+  /// its Patra cards recorded any.
+  ///
+  /// `Resource.find` can't express this: building `Public.links` needs each Patra card's
+  /// `hubResource`/`repositoryResource` loaded, and each of those needs its own `account` loaded
+  /// to know which platform it belongs to — so `show` is the one place this nested `.with` chain
+  /// has to live.
   func show(req: Request) async throws -> Resource.Public {
-    guard let resource = try await Resource.find(req.parameters.get("resourceID"), on: req.db)
-    else {
+    guard let resourceID = req.parameters.get("resourceID", as: UUID.self) else {
+      throw Abort(.notFound)
+    }
+
+    let query = Resource.query(on: req.db)
+      .filter(\.$id == resourceID)
+      .with(\.$patraCards) { card in
+        card.with(\.$hubResource) { hub in
+          hub.with(\.$account)
+        }
+        card.with(\.$repositoryResource) { repository in
+          repository.with(\.$account)
+        }
+      }
+
+    guard let resource = try await query.first() else {
       throw Abort(.notFound)
     }
 
