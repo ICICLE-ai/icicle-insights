@@ -1,5 +1,6 @@
 import Fluent
 import Foundation
+import NIOConcurrencyHelpers
 import Queues
 import Testing
 import Vapor
@@ -394,6 +395,299 @@ struct SyncJobTests {
       // useless for spotting accounts that actually moved.
       let after = try #require(try await Account.find(accountID, on: app.db)?.updatedAt)
       #expect(before == after)
+    }
+  }
+
+  // MARK: - SyncPatraCatalog
+
+  /// A JSON body wrapped in a `ClientResponse`. Duplicated rather than shared: `TestSupport.swift`
+  /// and `PatraAPITests.swift` each keep their own file-private copy of the same helper, for the
+  /// same reason — neither is visible outside its own file.
+  private func jsonResponse(_ status: HTTPResponseStatus, _ body: String) -> ClientResponse {
+    ClientResponse(
+      status: status,
+      headers: ["Content-Type": "application/json"],
+      body: ByteBuffer(string: body),
+    )
+  }
+
+  /// Answers `/modelcards` and `/datasheets` from fixed bodies, for tests whose whole catalog
+  /// fits on one page. `stubPagedAPI`, not `stubAPI`: `PatraAPI.page` always asks with a query
+  /// string, which `stubAPI`'s path-only matching cannot see.
+  @discardableResult
+  private func stubPatraCatalog(
+    on app: Application,
+    modelCards: String = "[]",
+    datasheets: String = "[]"
+  ) -> NIOLockedValueBox<[ClientRequest]> {
+    stubPagedAPI(on: app) { url in
+      if url.contains("/modelcards"), url.contains("skip=0") {
+        return self.jsonResponse(.ok, modelCards)
+      }
+      if url.contains("/datasheets"), url.contains("skip=0") {
+        return self.jsonResponse(.ok, datasheets)
+      }
+      return nil
+    }
+  }
+
+  /// A Patra account with no vault: collection here is deliberately anonymous, so none of these
+  /// tests should ever see a vault lookup happen.
+  private func makePatraAccount(on app: Application, name: String = "icicleai") async throws
+    -> Account
+  {
+    try await makeAccount(on: app.db, name: name, platform: .patra)
+  }
+
+  /// One `PatraModelCard` JSON object. `is_private` and `version` are always present, matching
+  /// what the live endpoint sends — Patra reports `false` rather than omitting the key.
+  private func modelCardJSON(
+    uuid: String, name: String, version: String? = "1.0", isPrivate: Bool = false
+  ) -> String {
+    let versionJSON = version.map { "\"\($0)\"" } ?? "null"
+    return
+      #"{"uuid":"\#(uuid)","name":"\#(name)","version":\#(versionJSON),"is_private":\#(isPrivate)}"#
+  }
+
+  /// Re-running the sync is the reason `patra_cards.card_uuid` is a unique column: nothing else
+  /// about a card is stable enough to key off. This drives the whole discovery job — model cards
+  /// grouped by name, a datasheet on its own — through two identical sweeps and checks that the
+  /// second finds nothing new to do.
+  @Test
+  func `Re-running the catalog sync adds nothing`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      let modelCards = [
+        modelCardJSON(uuid: "alpha-1", name: "Alpha", version: "1.0"),
+        modelCardJSON(uuid: "alpha-2", name: "Alpha", version: "2.0"),
+        modelCardJSON(uuid: "beta-1", name: "Beta", version: "1.0"),
+      ].joined(separator: ",")
+      let datasheets = [
+        #"{"uuid":"gamma-1","title":"Gamma","version":null,"is_private":false}"#,
+        #"{"uuid":"delta-1","title":"Delta","version":null,"is_private":false}"#,
+      ].joined(separator: ",")
+      stubPatraCatalog(on: app, modelCards: "[\(modelCards)]", datasheets: "[\(datasheets)]")
+
+      let job = SyncPatraCatalog()
+      try await job.dequeue(queueContext(for: app), .init(id: try account.requireID()))
+
+      // Two model resources (Alpha, Beta) plus two dataset resources (Gamma, Delta); five cards
+      // total — Alpha carries two.
+      #expect(try await Resource.query(on: app.db).count() == 4)
+      #expect(try await PatraCard.query(on: app.db).count() == 5)
+
+      try await job.dequeue(queueContext(for: app), .init(id: try account.requireID()))
+
+      #expect(try await Resource.query(on: app.db).count() == 4)
+      #expect(try await PatraCard.query(on: app.db).count() == 5)
+    }
+  }
+
+  /// The domain fact the whole job is built around: a Patra "model card" is a (name, version)
+  /// pair, not a distinct model. Eleven cards under one name, mirroring the real
+  /// `MegaDetector for Wildlife Detection`, must collapse to one `Resource` carrying all eleven
+  /// `PatraCard` rows rather than eleven resources.
+  @Test
+  func `Cards sharing a model name collapse into one resource`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      let cards = (0..<11)
+        .map { modelCardJSON(uuid: "mega-\($0)", name: "MegaDetector", version: "v\($0)") }
+        .joined(separator: ",")
+      stubPatraCatalog(on: app, modelCards: "[\(cards)]")
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let resources = try await Resource.query(on: app.db).filter(\.$type == .model).all()
+      #expect(resources.count == 1)
+      let resource = try #require(resources.first)
+      #expect(resource.name == "MegaDetector")
+
+      let cardRows = try await PatraCard.query(on: app.db)
+        .filter(\.$resource.$id == (try resource.requireID()))
+        .all()
+      #expect(cardRows.count == 11)
+    }
+  }
+
+  /// `PatraAPI.page` always asks for `limit=100`, so a catalog only pages when it exceeds that —
+  /// the boundary this test crosses with 105 cards split into a 100-entry first page and a
+  /// 5-entry second. All eleven distinct names must register, including the ones that only ever
+  /// appear on the second HTTP response, proving the job consumes everything `page` hands back
+  /// rather than only the first request's batch.
+  @Test
+  func `Every card registers even when the catalog spans two pages`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      let firstPage = (0..<100)
+        .map { modelCardJSON(uuid: "model-\($0)", name: "Model \($0)") }
+        .joined(separator: ",")
+      let secondPage = (100..<105)
+        .map { modelCardJSON(uuid: "model-\($0)", name: "Model \($0)") }
+        .joined(separator: ",")
+
+      let requests = stubPagedAPI(on: app) { url in
+        guard url.contains("/modelcards") || url.contains("/datasheets") else { return nil }
+        if url.contains("/datasheets") { return self.jsonResponse(.ok, "[]") }
+        if url.contains("skip=0") { return self.jsonResponse(.ok, "[\(firstPage)]") }
+        if url.contains("skip=100") { return self.jsonResponse(.ok, "[\(secondPage)]") }
+        return nil
+      }
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      #expect(try await Resource.query(on: app.db).filter(\.$type == .model).count() == 105)
+      #expect(try await PatraCard.query(on: app.db).count() == 105)
+      // Specifically a card that only ever appeared on the second page — the regression a loop
+      // that quietly drops later pages would produce.
+      let secondPageCard = try await PatraCard.query(on: app.db)
+        .filter(\.$cardUUID == "model-104")
+        .first()
+      #expect(secondPageCard != nil)
+
+      let modelcardRequests = requests.withLockedValue { $0.map(\.url.string) }
+        .filter { $0.contains("/modelcards") }
+      #expect(modelcardRequests.count == 2)
+    }
+  }
+
+  /// `is_private == true` skips the card entirely — no `Resource`, no `PatraCard` — rather than
+  /// registering it and hiding it later. A public dashboard has no business creating a row for
+  /// something the registry says is private.
+  @Test
+  func `A private card is skipped entirely`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        modelCards: "[\(modelCardJSON(uuid: "secret-1", name: "Secret Model", isPrivate: true))]")
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      #expect(try await Resource.query(on: app.db).count() == 0)
+      #expect(try await PatraCard.query(on: app.db).count() == 0)
+    }
+  }
+
+  /// An admin soft-deleting a resource means "stop tracking this." A new card arriving under
+  /// that resource's old name must not resurrect it, and must not create a second resource with
+  /// the same name either — the (name, account_id, type) unique index would reject that anyway,
+  /// but the correct behaviour is to skip the card, not to fail the sweep.
+  @Test
+  func `A card whose resource is soft-deleted is not resurrected`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      let accountID = try account.requireID()
+      let deleted = try await makeResource(
+        on: app.db, accountID: accountID, name: "Retired Model", type: .model)
+      try await deleted.delete(on: app.db)
+
+      stubPatraCatalog(
+        on: app,
+        modelCards: "[\(modelCardJSON(uuid: "new-card-1", name: "Retired Model"))]")
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: accountID))
+
+      #expect(try await PatraCard.query(on: app.db).count() == 0)
+      // Still exactly the one, still soft-deleted — not resurrected and not duplicated.
+      let all = try await Resource.query(on: app.db).withDeleted().all()
+      #expect(all.count == 1)
+      #expect(all.first?.deletedAt != nil)
+    }
+  }
+
+  /// `Yield Estimation` is the live catalog's example of a card with no `version`. `nil` must
+  /// round-trip as `nil`, not as an empty string or a decoding failure.
+  @Test
+  func `A null version is stored as null`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        modelCards:
+          "[\(modelCardJSON(uuid: "yield-1", name: "Yield Estimation", version: nil))]")
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "yield-1").first())
+      #expect(card.version == nil)
+    }
+  }
+
+  /// A known `card_uuid` arriving under a changed name is logged, not applied: renaming the
+  /// resource would be wrong when it already groups cards from other authors, and would orphan
+  /// its metric history against a name nobody recognizes. The attachment — and the name — must
+  /// hold, and no duplicate resource or card may appear.
+  @Test
+  func `A known uuid under a changed name keeps its old attachment`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      let accountID = try account.requireID()
+
+      stubPatraCatalog(
+        on: app, modelCards: "[\(modelCardJSON(uuid: "stable-uuid", name: "Old Name"))]")
+      let job = SyncPatraCatalog()
+      try await job.dequeue(queueContext(for: app), .init(id: accountID))
+
+      let firstResource = try #require(
+        try await Resource.query(on: app.db).filter(\.$type == .model).first())
+      #expect(firstResource.name == "Old Name")
+
+      stubPatraCatalog(
+        on: app, modelCards: "[\(modelCardJSON(uuid: "stable-uuid", name: "New Name"))]")
+      try await job.dequeue(queueContext(for: app), .init(id: accountID))
+
+      #expect(try await Resource.query(on: app.db).count() == 1)
+      #expect(try await PatraCard.query(on: app.db).count() == 1)
+      let reloaded = try #require(try await Resource.find(firstResource.id, on: app.db))
+      #expect(reloaded.name == "Old Name")
+    }
+  }
+
+  /// A datasheet is keyed by `title`, not `name` — the field Patra's `/datasheets` endpoint
+  /// actually sends — and becomes a `.dataset` resource, distinct from a `.model` even if a
+  /// title happened to collide with a model name (the unique index is scoped by `type`).
+  @Test
+  func `A datasheet becomes a dataset resource named after its title`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        datasheets:
+          #"[{"uuid":"sheet-1","title":"Camera Trap Corpus","version":null,"is_private":false}]"#
+      )
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let resource = try #require(
+        try await Resource.query(on: app.db).filter(\.$type == .dataset).first())
+      #expect(resource.name == "Camera Trap Corpus")
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "sheet-1").first())
+      #expect(try card.$resource.id == resource.requireID())
+    }
+  }
+
+  /// The row `configure.swift` and `SyncDispatch.swift` are not yet asked to build: no vault, no
+  /// token header, ever. This is what "Patra is anonymous" actually means at the network layer —
+  /// `stubPatraCatalog` would 404 on a vault-secret path the job never has reason to request, so
+  /// a job that started sending one would fail loudly here rather than silently leaking a token.
+  @Test
+  func `A sweep for a missing Patra account is a no-op`() async throws {
+    try await withInsightsApp { app in
+      let requests = stubPatraCatalog(on: app)
+
+      try await SyncPatraCatalog().dequeue(queueContext(for: app), .init(id: UUID()))
+
+      #expect(requests.withLockedValue { $0 }.isEmpty)
     }
   }
 }
