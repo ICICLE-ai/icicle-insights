@@ -733,4 +733,196 @@ struct SyncJobTests {
       #expect(requests.withLockedValue { $0 }.isEmpty)
     }
   }
+
+  // MARK: - SyncPatraDeployments
+
+  /// A Patra model resource carrying one `PatraCard` per uuid given, matching what
+  /// `SyncPatraCatalog` would have already registered — this job never discovers cards itself,
+  /// only reads what `patra_cards` already says belongs to the resource.
+  private func makePatraModel(
+    on app: Application, cardUUIDs: [String], name: String = "MegaDetector"
+  ) async throws -> Resource {
+    let account = try await makePatraAccount(on: app)
+    let resource = try await makeResource(
+      on: app.db, accountID: try account.requireID(), name: name, type: .model)
+    let resourceID = try resource.requireID()
+    for uuid in cardUUIDs {
+      try await PatraCard(resourceID: resourceID, cardUUID: uuid).create(on: app.db)
+    }
+    return resource
+  }
+
+  /// A JSON array of `count` deployment objects. Each element is an empty object —
+  /// `PatraDeployment` is a deliberately empty `Content`, so only the array's length is ever
+  /// exercised, matching what the job actually reads off it.
+  private func deploymentsJSON(count: Int) -> String {
+    "[" + Array(repeating: "{}", count: count).joined(separator: ",") + "]"
+  }
+
+  /// The headline case from the brief: `MegaDetector for Wildlife Detection`'s live shape,
+  /// reduced to two cards. The resource-level reading is the sum across its cards, not either
+  /// card's own count.
+  @Test
+  func `A resource with two cards records the sum of their deployments`() async throws {
+    try await withInsightsApp { app in
+      let resource = try await makePatraModel(on: app, cardUUIDs: ["card-a", "card-b"])
+      let id = try resource.requireID()
+
+      stubPagedAPI(on: app) { url in
+        guard url.contains("skip=0") else { return nil }
+        if url.contains("/modelcard/card-a/deployments") {
+          return self.jsonResponse(.ok, self.deploymentsJSON(count: 38))
+        }
+        if url.contains("/modelcard/card-b/deployments") {
+          return self.jsonResponse(.ok, self.deploymentsJSON(count: 14))
+        }
+        return nil
+      }
+
+      try await SyncPatraDeployments().dequeue(queueContext(for: app), .init(id: id))
+
+      let result = try await readings(on: app.db, id)
+      #expect(result[.deployments] == 52)
+
+      let reloaded = try #require(try await Resource.find(id, on: app.db))
+      #expect(reloaded.lastCollectedAt != nil)
+    }
+  }
+
+  /// There is no datasheet deployments endpoint — Patra only runs models — so a `.dataset`
+  /// resource has nothing to fetch. The sweep still counts as a successful collection: the
+  /// question was asked and definitively answered as "not applicable", which is not the same as
+  /// a failure and must not be retried as one.
+  @Test
+  func `A dataset resource records success with no deployments reading`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), name: "Camera Trap Corpus",
+        type: .dataset)
+      let id = try resource.requireID()
+
+      // No route answers anything: a job that reached the network here would fail loudly rather
+      // than silently succeed, which is the point.
+      let requests = stubPagedAPI(on: app) { _ in nil }
+
+      try await SyncPatraDeployments().dequeue(queueContext(for: app), .init(id: id))
+
+      #expect(try await Metric.query(on: app.db).filter(\.$resource.$id == id).count() == 0)
+      #expect(requests.withLockedValue { $0 }.isEmpty)
+
+      let reloaded = try #require(try await Resource.find(id, on: app.db))
+      #expect(reloaded.lastCollectedAt != nil)
+    }
+  }
+
+  /// Zero is a true observation, not an absence: the endpoint answered with an empty list, and
+  /// that answer is what gets recorded — distinct from the dataset case above, where no request
+  /// is made at all.
+  @Test
+  func `A model with zero deployments records a zero reading`() async throws {
+    try await withInsightsApp { app in
+      let resource = try await makePatraModel(on: app, cardUUIDs: ["card-zero"])
+      let id = try resource.requireID()
+
+      stubPagedAPI(on: app) { url in
+        guard url.contains("/modelcard/card-zero/deployments"), url.contains("skip=0") else {
+          return nil
+        }
+        return self.jsonResponse(.ok, "[]")
+      }
+
+      try await SyncPatraDeployments().dequeue(queueContext(for: app), .init(id: id))
+
+      let metric = try #require(
+        try await Metric.query(on: app.db)
+          .filter(\.$resource.$id == id)
+          .filter(\.$type == .deployments)
+          .first())
+      #expect(metric.reading == 0)
+    }
+  }
+
+  /// `PatraAPI.page` asks for `limit=100`, so a single card's own deployments only ever page when
+  /// they cross that boundary — 105 split into a 100-entry first page and a 5-entry second. Both
+  /// must land in the sum, proving the job consumes everything `page` hands back rather than only
+  /// the first response.
+  @Test
+  func `A card with more than 100 deployments is fully counted across pages`() async throws {
+    try await withInsightsApp { app in
+      let resource = try await makePatraModel(on: app, cardUUIDs: ["card-big"])
+      let id = try resource.requireID()
+
+      let requests = stubPagedAPI(on: app) { url in
+        guard url.contains("/modelcard/card-big/deployments") else { return nil }
+        if url.contains("skip=0") {
+          return self.jsonResponse(.ok, self.deploymentsJSON(count: 100))
+        }
+        if url.contains("skip=100") {
+          return self.jsonResponse(.ok, self.deploymentsJSON(count: 5))
+        }
+        return nil
+      }
+
+      try await SyncPatraDeployments().dequeue(queueContext(for: app), .init(id: id))
+
+      let result = try await readings(on: app.db, id)
+      #expect(result[.deployments] == 105)
+
+      let paths = requests.withLockedValue { $0.map(\.url.string) }
+        .filter { $0.contains("/modelcard/card-big/deployments") }
+      #expect(paths.count == 2)
+    }
+  }
+
+  @Test
+  func `A sweep for a missing Patra resource is a no-op rather than a retried failure`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let requests = stubPagedAPI(on: app) { _ in nil }
+
+      try await SyncPatraDeployments().dequeue(queueContext(for: app), .init(id: UUID()))
+
+      #expect(requests.withLockedValue { $0 }.isEmpty)
+    }
+  }
+
+  /// Both the non-200 failure path and the "fetch everything, then write" ordering in one test:
+  /// `card-ok` would resolve cleanly on its own, `card-fail` 500s. If the job wrote as it went —
+  /// the mistake Task 4's discovery job was sent back for making — this resource would end up
+  /// with a metric summed from only one of its two cards. Instead nothing lands, and the
+  /// schedule is not anchored on a sweep that never completed.
+  @Test
+  func `A failed deployments fetch writes no metric at all, even after another card succeeded`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let resource = try await makePatraModel(on: app, cardUUIDs: ["card-ok", "card-fail"])
+      let id = try resource.requireID()
+
+      stubPagedAPI(on: app) { url in
+        if url.contains("/modelcard/card-ok/deployments"), url.contains("skip=0") {
+          return self.jsonResponse(.ok, self.deploymentsJSON(count: 38))
+        }
+        if url.contains("/modelcard/card-fail/deployments") {
+          return self.jsonResponse(.internalServerError, #"{"detail":"boom"}"#)
+        }
+        return nil
+      }
+
+      let error = await thrownJobError {
+        try await SyncPatraDeployments().dequeue(queueContext(for: app), .init(id: id))
+      }
+
+      guard case .apiRequestFailed? = error else {
+        Issue.record("expected apiRequestFailed, got \(String(describing: error?.description))")
+        return
+      }
+
+      #expect(try await Metric.query(on: app.db).count() == 0)
+      let reloaded = try #require(try await Resource.find(id, on: app.db))
+      #expect(reloaded.lastCollectedAt == nil)
+    }
+  }
 }
