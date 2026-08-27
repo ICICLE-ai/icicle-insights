@@ -167,9 +167,14 @@
   --ins-rank-5: #ed7aa7;
   --ins-rank-ink: #141a22;
 
-  /* The same five hues, stepped for the dark surface — chosen against it, not flipped from the
-   * light values. All five clear 3:1 here, so dark mode carries no contrast relief obligation.
-   * The light block holds the rationale and the validator numbers. */
+  /* The same five validated hues, stepped for the dark surface — chosen against it, not flipped
+   * from the light values. All five clear 3:1 here, so dark mode carries no contrast relief
+   * obligation. The light block holds the rationale and the validator numbers for those five.
+   *
+   * Patra is a sixth, added later: same hue as its light value, brightened for this surface
+   * (contrast ≈9.1:1 against #141a22). That figure is hand-computed, not validator-confirmed —
+   * `validate_palette.js` is not checked into this repository, so patra alone lacks the CVD and
+   * normal-vision ΔE numbers the other five carry. See the light block for the same caveat. */
   --ins-platform-github: #199e70;
   --ins-platform-ghcr: #9085e9;
   --ins-platform-huggingface: #c98500;
