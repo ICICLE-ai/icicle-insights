@@ -241,15 +241,24 @@ func configure(_ app: Application) async throws {
   let syncGitHubRepoStatsJob = SyncGitHubRepoStats()
   let syncGitHubOrgStatsJob = SyncGitHubOrgStats()
   let syncHuggingFaceHubStats = SyncHuggingFaceHubStats()
+  let syncPatraCatalog = SyncPatraCatalog()
+  let syncPatraDeployments = SyncPatraDeployments()
 
   app.queues.add(syncGitHubRepoStatsJob)
   app.queues.add(syncGitHubOrgStatsJob)
   app.queues.add(syncHuggingFaceHubStats)
+  app.queues.add(syncPatraCatalog)
+  app.queues.add(syncPatraDeployments)
 
   // Run by the `--scheduled` worker. These only enqueue; the jobs run on the `metrics` queue,
   // so a slow sync never delays the next sweep.
   app.queues.schedule(CollectDueResources()).hourly().at(0)
   app.queues.schedule(CollectAccountStats()).monthly().on(.first).at(3, 0)
+
+  // Daily, not monthly: Patra is a live registry, not a slow-moving follower count, so it needs
+  // the same cadence argument `CollectAccountStats` makes against folding into
+  // `CollectDueResources` applied one level up, against folding into `CollectAccountStats`.
+  app.queues.schedule(CollectPatraCatalog()).daily().at(4, 0)
 
   // Daily, and the cadence is what makes the thresholds work: each fires once as a token's
   // remaining days pass through it. Early morning, so a warning is waiting at the start of a

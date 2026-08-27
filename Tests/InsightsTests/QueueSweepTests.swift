@@ -85,6 +85,27 @@ struct QueueSweepTests {
   }
 
   @Test
+  func `A due Patra resource dispatches SyncPatraDeployments and is rebooked`() async throws {
+    try await withQueueApp { app in
+      // Patra is the platform the skip branch in `dispatchSync` used to swallow — this pins
+      // that it now routes like any other platform with a job, rather than silently regressing
+      // to "logged and skipped" the next time that switch is touched.
+      let account = try await makeAccount(on: app.db, name: "icicleai", platform: .patra)
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), nextCollectionAt: past(1))
+
+      try await CollectDueResources().run(context: queueContext(for: app))
+
+      #expect(
+        app.queues.asyncTest.all(SyncPatraDeployments.self).map(\.id) == [try resource.requireID()]
+      )
+      let rebooked = try #require(
+        try await Resource.find(resource.id, on: app.db)?.nextCollectionAt)
+      #expect(rebooked > Date())
+    }
+  }
+
+  @Test
   func `A platform with no sync job is skipped but still rebooked`() async throws {
     try await withQueueApp { app in
       // GHCR is legitimately in the catalog, just not collectable yet, so the sweep logs and

@@ -20,7 +20,10 @@ extension Queue {
     case .huggingface:
       try await dispatch(
         SyncHuggingFaceHubStats.self, .init(id: id), maxRetryCount: syncJobMaxRetryCount)
-    case .ghcr, .npm, .pypi, .patra:
+    case .patra:
+      try await dispatch(
+        SyncPatraDeployments.self, .init(id: id), maxRetryCount: syncJobMaxRetryCount)
+    case .ghcr, .npm, .pypi:
       logger.debug(
         "No sync job for platform; skipping resource",
         metadata: ["platform": .string(platform.rawValue), "resource": .string(id.uuidString)]
