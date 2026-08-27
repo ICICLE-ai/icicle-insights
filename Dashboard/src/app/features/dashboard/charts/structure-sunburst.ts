@@ -55,6 +55,7 @@ const TAU = Math.PI * 2;
 const GAP_ANGLE = (Math.PI / 180) * 3;
 
 const TYPE_PLURALS: Readonly<Record<ResourceType, string>> = {
+  agent: 'Agents',
   container: 'Containers',
   dataset: 'Datasets',
   model: 'Models',
