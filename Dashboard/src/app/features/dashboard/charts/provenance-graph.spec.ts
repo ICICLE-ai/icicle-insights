@@ -9,6 +9,7 @@ import { INSIGHTS_CONFIG, defaultInsightsConfig } from '../../../core/config';
 import { DashboardStore } from '../dashboard-store';
 import {
   ProvenanceGraph,
+  buildProvenanceClusters,
   buildProvenanceGraph,
   provenancePlatformColorScale,
 } from './provenance-graph';
@@ -159,6 +160,100 @@ describe('provenancePlatformColorScale', () => {
   });
 });
 
+describe('buildProvenanceClusters', () => {
+  it('never mixes two disjoint artifacts into one cluster — one container per artifact', () => {
+    const alphaHub = makeResource('a-hub', 'Alpha Resource', [
+      { id: 'a-spoke', name: 'Alpha Spoke', platform: 'github' },
+    ]);
+    const zetaHub = makeResource('z-hub', 'Zeta Resource', [
+      { id: 'z-spoke', name: 'Zeta Spoke', platform: 'huggingface' },
+    ]);
+    const graph = buildProvenanceGraph(
+      [alphaHub, zetaHub],
+      platformMap([
+        ['a-hub', 'patra'],
+        ['z-hub', 'patra'],
+      ]),
+    );
+
+    const clusters = buildProvenanceClusters(graph.vertices, graph.edges);
+
+    expect(clusters).toHaveLength(2);
+    const [first, second] = clusters;
+    expect(first?.hub.id).toBe('a-hub');
+    expect(first?.spokes.map((spoke) => spoke.id)).toEqual(['a-spoke']);
+    expect(second?.hub.id).toBe('z-hub');
+    expect(second?.spokes.map((spoke) => spoke.id)).toEqual(['z-spoke']);
+  });
+
+  it('picks the vertex with the most edges in its own component as the hub', () => {
+    const datasheet = makeResource('patra-1', 'Continually Adapt or Not (CAN) Benchmark', [
+      { id: 'gh-1', name: 'can-benchmark', platform: 'github' },
+      { id: 'hf-1', name: 'can_benchmark', platform: 'huggingface' },
+    ]);
+    const graph = buildProvenanceGraph([datasheet], platformMap([['patra-1', 'patra']]));
+
+    const [cluster] = buildProvenanceClusters(graph.vertices, graph.edges);
+
+    expect(cluster?.hub.id).toBe('patra-1');
+    expect(cluster?.spokes.map((spoke) => spoke.id).sort()).toEqual(['gh-1', 'hf-1']);
+    expect(cluster?.overflowCount).toBe(0);
+  });
+
+  it('breaks a tied degree deterministically by label, not by array or Map order', () => {
+    const alpha = makeResource('a', 'alpha', [{ id: 'b', name: 'beta', platform: 'github' }]);
+    const beta = makeResource('b', 'beta', [{ id: 'a', name: 'alpha', platform: 'huggingface' }]);
+    const graph = buildProvenanceGraph(
+      [alpha, beta],
+      platformMap([
+        ['a', 'huggingface'],
+        ['b', 'github'],
+      ]),
+    );
+
+    const [cluster] = buildProvenanceClusters(graph.vertices, graph.edges);
+
+    // Both vertices have degree 1 — 'alpha' sorts before 'beta', so it becomes the hub
+    // regardless of which resource happened to be listed first.
+    expect(cluster?.hub.label).toBe('alpha');
+    expect(cluster?.spokes.map((spoke) => spoke.label)).toEqual(['beta']);
+  });
+
+  it('caps the drawn spokes and reports the rest as overflow, without dropping them from the graph', () => {
+    const hub = makeResource('patra-1', 'name', [
+      { id: 'l1', name: 'one', platform: 'github' },
+      { id: 'l2', name: 'two', platform: 'huggingface' },
+      { id: 'l3', name: 'three', platform: 'npm' },
+      { id: 'l4', name: 'four', platform: 'pypi' },
+      { id: 'l5', name: 'five', platform: 'ghcr' },
+    ]);
+    const graph = buildProvenanceGraph([hub], platformMap([['patra-1', 'patra']]));
+
+    const [cluster] = buildProvenanceClusters(graph.vertices, graph.edges);
+
+    // Five links recorded — none dropped from the underlying graph — but the card only ever
+    // draws three of them; the other two are named by `overflowCount`, not silently discarded.
+    expect(graph.edges).toHaveLength(5);
+    expect(cluster?.spokes).toHaveLength(3);
+    expect(cluster?.overflowCount).toBe(2);
+  });
+
+  it('produces byte-for-byte identical output across repeated calls on the same data', () => {
+    const datasheet = makeResource('patra-1', 'Continually Adapt or Not (CAN) Benchmark', [
+      { id: 'gh-1', name: 'can-benchmark', platform: 'github' },
+      { id: 'hf-1', name: 'can_benchmark', platform: 'huggingface' },
+    ]);
+    const graph = buildProvenanceGraph([datasheet], platformMap([['patra-1', 'patra']]));
+
+    const first = buildProvenanceClusters(graph.vertices, graph.edges);
+    const second = buildProvenanceClusters(graph.vertices, graph.edges);
+
+    // No physics and no randomness: the same vertices and edges always fold into the same
+    // clusters, in the same membership and the same order.
+    expect(second).toEqual(first);
+  });
+});
+
 describe('ProvenanceGraph component', () => {
   async function render(
     resources: readonly Resource[],
@@ -176,15 +271,16 @@ describe('ProvenanceGraph component', () => {
     return fixture.nativeElement as HTMLElement;
   }
 
-  it('renders the empty state, not a broken or empty chart, for a resource with no links', async () => {
+  it('renders the empty state, not a broken or empty grid, for a resource with no links', async () => {
     const root = await render([makeResource('r1', 'lonely', [])], platformMap([['r1', 'github']]));
 
-    expect(root.querySelector('tanstack-chart')).toBeNull();
+    expect(root.querySelector('.ins-provenance-graph__grid')).toBeNull();
+    expect(root.querySelector('.ins-provenance-cluster')).toBeNull();
     expect(root.querySelector('.ins-provenance-graph__empty')).not.toBeNull();
     expect(root.textContent).toContain('No cross-registry links recorded yet');
   });
 
-  it('renders no empty-state notice once at least one link exists', async () => {
+  it('renders the grid, not the empty-state notice, once at least one link exists', async () => {
     const resource = makeResource('patra-1', 'name', [
       { id: 'gh-1', name: 'x', platform: 'github' },
     ]);
@@ -192,6 +288,72 @@ describe('ProvenanceGraph component', () => {
     const root = await render([resource], platformMap([['patra-1', 'patra']]));
 
     expect(root.querySelector('.ins-provenance-graph__empty')).toBeNull();
+    expect(root.querySelectorAll('.ins-provenance-cluster')).toHaveLength(1);
+  });
+
+  it('draws the two-line label on the hub node — name, then platform in parentheses', async () => {
+    const resource = makeResource('patra-1', 'Continually Adapt or Not (CAN) Benchmark', [
+      { id: 'hf-1', name: 'MegaDetector', platform: 'huggingface' },
+    ]);
+
+    const root = await render([resource], platformMap([['patra-1', 'patra']]));
+
+    const hub = root.querySelector('.ins-provenance-node--hub');
+    expect(hub?.querySelector('.ins-provenance-node__name')?.textContent).toBe(
+      'Continually Adapt or Not (CAN) Benchmark',
+    );
+    // Nothing here is ever shortened with an ellipsis — the box wraps instead of truncating.
+    expect(root.textContent).not.toContain('…');
+  });
+
+  it('gives every distinct artifact its own cluster container — clusters never overlap', async () => {
+    const alphaHub = makeResource('a-hub', 'Alpha Resource', [
+      { id: 'a-spoke', name: 'Alpha Spoke', platform: 'github' },
+    ]);
+    const zetaHub = makeResource('z-hub', 'Zeta Resource', [
+      { id: 'z-spoke', name: 'Zeta Spoke', platform: 'huggingface' },
+    ]);
+
+    const root = await render(
+      [alphaHub, zetaHub],
+      platformMap([
+        ['a-hub', 'patra'],
+        ['z-hub', 'patra'],
+      ]),
+    );
+
+    const cards = root.querySelectorAll('.ins-provenance-cluster');
+    expect(cards).toHaveLength(2);
+
+    // Each artifact renders in its own container, and only its own members appear inside it —
+    // the structural guarantee that stands in for "the two clusters never overlap" now that
+    // position comes from CSS grid flow rather than a computed (x, y) pair.
+    const [first, second] = Array.from(cards);
+    expect(first.textContent).toContain('Alpha Resource');
+    expect(first.textContent).toContain('Alpha Spoke');
+    expect(first.textContent).not.toContain('Zeta');
+
+    expect(second.textContent).toContain('Zeta Resource');
+    expect(second.textContent).toContain('Zeta Spoke');
+    expect(second.textContent).not.toContain('Alpha');
+  });
+
+  it('caps a cluster past four members and still lists every one of them in the table', async () => {
+    const hub = makeResource('patra-1', 'name', [
+      { id: 'l1', name: 'one', platform: 'github' },
+      { id: 'l2', name: 'two', platform: 'huggingface' },
+      { id: 'l3', name: 'three', platform: 'npm' },
+      { id: 'l4', name: 'four', platform: 'pypi' },
+      { id: 'l5', name: 'five', platform: 'ghcr' },
+    ]);
+
+    const root = await render([hub], platformMap([['patra-1', 'patra']]));
+
+    // One hub button plus three spoke buttons in the card preview…
+    expect(root.querySelectorAll('.ins-provenance-node')).toHaveLength(4);
+    expect(root.textContent).toContain('2 more in the table below');
+    // …but the accessible table still carries the full, uncapped set of five links.
+    expect(root.querySelectorAll('tbody tr')).toHaveLength(5);
   });
 });
 
