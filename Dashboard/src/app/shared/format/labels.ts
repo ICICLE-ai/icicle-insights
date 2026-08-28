@@ -14,6 +14,7 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   huggingface: 'Hugging Face',
   npm: 'npm',
   pypi: 'PyPI',
+  patra: 'Patra',
 };
 
 /** A presentation-level collection of registries that users commonly analyze together. */
@@ -50,17 +51,18 @@ export interface PlatformScopeDefinition {
  * count, colour, and filter derives from here rather than repeating `npm || pypi` checks.
  *
  * Splitting "Models & Datasets" into two entries is **not** possible here, and the reason is
- * worth recording: both live on Hugging Face, and this taxonomy keys on the registry. That
- * distinction exists only at the resource level (`ResourceType.model` vs `.dataset`), so it
- * would require the picker to filter by resource type instead — a different dimension, not a
- * longer list.
+ * worth recording: both live on Hugging Face and on Patra, and this taxonomy keys on the
+ * registry. That distinction exists only at the resource level (`ResourceType.model` vs
+ * `.dataset`), so it would require the picker to filter by resource type instead — a different
+ * dimension, not a longer list. Patra is a second instance of the same case Hugging Face already
+ * established: one registry, two kinds of artifact, one group.
  *
  * Order sets picker order, and follows `PLATFORM_ORDER` by each group's first member.
  */
 export const PLATFORM_GROUPS: readonly PlatformGroupDefinition[] = [
   { id: 'repositories', label: 'Repositories', platforms: ['github'] },
   { id: 'containers', label: 'Containers', platforms: ['ghcr'] },
-  { id: 'models', label: 'Models & Datasets', platforms: ['huggingface'] },
+  { id: 'models', label: 'Models & Datasets', platforms: ['huggingface', 'patra'] },
   { id: 'packages', label: 'Packages', platforms: ['npm', 'pypi'] },
 ];
 
@@ -99,10 +101,18 @@ const ALL_TIME_SUFFIX = 'AllTime';
  * Doubles as the colour-slot assignment: a platform's index here is its series slot, so the
  * colour naming a platform never changes when a filter removes some other platform.
  */
-export const PLATFORM_ORDER: readonly Platform[] = ['github', 'ghcr', 'huggingface', 'npm', 'pypi'];
+export const PLATFORM_ORDER: readonly Platform[] = [
+  'github',
+  'ghcr',
+  'huggingface',
+  'npm',
+  'pypi',
+  'patra',
+];
 
 /** Canonical display order for resource types, matching the `ResourceType` enum. */
 export const RESOURCE_TYPE_ORDER: readonly ResourceType[] = [
+  'agent',
   'container',
   'dataset',
   'model',

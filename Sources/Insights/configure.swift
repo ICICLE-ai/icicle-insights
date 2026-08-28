@@ -109,13 +109,15 @@ func configure(_ app: Application) async throws {
   app.migrations.add(Admins())
   app.migrations.add(JobFailures())
   app.migrations.add(CollectionBackoff())
+  app.migrations.add(PatraPlatform())
 
   // Development-only seed data so the dashboard has something to render. Only ever
   // registered in `.development`, so it targets `dev` and never the `test` database.
-  // Real ICICLE figures only: the snapshot is a single point in time, so trend series
+  // Real figures only: each snapshot is a single point in time, so trend series
   // have one point each until a second sweep is recorded.
   if app.environment == .development {
     app.migrations.add(ICICLESnapshotJuly2026())
+    app.migrations.add(PatraCatalogAugust2026())
   }
 
   // Jobs live in Redis rather than Postgres: the worker's poll is a blocking pop instead of a
@@ -240,15 +242,24 @@ func configure(_ app: Application) async throws {
   let syncGitHubRepoStatsJob = SyncGitHubRepoStats()
   let syncGitHubOrgStatsJob = SyncGitHubOrgStats()
   let syncHuggingFaceHubStats = SyncHuggingFaceHubStats()
+  let syncPatraCatalog = SyncPatraCatalog()
+  let syncPatraDeployments = SyncPatraDeployments()
 
   app.queues.add(syncGitHubRepoStatsJob)
   app.queues.add(syncGitHubOrgStatsJob)
   app.queues.add(syncHuggingFaceHubStats)
+  app.queues.add(syncPatraCatalog)
+  app.queues.add(syncPatraDeployments)
 
   // Run by the `--scheduled` worker. These only enqueue; the jobs run on the `metrics` queue,
   // so a slow sync never delays the next sweep.
   app.queues.schedule(CollectDueResources()).hourly().at(0)
   app.queues.schedule(CollectAccountStats()).monthly().on(.first).at(3, 0)
+
+  // Daily, not monthly: Patra is a live registry, not a slow-moving follower count, so it needs
+  // the same cadence argument `CollectAccountStats` makes against folding into
+  // `CollectDueResources` applied one level up, against folding into `CollectAccountStats`.
+  app.queues.schedule(CollectPatraCatalog()).daily().at(4, 0)
 
   // Daily, and the cadence is what makes the thresholds work: each fires once as a token's
   // remaining days pass through it. Early morning, so a warning is waiting at the start of a
@@ -259,6 +270,7 @@ func configure(_ app: Application) async throws {
   // same scheduled job types without changing or waiting for the production clocks above.
   app.asyncCommands.use(CollectResourcesNowCommand(), as: "collect-resources")
   app.asyncCommands.use(CollectAccountsNowCommand(), as: "collect-accounts")
+  app.asyncCommands.use(CollectPatraCatalogNowCommand(), as: "collect-patra-catalog")
 
   // Credential minting stays off the HTTP surface — see `ServiceTokenCommand`.
   app.asyncCommands.use(ServiceTokenCommand(), as: "service-token")

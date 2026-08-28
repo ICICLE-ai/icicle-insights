@@ -4,6 +4,7 @@ import { provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { ALL_METRIC_TYPES } from '../../core/api/insights-api';
 import { INSIGHTS_CONFIG, defaultInsightsConfig } from '../../core/config';
 import { DashboardStore } from './dashboard-store';
 
@@ -44,9 +45,16 @@ describe('DashboardStore', () => {
 
     // One request per member of the closed MetricType enum. Fetching unscoped instead would cap
     // at 1000 rows across all types and silently truncate the rarer ones out of existence.
-    expect(metricCalls).toHaveLength(14);
+    //
+    // Measured against `ALL_METRIC_TYPES.length` rather than a hardcoded count: a literal here
+    // is exactly the kind of number that drifted silently when `deployments` was added to the
+    // Swift `MetricType` enum but not to this array (see `metric-types.spec.ts`), and this test
+    // would have kept passing throughout since it never touches the array itself.
+    expect(metricCalls).toHaveLength(ALL_METRIC_TYPES.length);
     expect(metricCalls.every((call) => call.request.params.has('type'))).toBe(true);
-    expect(new Set(metricCalls.map((call) => call.request.params.get('type'))).size).toBe(14);
+    expect(new Set(metricCalls.map((call) => call.request.params.get('type'))).size).toBe(
+      ALL_METRIC_TYPES.length,
+    );
   });
 
   it('reports a failed load as an error instead of loading forever', async () => {

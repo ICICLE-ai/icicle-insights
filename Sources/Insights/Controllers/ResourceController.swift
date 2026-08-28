@@ -50,9 +50,34 @@ struct ResourceController: RouteCollection {
   }
 
   @Sendable
-  /// Lists all active resources.
+  /// Lists all active resources, with the same cross-registry `links` eager load `show` uses.
+  ///
+  /// Fluent batches an eager load per query, not per row, so this is a fixed handful of extra
+  /// queries for the whole list — not N+1 — and it is what lets the dashboard's provenance graph
+  /// see links at all, since nothing in the dashboard ever calls `show`.
+  ///
+  /// `withDeleted: true` on both `hubResource` and `repositoryResource`: same trap
+  /// `SyncPatraCatalog.register` documents on its own `.with(\.$resource, withDeleted: true)`.
+  /// These are `@OptionalParent` — a card can carry a non-nil `hub_resource_id`/
+  /// `repository_resource_id` whose row has since been soft-deleted, and Fluent's default eager
+  /// load excludes soft-deleted rows from the query but does NOT treat the resulting miss as "no
+  /// parent" the way a genuinely nil id would. It throws `missingParentError` instead. Once any
+  /// admin soft-deletes a resource a Patra card points at, every future `GET /resources` (and
+  /// `GET /resources/:id`) 500s — including the admin console's own call, which is the one this
+  /// endpoint feeds — until someone fixes it at the database layer, since the UI that would let an
+  /// admin undo the delete never loads either.
   func index(req: Request) async throws -> [Resource.Public] {
-    try await Resource.query(on: req.db).all().map { $0.toPublic() }
+    try await Resource.query(on: req.db)
+      .with(\.$patraCards) { card in
+        card.with(\.$hubResource, withDeleted: true) { hub in
+          hub.with(\.$account)
+        }
+        card.with(\.$repositoryResource, withDeleted: true) { repository in
+          repository.with(\.$account)
+        }
+      }
+      .all()
+      .map { $0.toPublic() }
   }
 
   @Sendable
@@ -91,10 +116,35 @@ struct ResourceController: RouteCollection {
   }
 
   @Sendable
-  /// Returns one resource by identifier.
+  /// Returns one resource by identifier, with the other registries it also exists under, when
+  /// its Patra cards recorded any.
+  ///
+  /// `Resource.find` can't express this: building `Public.links` needs each Patra card's
+  /// `hubResource`/`repositoryResource` loaded, and each of those needs its own `account` loaded
+  /// to know which platform it belongs to — so `show` is the one place this nested `.with` chain
+  /// has to live.
+  ///
+  /// `withDeleted: true` on both eager loads for the same reason `index` above carries it: an
+  /// `@OptionalParent` whose id survives its target's soft delete throws `missingParentError`
+  /// rather than resolving to nil, so omitting this turns one soft-deleted resource into a
+  /// permanent 500 for every card that ever pointed at it.
   func show(req: Request) async throws -> Resource.Public {
-    guard let resource = try await Resource.find(req.parameters.get("resourceID"), on: req.db)
-    else {
+    guard let resourceID = req.parameters.get("resourceID", as: UUID.self) else {
+      throw Abort(.notFound)
+    }
+
+    let query = Resource.query(on: req.db)
+      .filter(\.$id == resourceID)
+      .with(\.$patraCards) { card in
+        card.with(\.$hubResource, withDeleted: true) { hub in
+          hub.with(\.$account)
+        }
+        card.with(\.$repositoryResource, withDeleted: true) { repository in
+          repository.with(\.$account)
+        }
+      }
+
+    guard let resource = try await query.first() else {
       throw Abort(.notFound)
     }
 

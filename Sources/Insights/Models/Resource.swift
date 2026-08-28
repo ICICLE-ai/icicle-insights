@@ -7,7 +7,7 @@ import struct Foundation.UUID
 ///
 /// `CaseIterable` makes SwiftOpenAPI emit the allowed values instead of a bare string.
 enum ResourceType: String, Codable, CaseIterable {
-  case container, dataset, model, package, repository, service
+  case agent, container, dataset, model, package, repository, service
 }
 
 /// A collectable artifact owned by a platform account.
@@ -59,6 +59,14 @@ final class Resource: Model, @unchecked Sendable {
   @Children(for: \.$resource)
   /// Published versions associated with this resource.
   var releases: [Release]
+
+  @Children(for: \.$resource)
+  /// Patra cards that name this resource.
+  ///
+  /// Exists for provenance projection: `toPublic()` reads each card's `hubResource` and
+  /// `repositoryResource` to build `Public.links` — the other registries this same artifact is
+  /// also known under, per whatever Patra recorded on this resource's own cards.
+  var patraCards: [PatraCard]
 
   @Timestamp(key: "created_at", on: .create)
   var createdAt: Date?

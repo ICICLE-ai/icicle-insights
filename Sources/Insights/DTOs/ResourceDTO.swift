@@ -57,6 +57,16 @@ extension Resource {
     static let example = Update(name: "insights", type: .model, collectionIntervalDays: 7)
   }
 
+  /// One registry where this artifact also exists.
+  ///
+  /// Flattened from the Patra card that records the relationship: the graph needs a node's
+  /// identity and its registry, not the card that produced the edge.
+  struct ResourceLink: Content, Equatable {
+    var id: UUID?
+    var name: String?
+    var platform: Platform?
+  }
+
   /// Public resource representation returned by the API.
   struct Public: Content {
     var id: UUID?
@@ -70,6 +80,10 @@ extension Resource {
     var metrics: [Metric.Public]?
     /// Loaded release history, when requested with the relationship.
     var releases: [Release.Public]?
+    /// Other registries this artifact is also known under, deduplicated across this resource's
+    /// loaded Patra cards. Nil means not requested; an empty array means requested and none
+    /// found — the same "loaded vs. not" contract every other relationship here keeps.
+    var links: [ResourceLink]?
     /// Earliest instant at which the due-resource sweep may dispatch it.
     var nextCollectionAt: Date?
     /// Number of days booked between successful dispatches.
@@ -79,7 +93,7 @@ extension Resource {
     var deletedAt: Date?
 
     enum CodingKeys: String, CodingKey {
-      case id, accountID, name, type, metrics, releases, nextCollectionAt,
+      case id, accountID, name, type, metrics, releases, links, nextCollectionAt,
         collectionIntervalDays, createdAt, updatedAt, deletedAt
     }
   }
@@ -93,11 +107,37 @@ extension Resource {
       type: $type.value,
       metrics: $metrics.value?.map { $0.toPublic() },
       releases: $releases.value?.map { $0.toPublic() },
+      links: $patraCards.value.map(Self.links(from:)),
       nextCollectionAt: $nextCollectionAt.value ?? nil,
       collectionIntervalDays: $collectionIntervalDays.value,
       createdAt: createdAt,
       updatedAt: updatedAt,
       deletedAt: deletedAt,
     )
+  }
+
+  /// Flattens a resource's Patra cards into the distinct non-nil hub/repository resources they
+  /// point at.
+  ///
+  /// Reads only what eager loading already populated (`card.hubResource` / `.repositoryResource`
+  /// resolve to nil when unloaded, exactly like an absent relationship — callers must load both
+  /// alongside `patraCards`, or every card looks like it names nothing). Dedupes by id: two cards
+  /// — say, two versions of the same model — commonly resolve to the same hub resource, and the
+  /// graph wants one edge for that, not one per card.
+  private static func links(from cards: [PatraCard]) -> [ResourceLink] {
+    var seenIDs = Set<UUID>()
+    var links: [ResourceLink] = []
+    for card in cards {
+      for linked in [card.hubResource, card.repositoryResource].compactMap({ $0 }) {
+        guard let linkedID = linked.id, seenIDs.insert(linkedID).inserted else { continue }
+        links.append(
+          ResourceLink(
+            id: linkedID,
+            name: linked.$name.value,
+            platform: linked.$account.value?.platform,
+          ))
+      }
+    }
+    return links
   }
 }

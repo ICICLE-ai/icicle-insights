@@ -5,9 +5,14 @@ Project vocabulary. For administrators and developers.
 | Term | Means here |
 |---|---|
 | **Account** | An identity on a hosting platform that owns resources |
-| **Resource** | A repository, model, dataset, package, container, or service being measured |
-| **Registry** | The platform an account lives on: GitHub, GHCR, Hugging Face, npm, PyPI |
+| **Resource** | An agent, repository, model, dataset, package, container, or service being measured |
+| **Registry** | The platform an account lives on: GitHub, GHCR, Hugging Face, npm, PyPI, Patra |
 | **Kind** | What a resource is. Does not decide which API reports on it |
+| **Patra** | ICICLE's own model and dataset registry. Collected without a stored credential |
+| **Card** | One (name, version) record in Patra — a model card or a datasheet |
+| **Datasheet** | Patra's name for a dataset's card |
+| **Deployment count** | `deployments`. How many completed runs Patra recorded, summed across a resource's cards |
+| **Provenance link** | A Patra card's record that its artifact also exists in another registry |
 | **Cadence** | `collectionIntervalDays`. Spacing booked after a successful collection |
 | **Due date** | `nextCollectionAt`. When a resource may next be dispatched |
 | **Sweep** | One pass of collection over the resources that are due |

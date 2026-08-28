@@ -64,6 +64,22 @@ attempts across roughly ten minutes rediscovering that a row is deleted.
 after every fetch and fold. It anchors the backoff and the next due date on this success; called
 any earlier, a partial sweep would count as one.
 
+## When the platform breaks the pattern
+
+Two real deviations exist, both in Patra's collectors.
+
+**A public API needs no credential.** `SyncPatraCatalog` and `SyncPatraDeployments` send no
+token, unlike every other collector. Patra's endpoints answer private records to an authenticated
+caller, and this service's API and dashboard are public, so a token would leak exactly what
+`is_private` exists to hide. Skip `SecretProvider` entirely when a platform's read endpoints are
+already public — do not resolve a credential just because every other collector does.
+
+**An account-level discovery job never calls `recordSuccessfulCollection`.** `SyncPatraCatalog`
+finds and creates resources; it writes no metric and touches many resources in one run, so it has
+no single resource's cadence to anchor. Only a per-resource job — `SyncPatraDeployments` here —
+calls it. If your new platform needs its own catalog discovery step, model it on
+`SyncPatraCatalog` and `CollectPatraCatalog`, not on the per-resource template above.
+
 ## 2. Register it
 
 In `configure.swift`, beside the others:

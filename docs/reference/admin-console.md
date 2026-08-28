@@ -43,7 +43,7 @@ A platform account owns resources and at most one vault credential.
 | Column | Meaning |
 |---|---|
 | Account | Name on the platform |
-| Registry | GitHub, GHCR, Hugging Face, npm, or PyPI |
+| Registry | GitHub, GHCR, Hugging Face, npm, PyPI, or Patra |
 | Resources | How many resources this account owns |
 | Vault | Whether a credential is configured |
 | Created | When the account was registered |
@@ -59,7 +59,7 @@ Each resource belongs to one account and carries its own collection cadence.
 | Column | Meaning |
 |---|---|
 | Resource | Name on the platform |
-| Kind | Container, dataset, model, package, repository, or service |
+| Kind | Agent, container, dataset, model, package, repository, or service |
 | Account | Owning account |
 | Cadence | Days between successful collections. Default 7 |
 | Next collection | When it next becomes eligible. `Not set` means it is never swept |
@@ -149,6 +149,7 @@ Revocation takes effect on the next request, not at the next restart. See
 | Top Resources | Ranked reach across resources |
 | Trends | Change over time, per metric, over a chosen window |
 | Releases | Published release history |
+| Provenance | Resources Patra recorded as the same artifact under another registry |
 
 ![Public dashboard](../../assets/screenshots/dashboard-portfolio.png)
 

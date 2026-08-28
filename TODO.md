@@ -13,6 +13,7 @@ across 110 resources under 5 accounts.
 | Collection: GitHub repositories and accounts | Shipped |
 | Collection: Hugging Face | Shipped |
 | Collection: GHCR, npm, PyPI | Registered in the catalog, no collector |
+| Collection: Patra (catalog, deployments, provenance) | Shipped on `patra`, not yet merged or deployed |
 | Authentication, admins, webhook tokens | Shipped |
 | Hardening: headers, CORS, rate limits, key rotation | Shipped |
 | Failure classification and alerting | Shipped |
@@ -43,6 +44,38 @@ stack expects local database values — and confirm the tutorials work as writte
 
 Conventions for any new page are in [CLAUDE.md](CLAUDE.md) under Documentation. Follow them for
 docs written alongside other work, so the set stays consistent while this is unfinished.
+
+### Verify Patra against a real boot
+
+This documentation pass (the last task of the Patra platform work) touched no code and ran neither
+`just migrate` nor `just run` — its brief scoped it to docs only. Two things it describes remain
+unverified against a live system:
+
+- **The console flow.** Registering the `icicleai` account on `patra`, running `just collect
+  --force`, and confirming 29 resources, 43 cards, and readings of 52 / 16 / 1 on MegaDetector,
+  ResNet50, and MobileNetV2 — all written from source, none walked by hand.
+- **The dashboard.** The Patra platform hue and the Provenance tab's two-line node labels, in both
+  the light and dark theme. `provenance-graph.spec.ts` covers the layout mechanism, but nobody has
+  loaded the running page against seeded or live data.
+
+Model card provenance is expected to render empty either way: Patra's real `location` values
+resolve for most of its live model cards, but none name an account this deployment tracks (its
+Hugging Face URLs are third-party, and its GitHub URLs name `camera_traps`, not the `Camera_Trap`
+Insights collects). That is documented behaviour, not something this check would be looking to
+fix.
+
+Datasheet provenance is different: three datasheets (CAN Benchmark, the HLO feature dataset, and
+the Organization SIC Code dataset) carry a Hugging Face `alternate_identifier` or
+`related_identifier` naming a dataset under the `icicle-ai` account Insights already tracks, so
+those three edges are expected to render — the one part of the graph this check should actually
+see filled in.
+
+### `ResourceType.agent` has no publisher
+
+`agent` exists in the `resource_type` enum and every dashboard picker and admin form lists it, so
+it can be registered by hand today. Nothing collects one: no Patra endpoint and no other collector
+publishes an agent resource. `/agent-tools/*` are AI tooling routes, not agent records. The catalog
+job gains a third endpoint — beside `/modelcards` and `/datasheets` — if and when Patra ships one.
 
 ### Verify the production signing keyset
 

@@ -11,7 +11,7 @@ Its account must exist first — see [Register an account](register-an-account.m
 3. Enter the resource name or path exactly as the platform spells it. Some platforms namespace
    theirs, so use whatever appears in the resource's own URL.
 4. Choose the owning account.
-5. Choose the kind: container, dataset, model, package, repository, or service.
+5. Choose the kind: agent, container, dataset, model, package, repository, or service.
 6. Set the cadence in days, or leave the default of 7.
 7. Save.
 
@@ -29,6 +29,7 @@ Cadence is the spacing between successful collections, not a guarantee of when o
 | GitHub | 7 days |
 | Hugging Face | 30 days |
 | GHCR, npm, PyPI | 30 days |
+| Patra | 30 days |
 
 The form enforces each cap. See [Collection schedule](../reference/collection-schedule.md) for why
 GitHub's is set where it is.
@@ -43,6 +44,9 @@ the account's registry.
 
 Choose **service** only for a deployed service that will report its own metrics. It is the only
 kind that can be issued a service token.
+
+Choose **agent** for an ICICLE AI agent. It can be registered, but nothing collects it yet —
+Patra's API does not publish agents today.
 
 ## Confirm it worked
 

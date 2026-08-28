@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { Platform } from '../../core/api/models';
 import {
   PLATFORM_ORDER,
   RESOURCE_TYPE_ORDER,
@@ -13,6 +14,7 @@ import {
   platformLabel,
   platformScopes,
   resourceTypeColor,
+  resourceTypeLabel,
   seriesColor,
 } from './labels';
 
@@ -22,6 +24,12 @@ describe('metricLabel', () => {
     expect(metricLabel('downloads')).toBe('Downloads · 30 days');
     expect(metricLabel('clones')).toBe('Clones · 14 days');
     expect(metricLabel('views')).toBe('Views · 14 days');
+  });
+
+  it('leaves deployments unqualified, because a lifetime total is not overstating anything', () => {
+    // Unlike downloads/clones/views, a deployment count is read whole on every sweep — there is
+    // no rolling window for the bare name to misstate, so it gets no METRIC_LABELS entry.
+    expect(metricLabel('deployments')).toBe('Deployments');
   });
 
   it('derives all-time labels from the suffix rather than a second lookup table', () => {
@@ -90,6 +98,7 @@ describe('platformLabel', () => {
     expect(platformLabel('huggingface')).toBe('Hugging Face');
     expect(platformLabel('pypi')).toBe('PyPI');
     expect(platformLabel('npm')).toBe('npm');
+    expect(platformLabel('patra')).toBe('Patra');
   });
 
   it('falls back to the raw value for a platform this client does not know', () => {
@@ -110,8 +119,8 @@ describe('platform groups', () => {
       {
         value: 'models',
         label: 'Models & Datasets',
-        description: 'Hugging Face',
-        platforms: ['huggingface'],
+        description: 'Hugging Face + Patra',
+        platforms: ['huggingface', 'patra'],
       },
       {
         value: 'packages',
@@ -144,12 +153,28 @@ describe('platform groups', () => {
       platforms: ['npm'],
     });
   });
+
+  it('folds Patra into the same Models & Datasets scope as Hugging Face', () => {
+    // Patra is a second registry in the group Hugging Face already established — one scope,
+    // one description naming both, not a second "Models & Datasets" entry.
+    expect(platformFilterIncludes('models', 'patra')).toBe(true);
+
+    const scopes = platformScopes(['huggingface', 'patra']);
+    expect(scopes).toHaveLength(1);
+    expect(scopes[0]).toEqual({
+      value: 'models',
+      label: 'Models & Datasets',
+      description: 'Hugging Face + Patra',
+      platforms: ['huggingface', 'patra'],
+    });
+  });
 });
 
 describe('canonical orderings', () => {
   it('lists resource types matching the server enum, with no image type', () => {
     // The previous dashboard ordered an `image` type the API cannot return.
     expect(RESOURCE_TYPE_ORDER).toEqual([
+      'agent',
       'container',
       'dataset',
       'model',
@@ -160,8 +185,34 @@ describe('canonical orderings', () => {
     expect(RESOURCE_TYPE_ORDER).not.toContain('image');
   });
 
+  it('puts agent first, matching the server enum, which is alphabetical', () => {
+    expect(RESOURCE_TYPE_ORDER[0]).toBe('agent');
+  });
+
   it('lists every platform the server enum defines', () => {
-    expect([...PLATFORM_ORDER].sort()).toEqual(['ghcr', 'github', 'huggingface', 'npm', 'pypi']);
+    expect([...PLATFORM_ORDER].sort()).toEqual([
+      'ghcr',
+      'github',
+      'huggingface',
+      'npm',
+      'patra',
+      'pypi',
+    ]);
+  });
+
+  it('puts patra last, because the server enum is append order, not alphabetical', () => {
+    // `composition-chart.ts` colours platforms by `PLATFORM_ORDER.indexOf`, so a new platform
+    // inserted anywhere but the end would silently recolour every platform after it.
+    expect(PLATFORM_ORDER.at(-1)).toBe('patra');
+  });
+
+  it('lists every member of the Platform union', () => {
+    // Guards against a union member being added to models.ts without a matching entry here —
+    // the failure mode this task exists to prevent.
+    const allPlatforms: Platform[] = ['github', 'ghcr', 'huggingface', 'npm', 'pypi', 'patra'];
+    for (const platform of allPlatforms) {
+      expect(PLATFORM_ORDER).toContain(platform);
+    }
   });
 
   it('keeps both orderings within the validated palette', () => {
@@ -169,6 +220,13 @@ describe('canonical orderings', () => {
     // palette would silently fall through to the neutral.
     expect(PLATFORM_ORDER.length).toBeLessThanOrEqual(SERIES_SLOT_COUNT);
     expect(RESOURCE_TYPE_ORDER.length).toBeLessThanOrEqual(SERIES_SLOT_COUNT);
+  });
+});
+
+describe('resourceTypeLabel', () => {
+  it('title-cases the raw type', () => {
+    expect(resourceTypeLabel('agent')).toBe('Agent');
+    expect(resourceTypeLabel('model')).toBe('Model');
   });
 });
 
@@ -190,6 +248,8 @@ describe('seriesColor', () => {
     // repaint the platforms that survive.
     expect(platformColor('huggingface')).toBe('var(--ins-platform-huggingface)');
     expect(platformColor('pypi')).toBe('var(--ins-platform-pypi)');
-    expect(resourceTypeColor('model')).toBe('var(--ins-series-3)');
+    expect(platformColor('patra')).toBe('var(--ins-platform-patra)');
+    // 'model' sits at index 3 now that 'agent' occupies the first slot.
+    expect(resourceTypeColor('model')).toBe('var(--ins-series-4)');
   });
 });

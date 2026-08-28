@@ -132,6 +132,38 @@ struct ResourceControllerTests {
   }
 
   @Test
+  func `Index returns links for a resource whose Patra card names a hub resource`() async throws {
+    try await withInsightsApp { app in
+      let hfAccount = try await makeAccount(on: app.db, name: "hf", platform: .huggingface)
+      let hubResource = try await makeResource(
+        on: app.db, accountID: try hfAccount.requireID(), name: "can_benchmark", type: .dataset)
+
+      let patraAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .patra)
+      let datasheet = try await makeResource(
+        on: app.db, accountID: try patraAccount.requireID(),
+        name: "continually-adapt-or-not-can-benchmark", type: .dataset)
+      try await makePatraCard(
+        on: app.db, resourceID: try datasheet.requireID(),
+        hubResourceID: try hubResource.requireID())
+
+      try await app.testing().test(
+        .GET,
+        "api/resources",
+        afterResponse: { res async throws in
+          #expect(res.status == .ok)
+          let returned = try res.content.decode([Resource.Public].self)
+          let found = try #require(returned.first { $0.id == datasheet.id })
+          let links = try #require(found.links)
+          #expect(links.count == 1)
+          #expect(links.first?.id == hubResource.id)
+          #expect(links.first?.name == "can_benchmark")
+          #expect(links.first?.platform == .huggingface)
+        },
+      )
+    }
+  }
+
+  @Test
   func `Show resource by ID`() async throws {
     try await withInsightsApp { app in
       let account = try await makeAccount(on: app.db)
@@ -247,6 +279,144 @@ struct ResourceControllerTests {
         beforeRequest: { req in try req.content.encode(payload) },
         afterResponse: { res async throws in
           #expect(res.status == .badRequest)
+        },
+      )
+    }
+  }
+
+  @Test
+  func `Show returns a link for a resource whose Patra card names a hub resource`() async throws {
+    try await withInsightsApp { app in
+      let hfAccount = try await makeAccount(on: app.db, name: "hf", platform: .huggingface)
+      let hubResource = try await makeResource(
+        on: app.db, accountID: try hfAccount.requireID(), name: "can_benchmark", type: .dataset)
+
+      let patraAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .patra)
+      let datasheet = try await makeResource(
+        on: app.db, accountID: try patraAccount.requireID(),
+        name: "continually-adapt-or-not-can-benchmark", type: .dataset)
+      try await makePatraCard(
+        on: app.db, resourceID: try datasheet.requireID(),
+        hubResourceID: try hubResource.requireID())
+
+      try await app.testing().test(
+        .GET,
+        "api/resources/\(datasheet.requireID())",
+        afterResponse: { res async throws in
+          #expect(res.status == .ok)
+          let returned = try res.content.decode(Resource.Public.self)
+          let links = try #require(returned.links)
+          #expect(links.count == 1)
+          #expect(links.first?.id == hubResource.id)
+          #expect(links.first?.name == "can_benchmark")
+          #expect(links.first?.platform == .huggingface)
+        },
+      )
+    }
+  }
+
+  @Test
+  func `Show returns two links when a Patra card names both a hub and a repository resource`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let hfAccount = try await makeAccount(on: app.db, name: "hf", platform: .huggingface)
+      let hubResource = try await makeResource(
+        on: app.db, accountID: try hfAccount.requireID(), name: "can_benchmark", type: .dataset)
+
+      let ghAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .github)
+      let repositoryResource = try await makeResource(
+        on: app.db, accountID: try ghAccount.requireID(), name: "can-benchmark", type: .repository)
+
+      let patraAccount = try await makeAccount(
+        on: app.db, name: "icicle-ai-patra", platform: .patra)
+      let datasheet = try await makeResource(
+        on: app.db, accountID: try patraAccount.requireID(),
+        name: "continually-adapt-or-not-can-benchmark", type: .dataset)
+      try await makePatraCard(
+        on: app.db, resourceID: try datasheet.requireID(),
+        hubResourceID: try hubResource.requireID(),
+        repositoryResourceID: try repositoryResource.requireID())
+
+      try await app.testing().test(
+        .GET,
+        "api/resources/\(datasheet.requireID())",
+        afterResponse: { res async throws in
+          #expect(res.status == .ok)
+          let returned = try res.content.decode(Resource.Public.self)
+          let links = try #require(returned.links)
+          #expect(links.count == 2)
+          let linkedIDs = Set(links.compactMap(\.id))
+          let expectedIDs = Set([hubResource.id, repositoryResource.id].compactMap { $0 })
+          #expect(linkedIDs == expectedIDs)
+        },
+      )
+    }
+  }
+
+  @Test
+  func `Show returns an empty links array, not nil, for a resource with no Patra cards`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+
+      try await app.testing().test(
+        .GET,
+        "api/resources/\(resource.requireID())",
+        afterResponse: { res async throws in
+          #expect(res.status == .ok)
+          let returned = try res.content.decode(Resource.Public.self)
+          // Pinning the contract: `show` always eager-loads Patra cards, so "none found" is a
+          // loaded empty array, never the nil that would mean "not requested".
+          #expect(returned.links == [])
+        },
+      )
+    }
+  }
+
+  @Test
+  func `Index still succeeds after a Patra card's linked resource is soft-deleted`() async throws {
+    try await withInsightsApp { app in
+      // Reproduces the eager-load trap `SyncPatraCatalog.register` already documents on its own
+      // `.with(\.$resource, withDeleted: true)`: `hubResource`/`repositoryResource` are
+      // `@OptionalParent`, and Fluent throws `missingParentError` — not "nil parent" — for a
+      // non-nil id whose row a plain (non-`withDeleted`) eager load excludes. `ResourceController
+      // .delete` is a soft delete, so this is reachable from the admin console with no raw SQL.
+      let hfAccount = try await makeAccount(on: app.db, name: "hf", platform: .huggingface)
+      let hubResource = try await makeResource(
+        on: app.db, accountID: try hfAccount.requireID(), name: "can_benchmark", type: .dataset)
+      let hubResourceID = try hubResource.requireID()
+
+      let patraAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .patra)
+      let datasheet = try await makeResource(
+        on: app.db, accountID: try patraAccount.requireID(),
+        name: "continually-adapt-or-not-can-benchmark", type: .dataset)
+      try await makePatraCard(
+        on: app.db, resourceID: try datasheet.requireID(), hubResourceID: hubResourceID)
+
+      // Soft delete, exactly what `ResourceController.delete` does — not `force: true`, which
+      // would sidestep the bug by removing the row (and the foreign key) outright.
+      try await app.testing().test(
+        .DELETE,
+        "api/resources/\(hubResourceID)",
+        headers: app.adminAuth,
+        afterResponse: { res async throws in
+          #expect(res.status == .noContent)
+        },
+      )
+
+      try await app.testing().test(
+        .GET,
+        "api/resources",
+        afterResponse: { res async throws in
+          // Before the fix, this 500s — the eager load of the soft-deleted `hubResource` throws
+          // `missingParentError` and every caller of the catalog's only list endpoint is broken,
+          // including the admin console that would otherwise let someone notice and fix it.
+          #expect(res.status == .ok)
+          let returned = try res.content.decode([Resource.Public].self)
+          #expect(returned.contains { $0.id == datasheet.id })
         },
       )
     }

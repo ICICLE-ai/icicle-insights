@@ -89,3 +89,8 @@ collect *args:
 [group('cli')]
 collect-accounts:
     swift run Insights collect-accounts
+
+# Run the Patra catalog discovery sweep now.
+[group('cli')]
+collect-patra-catalog:
+    swift run Insights collect-patra-catalog

@@ -2,18 +2,22 @@
 
 What Insights collects, when, and from where. For administrators and developers.
 
-## The three clocks
+## The four clocks
 
 Registered in `configure.swift` and evaluated by the single `queues --scheduled` process.
 
-| Clock | Runs | Does |
-|---|---|---|
-| `CollectDueResources` | Hourly, on the hour | Enqueues a sync for every resource whose next collection has passed |
-| `CollectAccountStats` | Monthly, 1st at 03:00 | Enqueues a follower sync for every GitHub account |
-| `WarnExpiringServiceTokens` | Daily at 07:00 | Alerts on webhook tokens nearing expiry. Writes nothing |
+| Clock | Runs | Does | On demand |
+|---|---|---|---|
+| `CollectDueResources` | Hourly, on the hour | Enqueues a sync for every resource whose next collection has passed | `collect-resources` |
+| `CollectAccountStats` | Monthly, 1st at 03:00 | Enqueues a follower sync for every GitHub account | `collect-accounts` |
+| `CollectPatraCatalog` | Daily at 04:00 | Enqueues a catalog sync for every Patra account | `collect-patra-catalog` |
+| `WarnExpiringServiceTokens` | Daily at 07:00 | Alerts on webhook tokens nearing expiry. Writes nothing | none |
 
 Times use the scheduler process's own time zone. Set `TZ` explicitly if 03:00 must mean a
 particular local hour.
+
+Each on-demand command invokes the same job type as its clock, without changing or waiting for the
+production schedule. See [Run collection immediately](../how-to/run-collection-immediately.md).
 
 **The hourly clock is a scanner, not a collector.** It only picks up resources that are already
 due. A resource with the default 7-day cadence is collected once a week, not hourly.
@@ -28,9 +32,20 @@ due. A resource with the default 7-day cadence is collected once a week, not hou
 | GHCR | not collected | — | 30 days | none |
 | npm | not collected | — | 30 days | none |
 | PyPI | not collected | — | 30 days | none |
+| Patra model | Deployment count, summed across the resource's cards | `SyncPatraDeployments` | 30 days | none |
+| Patra dataset | nothing — Patra has no deployments endpoint for a dataset | `SyncPatraDeployments` | 30 days | none |
 
 GHCR, npm, and PyPI resources can be registered, but the dispatcher logs and skips them. They are
 still re-booked, so they will collect as soon as a job exists.
+
+A Patra dataset is still collected on schedule even though it has no reading to write. The sweep
+gets a definitive answer — there is nothing to count — and records that success like any other, so
+the resource rotates normally instead of retrying forever for an endpoint that will never exist.
+
+Patra's catalog — which resources exist at all — is discovered separately from this metric sweep.
+`SyncPatraCatalog`, dispatched daily by `CollectPatraCatalog`, pages Patra's model and datasheet
+lists and registers a resource and a card for each. `SyncPatraDeployments` then collects each
+resource's deployment count on the normal hourly sweep, the same as any other platform.
 
 Routing is on the **account's platform**, not the resource's kind. Kind says what a thing is, not
 which API reports on it.
@@ -49,7 +64,7 @@ backfill.
 
 | Shape | Examples | All-time handling |
 |---|---|---|
-| Gauge | stars, forks, subscribers, likes, followers | None. The series is the record |
+| Gauge | stars, forks, subscribers, likes, followers, deployments | None. The series is the record |
 | Rolling window | GitHub clones and views | Folded through a watermark |
 | Provider lifetime figure | Hugging Face lifetime downloads | Replaces the stored total outright |
 
@@ -65,7 +80,7 @@ sweeps, so they are folded day by day. See [Watermarks](../explanation/watermark
 | `downloads` | `downloadsAllTime` |
 | `pulls` | `pullsAllTime` |
 | `views` | `viewsAllTime` |
-| `forks`, `likes`, `stars`, `subscribers` | none |
+| `deployments`, `forks`, `likes`, `stars`, `subscribers` | none |
 
 ## When a resource is next collected
 
