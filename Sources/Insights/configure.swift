@@ -99,8 +99,26 @@ func configure(_ app: Application) async throws {
       : .require(.init(configuration: tlsConfiguration)),
   )
 
+  // Idle pruning is off by default — `pruneInterval` defaults to nil — and that default is wrong
+  // for this application, because the scheduler worker is long-lived and mostly asleep. It queries
+  // hourly at most, and `CollectPatraCatalog` only daily, so a pooled connection sits idle far
+  // longer than a managed PostgreSQL or the proxy in front of it will hold one open.
+  //
+  // The connection is then reaped remotely without a FIN, so it still looks open locally. The pool
+  // hands it out, the write draws a RST, and the sweep dies with
+  // `PSQLError(connectionError, read(...): Connection reset by peer)` — errno 104. Checking
+  // `isClosed` cannot catch this; only not reusing a long-idle connection can.
+  //
+  // Pruning every 60s, discarding anything idle past 120s, means a sleeping worker always dials
+  // fresh rather than inheriting a socket the server gave up on hours ago.
   app.databases.use(
-    DatabaseConfigurationFactory.postgres(configuration: postgresConfiguration), as: .psql)
+    DatabaseConfigurationFactory.postgres(
+      configuration: postgresConfiguration,
+      pruneInterval: .seconds(60),
+      maxIdleTimeBeforePruning: .seconds(120),
+      encodingContext: .default,
+      decodingContext: .default,
+    ), as: .psql)
   app.migrationLockConfiguration = postgresConfiguration
 
   app.migrations.add(FirstMigration())
