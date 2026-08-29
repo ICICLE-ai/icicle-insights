@@ -208,6 +208,40 @@ stack-revert: build
         {{ app_env }} \
         '{{ image }}' migrate --revert --yes
 
+# The runtime image cannot run the suite: its final stage is Ubuntu with the binary and
+# no toolchain or test sources. So this runs the *build* image with the worktree mounted,
+# which is why it needs no `build` dependency and never sees the published image.
+#
+# Reaching the services by DNS name rather than a published port is the point. `just test`
+# on the host dials `localhost`, and on macOS that resolves to ::1 first while these
+# recipes publish IPv4-only — PostgresNIO falls back, RediStack does not, so every
+# Redis-touching test fails with `Connection refused (errno: 61)` and the cause is four
+# layers from the symptom. Inside the network there is no loopback ambiguity to get wrong.
+#
+# The scratch path is deliberately not the host's `.build`: the two target different
+# platforms, and sharing one forces a full rebuild on every switch.
+#
+# `--cpus 4 --memory 8g` matches `builder` for the same reason it needs them. At the 1GB
+# default the compile does not fail — it wedges silently, holding a "running" container
+# that writes nothing to the log or to the scratch path for as long as you leave it.
+
+# Run the test suite in a container, against the stack's own database and Valkey.
+[group('containers')]
+stack-test: (up)
+    container run --rm --name test \
+        --cpus 4 --memory 8g \
+        --network '{{ network }}' \
+        --volume "$PWD:/build" \
+        --workdir /build \
+        --env DATABASE_HOST=db.{{ domain }} \
+        --env REDIS_HOST=valkey.{{ domain }} \
+        --env DATABASE_TLS=disable \
+        --env VAPOR_ENV=testing \
+        --env-file .env \
+        --env SWIFT_BUILD_PATH=/build/.build-container \
+        swift:6.3-noble \
+        swift test --no-parallel --scratch-path /build/.build-container
+
 # ---------------------------------------------------------------------------
 # Collection, on demand
 # ---------------------------------------------------------------------------
