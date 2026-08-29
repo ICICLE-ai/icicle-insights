@@ -33,3 +33,6 @@ personal-notes/
 # placeholder. Neither is referenced by anything.
 Dashboard/:memory:*.ses
 Dashboard/sas.json
+
+# Container-side SwiftPM scratch path; a separate target platform from the host .build
+.build-container/
