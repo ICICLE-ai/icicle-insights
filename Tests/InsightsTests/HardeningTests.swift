@@ -817,6 +817,42 @@ struct HardeningTests {
     )
   }
 
+  // MARK: - Pools and timeouts
+
+  /// AsyncHTTPClient's default has a connect timeout and no read timeout, so a platform that
+  /// accepts the connection and then stalls hangs a sync job forever. `BackoffRetrying` cannot
+  /// rescue that: retries fire on failure, and a hang never fails.
+  @Test
+  func `Outbound HTTP calls give up on a stalled read`() async throws {
+    try await withInsightsApp { app in
+      #expect(app.http.client.configuration.timeout.read == .seconds(30))
+      #expect(app.http.client.configuration.timeout.connect == .seconds(10))
+    }
+  }
+
+  /// Both defaults were too small for a service that touches the database and the rate-limit
+  /// counter on nearly every request.
+  @Test
+  func `The database and rate-limit pools are sized above the library defaults`() async throws {
+    try await withInsightsApp { app in
+      // FluentPostgresDriver keeps its configuration type internal, so the value is read by
+      // reflection. A renamed field fails this loudly as a nil, not silently as a pass.
+      let postgres = try #require(app.databases.configuration())
+      let perEventLoop =
+        Mirror(reflecting: postgres).children
+        .first { $0.label == "maxConnectionsPerEventLoop" }?.value as? Int
+      #expect(perEventLoop == 4)
+
+      let redis = try #require(app.redis.configuration)
+      guard case .maximumActiveConnections(let active) = redis.pool.maximumConnectionCount else {
+        Issue.record("expected a maximum-active-connections pool")
+        return
+      }
+      #expect(active == 8)
+      #expect(redis.pool.minimumConnectionCount == 0)
+    }
+  }
+
   // MARK: - Health probes
 
   @Test

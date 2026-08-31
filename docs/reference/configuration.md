@@ -89,6 +89,22 @@ Used for both queue storage and rate-limit counters.
 Set the Slack variables on the `queues` and `scheduled` processes. Jobs fail there, so that is
 where the notifier fires.
 
+## Fixed in code
+
+Pool sizes and timeouts. Set in `configure.swift`, not read from the environment.
+
+| Setting | Value | Applies to |
+|---|---|---|
+| PostgreSQL connections per event loop | 4 | Every process. One event loop per CPU core |
+| PostgreSQL idle pruning | every 60s, past 120s idle | Every process |
+| PostgreSQL pool wait | 10s, the driver default | Every process |
+| Valkey active connections per event loop | 8, none kept warm | Rate-limit counters. Queue storage keeps the driver defaults |
+| Valkey connection attempt | 5s | Rate-limit counters |
+| Outbound HTTP connect timeout | 10s | Platform APIs, Tapis, Slack |
+| Outbound HTTP read timeout | 30s | Platform APIs, Tapis, Slack |
+
+Size PostgreSQL's `max_connections` for the worst case: 4 × cores, per process, per replica.
+
 ## Verifying a boot
 
 Every process should print the same environment. A correct start logs these at `notice`:
