@@ -111,14 +111,26 @@ func configure(_ app: Application) async throws {
   //
   // Pruning every 60s, discarding anything idle past 120s, means a sleeping worker always dials
   // fresh rather than inheriting a socket the server gave up on hours ago.
+  // `maxConnectionsPerEventLoop` defaults to 1, which is the whole budget for an application
+  // that touches the database on nearly every request: on a four-core pod that is four
+  // connections in total. When it starves, `connectionPoolTimeout` — a sane 10s, left alone —
+  // is what fires, so the fix is more connections rather than a longer wait for the same one.
   app.databases.use(
     DatabaseConfigurationFactory.postgres(
       configuration: postgresConfiguration,
+      maxConnectionsPerEventLoop: 4,
       pruneInterval: .seconds(60),
       maxIdleTimeBeforePruning: .seconds(120),
       encodingContext: .default,
       decodingContext: .default,
     ), as: .psql)
+
+  // AsyncHTTPClient defaults to a 10s connect timeout and **no read timeout at all**, which is
+  // the wrong shape for this application: every collector calls an external API, and
+  // `SyncPatraDeployments` makes one request per card. A host that accepts the connection and
+  // then stalls would hang the job forever, holding a queue worker slot — and `BackoffRetrying`
+  // cannot rescue it, because retries fire on failure and a hang never fails.
+  app.http.client.configuration.timeout = .init(connect: .seconds(10), read: .seconds(30))
   app.migrationLockConfiguration = postgresConfiguration
 
   app.migrations.add(FirstMigration())
@@ -180,10 +192,28 @@ func configure(_ app: Application) async throws {
 
   // Rate limit counters share the Valkey instance queues already use, so limits hold across
   // pods rather than being granted afresh by each replica.
+  // The pool defaults are wrong for this client specifically, because the rate limiter runs an
+  // INCR and an EXPIRE on *every* request. Two active connections per event loop is a queue
+  // waiting to form, and production has already logged what that looks like:
+  // `Rate limit counter unavailable; allowing request` with a `timedOutWaitingForConnection`.
+  // Failing open is the designed behaviour there, but silently un-limiting the API is not a
+  // state to sit in.
+  //
+  // `minimumConnectionCount` stays at 0 deliberately, and cuts the opposite way from the
+  // database pool above: there, idle connections are pruned so a reaped socket is never reused;
+  // here, none are kept warm to be reaped in the first place. Same goal, opposite lever.
+  //
+  // `connectionRetryTimeout` bounds establishment. The rate limiter already fails open, so
+  // failing fast and allowing the request beats hanging on a dead path.
   app.redis.configuration = try RedisConfiguration(
     hostname: Environment.get("REDIS_HOST") ?? "localhost",
     port: Environment.get("REDIS_PORT").flatMap(Int.init(_:)) ?? 6379,
     password: Environment.get("REDIS_PASSWORD").flatMap { $0.isEmpty ? nil : $0 },
+    pool: .init(
+      maximumConnectionCount: .maximumActiveConnections(8),
+      minimumConnectionCount: 0,
+      connectionRetryTimeout: .seconds(5),
+    ),
   )
 
   // The break-glass admin. Everyone else is managed from the dashboard, but this one holds
