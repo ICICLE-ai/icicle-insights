@@ -94,17 +94,22 @@
    * both the registry picker and the rail print the registry name beside every bar. Re-run
    * `validate_palette.js` before changing any of these five.
    *
-   * Patra is a sixth, added later at hue ~101° (moss/grass green) — the widest open gap in the
-   * ring between Hugging Face's orange-yellow (~41°) and GitHub's teal-green (~159°), so it reads
-   * as its own hue rather than a shade of either neighbour. It has not been run through
-   * `validate_palette.js` (the script is not checked into this repository); re-run it against
-   * this token before relying on its numbers the way the other five are relied upon. */
+   * Patra is a sixth, added later at hue ~296° (magenta). It was briefly a moss green at ~101°,
+   * picked as the widest open gap in the *hue ring* — which was the wrong criterion. Hue degrees
+   * are not perceptual distance: at 56° from GitHub's teal-green it still read as a second green,
+   * measuring only ΔE 32 in CIELAB, the closest pair in the palette.
+   *
+   * Magenta was chosen by maximising the worst-case ΔE across both themes and normal *and*
+   * deuteranope vision simultaneously, which is what a hue-ring gap cannot see. It has to stay
+   * this saturated: desaturating it walks it back toward GHCR's indigo (~249°), which is what
+   * ruled out the more restrained violets. `validate_palette.js` is still not checked into this
+   * repository, so these are computed numbers, not its numbers. */
   --ins-platform-github: #1baf7a;
   --ins-platform-ghcr: #4a3aa7;
   --ins-platform-huggingface: #eda100;
   --ins-platform-npm: #e87ba4;
   --ins-platform-pypi: #2a78d6;
-  --ins-platform-patra: #4f9e2f;
+  --ins-platform-patra: #b10fbd;
 
   /* Status. Reserved — never reused as a series colour, always paired with an icon and label. */
   --ins-good: #0ca30c;
@@ -171,16 +176,16 @@
    * from the light values. All five clear 3:1 here, so dark mode carries no contrast relief
    * obligation. The light block holds the rationale and the validator numbers for those five.
    *
-   * Patra is a sixth, added later: same hue as its light value, brightened for this surface
-   * (contrast ≈9.1:1 against #141a22). That figure is hand-computed, not validator-confirmed —
-   * `validate_palette.js` is not checked into this repository, so patra alone lacks the CVD and
-   * normal-vision ΔE numbers the other five carry. See the light block for the same caveat. */
+   * Patra is a sixth, added later: same hue as its light value (~296° magenta), brightened for
+   * this surface. Its light and dark values were chosen together rather than one derived from the
+   * other, because the dark palette shifts npm toward a light pink that a red or warm hue collides
+   * with under deuteranopia. See the light block for why the hue is what it is. */
   --ins-platform-github: #199e70;
   --ins-platform-ghcr: #9085e9;
   --ins-platform-huggingface: #c98500;
   --ins-platform-npm: #d55181;
   --ins-platform-pypi: #3987e5;
-  --ins-platform-patra: #6cc24a;
+  --ins-platform-patra: #eb71f4;
 }
 
 html,

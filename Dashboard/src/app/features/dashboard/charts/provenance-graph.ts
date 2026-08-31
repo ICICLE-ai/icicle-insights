@@ -1,78 +1,45 @@
-import {
-  Component,
-  DestroyRef,
-  ElementRef,
-  afterNextRender,
-  computed,
-  inject,
-  input,
-  output,
-  signal,
-} from '@angular/core';
-import {
-  defineChart,
-  dot,
-  link,
-  text,
-  type ChartPoint,
-  type ChartTooltipContent,
-} from '@tanstack/charts';
-import { Chart } from '@tanstack/charts/angular';
-import { decorative } from '@tanstack/charts/mark/decorative';
-import { forceLayout } from '@tanstack/charts/network/force';
-import { scaleLinear } from '@tanstack/charts/scales/linear';
-import { tooltip } from '@tanstack/charts/tooltip';
+import { Component, computed, inject, input, output } from '@angular/core';
 
 import type { Platform, Resource } from '../../../core/api/models';
 import { ChartFigure } from '../../../shared/charts/chart-figure';
 import { ChartPaletteService, type ChartPalette } from '../../../shared/charts/chart-palette';
 import { pluralize } from '../../../shared/format/formatters';
 import { PLATFORM_ORDER, platformLabel } from '../../../shared/format/labels';
-import { wrapResourceLabel } from './release-graph';
 
 /**
- * One vertex in the provenance graph: a single `Resource` row, positioned by the registry it
- * lives on and joined to every other row Patra recorded as the same real artifact.
+ * One vertex in the provenance graph: a single `Resource` row, joined to every other row Patra
+ * recorded as the same real artifact.
  */
 export interface ProvenanceGraphVertex {
   readonly id: string;
   readonly resourceID: string;
   readonly label: string;
   readonly platform: Platform;
-  readonly lines: readonly string[];
-  readonly width: number;
-  readonly height: number;
-  /** Radius of the circle that exactly circumscribes the wrapped-text block — the block's own
-   * corners touch the circle, so text sized against `width`/`height` is guaranteed to fit. */
-  readonly radius: number;
+  /** Exactly two lines: the resource name, then its platform in parentheses on its own line.
+   * Kept as two separate strings — rather than one that happens to contain a line break — so a
+   * name long enough to wrap onto a second line of its own can never be confused with this. */
+  readonly lines: readonly [string, string];
 }
 
 /** One provenance link: two `Resource` rows a Patra card recorded as the same artifact. */
 export interface ProvenanceGraphEdge {
   readonly source: string;
   readonly target: string;
-  readonly distanceHint: number;
 }
 
-/** A vertex after layout: adds the settled centre point the `dot` mark needs. */
-interface PlacedVertex extends ProvenanceGraphVertex {
-  readonly x: number;
-  readonly y: number;
-}
-
-interface PlacedEdge {
+/**
+ * One drawn cluster: one hub resource plus up to `MAX_VISIBLE_SPOKES` of the other registries it
+ * was also recorded under. A cluster is a connected component of the graph — see
+ * `buildProvenanceClusters` for how the hub is chosen and what happens past the visible cap.
+ */
+export interface ProvenanceCluster {
   readonly id: string;
-  readonly x1: number;
-  readonly y1: number;
-  readonly x2: number;
-  readonly y2: number;
-}
-
-interface LayoutResult {
-  readonly vertices: readonly PlacedVertex[];
-  readonly edges: readonly PlacedEdge[];
-  readonly xDomain: readonly [number, number];
-  readonly yDomain: readonly [number, number];
+  readonly hub: ProvenanceGraphVertex;
+  readonly spokes: readonly ProvenanceGraphVertex[];
+  /** Members of this cluster beyond `spokes.length` that the card does not draw. Always zero
+   * against every cluster in the catalog today; the accessible table lists every one of them
+   * regardless, so nothing is actually lost when this is positive — only the card preview caps. */
+  readonly overflowCount: number;
 }
 
 /** One row of the paired accessible table: one recorded link, both of its endpoints. */
@@ -86,9 +53,11 @@ interface ProvenanceTableRow {
   readonly targetPlatform: Platform;
 }
 
-const MIN_NODES_FOR_FORCE = 3;
-const LINE_HEIGHT_RATIO = 1.2;
-const NODE_SIZE = { width: 140, fontSize: 12, fontWeight: 650, paddingX: 14, paddingY: 10 };
+/** Card previews stop here and fold the rest into "+N more"; the table below is unaffected and
+ * always lists every member. Three spokes plus the hub is four nodes per card, matching the
+ * largest cluster the catalog has produced so far — see the class doc comment for why this chart
+ * no longer tries to fit an unbounded cluster onto one canvas at all. */
+const MAX_VISIBLE_SPOKES = 3;
 
 /**
  * Same artifact, several registries: Patra imports models and datasets that already exist
@@ -96,22 +65,79 @@ const NODE_SIZE = { width: 140, fontSize: 12, fontWeight: 650, paddingX: 14, pad
  * is a GitHub repository, a Hugging Face dataset, and a Patra datasheet, three rows for one
  * thing. This graph is what shows a reader that those rows are the same thing.
  *
- * Nodes are resources; edges are the provenance links Patra recorded between them. There is no
- * hub — every node names one registry's copy of the same artifact, so nothing here outranks
- * anything else the way a release period outranks the resources that shipped in it.
- *
- * Position is physics-only, exactly as in the release graph: `forceLayout` settles a one-shot
- * simulation with no quantitative meaning in the result. Distinct artifacts are disjoint in the
- * edge list, so the simulation's own repulsion is what keeps unrelated clusters apart — nothing
- * here has to compute connected components to draw them separately.
+ * Layout is a deterministic grid of small, self-contained cards, one per artifact — not a d3
+ * force simulation. `forceLayout` (still used by `release-graph.ts`) is the right tool when a
+ * chart renders exactly one connected cluster at a time, because a period selector guarantees
+ * that. This graph has no selector: every artifact Patra has ever cross-linked renders at once,
+ * and those artifacts are disjoint components with no edges between them. A single simulation
+ * over several disjoint components has nothing pulling the components apart from each other —
+ * `manyBody` repels every node from every other node in the whole graph, not just the ones it
+ * shares an edge with, so five small unconnected clusters settle into one overlapping blob
+ * instead of five legible ones, and their labels truncate fighting for space inside a circle
+ * sized for physics rather than text. None of that was a bug in the simulation; it was the
+ * simulation solving a problem this chart does not have. The data is small, disjoint groups of
+ * two to four nodes each — essentially one Patra resource pointing at one or two external ones —
+ * which a CSS grid of cards expresses directly, with no physics and no randomness, so the same
+ * catalog always renders in exactly the same place.
  */
 @Component({
   selector: 'app-provenance-graph',
-  imports: [Chart, ChartFigure],
+  imports: [ChartFigure],
   template: `
     <app-chart-figure heading="Provenance graph" [subtitle]="subtitle()">
       @if (hasLinks()) {
-        <tanstack-chart chart [options]="chartOptions()" />
+        <div chart class="ins-provenance-graph">
+          <div class="ins-provenance-graph__legend" role="list" aria-label="Registry colours used below">
+            @for (platform of legendPlatforms(); track platform) {
+              <span class="ins-provenance-graph__legend-item" role="listitem">
+                <span
+                  class="ins-provenance-graph__legend-swatch"
+                  [style.--ins-provenance-accent]="colorFor(platform)"
+                  aria-hidden="true"
+                ></span>
+                {{ registryLabel(platform) }}
+              </span>
+            }
+          </div>
+
+          <div class="ins-provenance-graph__grid">
+            @for (cluster of clusters(); track cluster.id) {
+              <div class="ins-provenance-cluster" role="group" [attr.aria-label]="clusterLabel(cluster)">
+                <button
+                  type="button"
+                  class="ins-provenance-node ins-provenance-node--hub"
+                  [style.--ins-provenance-accent]="colorFor(cluster.hub.platform)"
+                  (click)="selectResource(cluster.hub.resourceID)"
+                >
+                  <span class="ins-provenance-node__name">{{ cluster.hub.lines[0] }}</span>
+                  <span class="ins-provenance-node__platform">{{ cluster.hub.lines[1] }}</span>
+                </button>
+
+                <div class="ins-provenance-cluster__connector" aria-hidden="true"></div>
+                <p class="ins-provenance-cluster__caption ins-eyebrow">Also registered as</p>
+
+                <div class="ins-provenance-cluster__spokes">
+                  @for (spoke of cluster.spokes; track spoke.id) {
+                    <button
+                      type="button"
+                      class="ins-provenance-node"
+                      [style.--ins-provenance-accent]="colorFor(spoke.platform)"
+                      (click)="selectResource(spoke.resourceID)"
+                    >
+                      <span class="ins-provenance-node__name">{{ spoke.lines[0] }}</span>
+                      <span class="ins-provenance-node__platform">{{ spoke.lines[1] }}</span>
+                    </button>
+                  }
+                  @if (cluster.overflowCount > 0) {
+                    <span class="ins-provenance-cluster__overflow">
+                      +{{ cluster.overflowCount }} more in the table below
+                    </span>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        </div>
       } @else {
         <!-- The collector that populates links runs in a later task, so this is the ordinary
              state today — not a bug. An empty SVG with no explanation would read as one. -->
@@ -176,6 +202,130 @@ const NODE_SIZE = { width: 140, fontSize: 12, fontWeight: 650, paddingX: 14, pad
       min-height: 0;
     }
 
+    .ins-provenance-graph {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      min-width: 0;
+    }
+
+    .ins-provenance-graph__legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.375rem 0.875rem;
+    }
+
+    .ins-provenance-graph__legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      font-size: var(--ins-text-micro);
+      color: var(--ins-ink-muted);
+    }
+
+    .ins-provenance-graph__legend-swatch {
+      width: 0.5625rem;
+      height: 0.5625rem;
+      background: var(--ins-provenance-accent);
+      border-radius: 50%;
+    }
+
+    /* One grid cell per artifact. Cells cannot overlap by construction — this is what replaces
+       the collision force — and the auto-fill column count reflows with the viewport instead
+       of a media-query breakpoint. */
+    .ins-provenance-graph__grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+      align-items: start;
+      gap: 0.875rem;
+    }
+
+    .ins-provenance-cluster {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.875rem;
+      background: var(--ins-surface);
+      border: 1px solid var(--ins-border);
+      border-radius: var(--ins-radius);
+    }
+
+    .ins-provenance-cluster__connector {
+      width: 1px;
+      height: 0.625rem;
+      background: var(--ins-border-strong);
+    }
+
+    .ins-provenance-cluster__caption {
+      margin: 0;
+    }
+
+    .ins-provenance-cluster__spokes {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .ins-provenance-cluster__overflow {
+      display: flex;
+      align-items: center;
+      padding: 0.375rem 0.625rem;
+      font-size: var(--ins-text-micro);
+      color: var(--ins-ink-muted);
+      text-align: center;
+    }
+
+    .ins-provenance-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.125rem;
+      min-width: 7.5rem;
+      max-width: 15rem;
+      padding: 0.5rem 0.75rem;
+      color: var(--ins-ink);
+      text-align: center;
+      background: var(--ins-raised);
+      border: 1.5px solid
+        color-mix(in srgb, var(--ins-provenance-accent) 55%, var(--ins-border-strong));
+      border-radius: var(--ins-radius-sm);
+      font: inherit;
+      cursor: pointer;
+      /* Wrap rather than clip. A fixed-width circle is exactly what made the previous layout
+         truncate long names — a rectangle that wraps text never has to. */
+      overflow-wrap: break-word;
+    }
+
+    .ins-provenance-node--hub {
+      width: 100%;
+      max-width: 100%;
+      border-width: 2px;
+      background: color-mix(in srgb, var(--ins-provenance-accent) 12%, var(--ins-surface));
+    }
+
+    .ins-provenance-node__name {
+      font-weight: 650;
+      font-size: var(--ins-text-small);
+      overflow-wrap: break-word;
+    }
+
+    .ins-provenance-node__platform {
+      font-size: var(--ins-text-micro);
+      color: var(--ins-ink-muted);
+    }
+
+    .ins-provenance-node:hover {
+      background: color-mix(in srgb, var(--ins-provenance-accent) 18%, var(--ins-surface));
+    }
+
+    .ins-provenance-node:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--ins-provenance-accent) 55%, transparent);
+      outline-offset: 1px;
+    }
+
     .ins-provenance-graph__empty {
       display: flex;
       flex: 1 1 auto;
@@ -234,11 +384,8 @@ export class ProvenanceGraph {
   readonly resourceSelect = output<string>();
 
   private readonly paletteService = inject(ChartPaletteService);
-  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
-  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly registryLabel = platformLabel;
-  protected readonly chartHeight = signal(360);
 
   private readonly graph = computed(() =>
     buildProvenanceGraph(this.resources(), this.resourcePlatform()),
@@ -283,72 +430,42 @@ export class ProvenanceGraph {
       );
   });
 
-  protected readonly chartOptions = computed(() => {
-    const palette = this.paletteService.palette();
+  protected readonly clusters = computed<readonly ProvenanceCluster[]>(() => {
     const { vertices, edges } = this.graph();
-    const layout = layoutGraph(vertices, edges);
-    return definitionForGraph(layout, palette, this.chartHeight(), this.selectPoint.bind(this));
+    return buildProvenanceClusters(vertices, edges);
   });
 
-  constructor() {
-    afterNextRender(() => {
-      if (typeof ResizeObserver === 'undefined') {
-        return;
-      }
-
-      const observer = new ResizeObserver(() => this.fitChartToViewport());
-      observer.observe(this.host.nativeElement);
-      this.fitChartToViewport();
-      this.destroyRef.onDestroy(() => observer.disconnect());
-    });
-  }
-
-  /** Uses the open presentation viewport instead of leaving a fixed-height chart in a tall card. */
-  private fitChartToViewport(): void {
-    const figure = this.host.nativeElement.querySelector<HTMLElement>('.ins-figure');
-    const caption = figure?.querySelector<HTMLElement>('.ins-figure__caption');
-    const disclosure = figure?.querySelector<HTMLElement>('.ins-figure__data');
-    const main = this.host.nativeElement.closest<HTMLElement>('.ins-main');
-    const footer = document.querySelector<HTMLElement>('.ins-footer');
-    if (!figure || !caption || !disclosure || !main || !footer) {
-      return;
-    }
-
-    const style = getComputedStyle(figure);
-    const mainStyle = getComputedStyle(main);
-    const verticalPadding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
-    const verticalBorder = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
-    const rowGap = parseFloat(style.rowGap || style.gap);
-    const chromeHeight =
-      verticalPadding +
-      caption.getBoundingClientRect().height +
-      disclosure.getBoundingClientRect().height +
-      rowGap * 2 +
-      verticalBorder;
-    const hostTop = this.host.nativeElement.getBoundingClientRect().top;
-    const contentBottom =
-      document.documentElement.clientHeight -
-      footer.getBoundingClientRect().height -
-      parseFloat(mainStyle.paddingBottom);
-    const available = Math.floor(contentBottom - hostTop - chromeHeight);
-    const nextHeight = Math.min(960, Math.max(320, available));
-
-    if (nextHeight !== this.chartHeight()) {
-      this.chartHeight.set(nextHeight);
-    }
-  }
+  /** Registries actually present, in canonical order — drives both the legend and every node's
+   * accent colour, so a registry can never wear one hue in the legend and another on its node. */
+  protected readonly legendPlatforms = computed<readonly Platform[]>(() => {
+    const palette = this.paletteService.palette();
+    return provenancePlatformColorScale(this.graph().vertices, palette).domain;
+  });
 
   protected selectResource(resourceID: string): void {
     this.resourceSelect.emit(resourceID);
   }
 
-  /** A click/Enter on a node scopes the whole dashboard to that resource — the same action as
-   * the paired table's resource-name links. */
-  private selectPoint(point: ChartPoint<unknown> | null): void {
-    const vertex = provenanceVertexFromPoint(point?.datum);
-    if (vertex) {
-      this.resourceSelect.emit(vertex.resourceID);
+  /** Registry identity, not chart rank — see `provenancePlatformColorScale`. Resolved through
+   * `ChartPaletteService` rather than a bare CSS token so the value is guaranteed to repaint
+   * whenever `ThemeStore.isDark()` flips, the same guarantee every other chart in this directory
+   * relies on. */
+  protected colorFor(platform: Platform): string {
+    return this.paletteService.palette().platforms[platform];
+  }
+
+  /** A single sentence naming everything one card groups together, so a screen reader announces
+   * the relationship the border and the "Also registered as" caption otherwise convey visually. */
+  protected clusterLabel(cluster: ProvenanceCluster): string {
+    const others = cluster.spokes.map(
+      (spoke) => `${spoke.label} (${platformLabel(spoke.platform)})`,
+    );
+    if (cluster.overflowCount > 0) {
+      others.push(`${cluster.overflowCount} more in the table below`);
     }
+    return others.length > 0
+      ? `${cluster.hub.label}, also registered as ${others.join(', ')}`
+      : cluster.hub.label;
   }
 }
 
@@ -419,11 +536,7 @@ export function buildProvenanceGraph(
         continue;
       }
       seenEdgeKeys.add(edgeKey);
-      edges.push({
-        source: source.id,
-        target: target.id,
-        distanceHint: source.radius + target.radius + 40,
-      });
+      edges.push({ source: source.id, target: target.id });
       referencedIDs.add(source.id);
       referencedIDs.add(target.id);
     }
@@ -438,13 +551,97 @@ export function buildProvenanceGraph(
 }
 
 /**
- * Domain/range pair for the chart's colour scale: one swatch per platform actually present in
- * the graph, pulled from the palette's registry-identity tokens rather than a chart-rank slot.
+ * Groups vertices into the connected components the edge list already implies — distinct
+ * artifacts never share an edge (see `buildProvenanceGraph`), so grouping by component is
+ * grouping by artifact, no different from what `forceLayout`'s own repulsion used to do
+ * implicitly and unreliably. Union-find makes that grouping a pure, order-independent function of
+ * the data: the same vertices and edges always fold into the same components, in the same
+ * membership, no matter what order they arrive in.
  *
- * `dot`'s own `fill` option is a plain string, not a per-datum channel — the categorical `color`
- * channel plus a chart-level `{domain, range}` scale is the library's mechanism for a colour that
- * varies by field, which is why this exists instead of a function passed straight to `fill`.
- * Exported so the colour assignment is directly testable without standing up a whole chart.
+ * Within a component, the hub is whichever vertex touches the most edges. In every case the real
+ * backend produces today that is unambiguous: only the Patra-side resource ever owns a `links`
+ * entry (see `buildProvenanceGraph`'s doc comment), so it is the only vertex that can have more
+ * than one edge in a star-shaped cluster. A perfectly symmetric pair (each resource naming only
+ * the other) has no such vertex, so the tie there — and any other tie — breaks on label, then id,
+ * so the choice never depends on object or Map iteration order.
+ *
+ * Clusters themselves are returned in a stable order (alphabetical by hub name) for the same
+ * reason: the grid reads left-to-right, top-to-bottom, and that reading order must not shuffle
+ * between renders of the same catalog.
+ */
+export function buildProvenanceClusters(
+  vertices: readonly ProvenanceGraphVertex[],
+  edges: readonly ProvenanceGraphEdge[],
+): readonly ProvenanceCluster[] {
+  if (vertices.length === 0) {
+    return [];
+  }
+
+  const parent = new Map<string, string>(vertices.map((vertex) => [vertex.id, vertex.id]));
+  const find = (id: string): string => {
+    let root = id;
+    while (parent.get(root) !== root) {
+      root = parent.get(root) as string;
+    }
+    let current = id;
+    while (parent.get(current) !== root) {
+      const next = parent.get(current) as string;
+      parent.set(current, root);
+      current = next;
+    }
+    return root;
+  };
+  for (const edge of edges) {
+    const rootA = find(edge.source);
+    const rootB = find(edge.target);
+    if (rootA !== rootB) {
+      parent.set(rootB, rootA);
+    }
+  }
+
+  const degree = new Map<string, number>();
+  for (const edge of edges) {
+    degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1);
+    degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1);
+  }
+
+  const membersByRoot = new Map<string, ProvenanceGraphVertex[]>();
+  for (const vertex of vertices) {
+    const root = find(vertex.id);
+    const members = membersByRoot.get(root);
+    if (members) {
+      members.push(vertex);
+    } else {
+      membersByRoot.set(root, [vertex]);
+    }
+  }
+
+  const byRank = (a: ProvenanceGraphVertex, b: ProvenanceGraphVertex): number =>
+    a.label.localeCompare(b.label) || a.id.localeCompare(b.id);
+
+  const clusters = [...membersByRoot.values()].map((members): ProvenanceCluster => {
+    const [hub, ...rest] = [...members].sort(
+      (a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || byRank(a, b),
+    );
+    const spokes = rest.sort(byRank);
+    return {
+      id: hub.id,
+      hub,
+      spokes: spokes.slice(0, MAX_VISIBLE_SPOKES),
+      overflowCount: Math.max(0, spokes.length - MAX_VISIBLE_SPOKES),
+    };
+  });
+
+  return clusters.sort((a, b) => byRank(a.hub, b.hub));
+}
+
+/**
+ * Domain/range pair naming one swatch per platform actually present in the graph, pulled from
+ * the palette's registry-identity tokens rather than a chart-rank slot.
+ *
+ * Exported so the colour assignment is directly testable without standing up the whole component,
+ * and reused inside it to build the legend and every node's accent from one shared list, so a
+ * registry can never wear two different hues on one screen.
  */
 export function provenancePlatformColorScale(
   vertices: readonly ProvenanceGraphVertex[],
@@ -456,222 +653,11 @@ export function provenancePlatformColorScale(
 }
 
 function makeVertex(id: string, name: string, platform: Platform): ProvenanceGraphVertex {
-  const maxWidth = NODE_SIZE.width - NODE_SIZE.paddingX * 2;
-  const nameLine = wrapResourceLabel(name, maxWidth, NODE_SIZE.fontSize, 1)[0] ?? name;
-  const platformText = `(${platformLabel(platform)})`;
-  const platformLine =
-    wrapResourceLabel(platformText, maxWidth, NODE_SIZE.fontSize, 1)[0] ?? platformText;
-  const lines = [nameLine, platformLine];
-  const height = NODE_SIZE.paddingY * 2 + lines.length * NODE_SIZE.fontSize * LINE_HEIGHT_RATIO;
-
   return {
     id,
     resourceID: id,
     label: name,
     platform,
-    lines,
-    width: NODE_SIZE.width,
-    height,
-    radius: Math.hypot(NODE_SIZE.width / 2, height / 2),
-  };
-}
-
-/** Places 0–2 vertices deterministically (a "simulation" over that few nodes just settles into
- * an arbitrary position), or hands off to `forceLayout` for a real graph. */
-function layoutGraph(
-  vertices: readonly ProvenanceGraphVertex[],
-  edges: readonly ProvenanceGraphEdge[],
-): LayoutResult {
-  if (vertices.length === 0) {
-    return { vertices: [], edges: [], xDomain: [-1, 1], yDomain: [-1, 1] };
-  }
-
-  if (vertices.length < MIN_NODES_FOR_FORCE) {
-    const placed =
-      vertices.length === 1
-        ? [placeVertex(vertices[0], 0, 0)]
-        : [placeVertex(vertices[0], -80, 0), placeVertex(vertices[1], 80, 0)];
-    const byID = new Map(placed.map((vertex) => [vertex.id, vertex] as const));
-    const placedEdges: PlacedEdge[] = edges.flatMap((edge) => {
-      const source = byID.get(edge.source);
-      const target = byID.get(edge.target);
-      return source && target
-        ? [
-            {
-              id: `${edge.source}->${edge.target}`,
-              x1: source.x,
-              y1: source.y,
-              x2: target.x,
-              y2: target.y,
-            },
-          ]
-        : [];
-    });
-    const maxRadius = Math.max(...placed.map((vertex) => vertex.radius), 40);
-    const span = placed.length === 2 ? 80 : 0;
-    return {
-      vertices: placed,
-      edges: placedEdges,
-      xDomain: [-span - maxRadius - 20, span + maxRadius + 20],
-      yDomain: [-maxRadius - 20, maxRadius + 20],
-    };
-  }
-
-  const graph = forceLayout(vertices, edges, {
-    nodeKey: 'id',
-    source: 'source',
-    target: 'target',
-    iterations: 400,
-    domainPadding: 0.35,
-    forces: [
-      { type: 'link', distance: (edge) => edge.distanceHint, strength: 0.6 },
-      { type: 'manyBody', strength: -700 },
-      { type: 'center', x: 0, y: 0 },
-      // Exact rather than approximate now that vertices are circles: two circles just touch
-      // when their centres are `radius` apart plus this gap, with no diagonal-vs-edge slop.
-      { type: 'collide', radius: (node) => node.radius + 8, strength: 0.9 },
-      // Weak and symmetric — unlike the release graph there is no hub to pin near the centre,
-      // every node is a peer, so this only keeps a disconnected cluster from drifting off-canvas.
-      { type: 'x', x: 0, strength: 0.04 },
-      { type: 'y', y: 0, strength: 0.04 },
-    ],
-  });
-
-  return {
-    vertices: graph.nodes.map((node) => placeVertex(node, node.x, node.y)),
-    edges: graph.links.map((edge) => ({
-      id: `${edge.source}->${edge.target}`,
-      x1: edge.x1,
-      y1: edge.y1,
-      x2: edge.x2,
-      y2: edge.y2,
-    })),
-    xDomain: graph.xDomain,
-    yDomain: graph.yDomain,
-  };
-}
-
-function placeVertex(vertex: ProvenanceGraphVertex, x: number, y: number): PlacedVertex {
-  return { ...vertex, x, y };
-}
-
-function definitionForGraph(
-  layout: LayoutResult,
-  palette: ChartPalette,
-  chartHeight: number,
-  onSelect: (point: ChartPoint<unknown> | null) => void,
-) {
-  const { vertices, edges, xDomain, yDomain } = layout;
-  const colorScale = provenancePlatformColorScale(vertices, palette);
-
-  return {
-    definition: defineChart(
-      {
-        marks: [
-          decorative(
-            link(edges, {
-              id: 'provenance-graph-links',
-              x1: 'x1',
-              y1: 'y1',
-              x2: 'x2',
-              y2: 'y2',
-              key: 'id',
-              stroke: palette.axis,
-              strokeOpacity: 0.6,
-              strokeWidth: 1.75,
-            }),
-          ),
-          dot(vertices, {
-            id: 'provenance-graph-nodes',
-            x: 'x',
-            y: 'y',
-            r: 'radius',
-            key: 'id',
-            // Registry identity, not chart rank — see `provenancePlatformColorScale`.
-            color: 'platform',
-            stroke: palette.surface,
-            strokeWidth: 1.5,
-            states: [
-              { when: { focus: 'group' }, style: { strokeWidth: 2.5 } },
-              { when: { focus: 'primary' }, style: { strokeWidth: 3 } },
-            ],
-          }),
-          ...buildLabelMarks(vertices, palette.rankedInk),
-        ],
-        x: { scale: scaleLinear().domain(xDomain), axis: false, grid: false },
-        y: { scale: scaleLinear().domain(yDomain), axis: false, grid: false },
-        color: colorScale,
-        guides: false,
-        theme: {
-          background: 'transparent',
-          foreground: palette.inkSecondary,
-          muted: palette.muted,
-          grid: palette.grid,
-        },
-        margin: { top: 24, right: 24, bottom: 24, left: 24 },
-      },
-      {
-        keyboard: true,
-        focus: 'nearest',
-        focusRing: false,
-        maxFocusDistance: Number.POSITIVE_INFINITY,
-        tooltip: {
-          use: tooltip,
-          content: (points: readonly ChartPoint<unknown>[]) =>
-            provenanceVertexTooltipContent(provenanceVertexFromPoint(points[0]?.datum)),
-        },
-      },
-    ),
-    ariaLabel: 'Provenance graph',
-    ariaDescription:
-      'Every resource joined to the other registries recorded for the same artifact. ' +
-      'Use arrow keys to move between them and Enter to open a resource.',
-    height: chartHeight,
-    onSelect,
-  };
-}
-
-/** One mark call per label line: `text`'s `fontSize`/`fontWeight` are constants, not per-datum
- * channels, but every node here shares one size, so — unlike the release graph's hub/peer split
- * — one pair of calls (one per line) covers every vertex. */
-function buildLabelMarks(vertices: readonly PlacedVertex[], fill: string) {
-  const lineHeight = NODE_SIZE.fontSize * LINE_HEIGHT_RATIO;
-  return Array.from({ length: 2 }, (_, lineIndex) =>
-    decorative(
-      text(vertices, {
-        id: `provenance-graph-label-${lineIndex}`,
-        x: 'x',
-        y: 'y',
-        key: 'id',
-        text: (vertex: PlacedVertex) => vertex.lines[lineIndex] ?? '',
-        dy: (lineIndex - 0.5) * lineHeight,
-        anchor: 'middle',
-        fill,
-        fontSize: NODE_SIZE.fontSize,
-        fontWeight: NODE_SIZE.fontWeight,
-      }),
-    ),
-  );
-}
-
-function provenanceVertexFromPoint(datum: unknown): PlacedVertex | null {
-  return isPlacedVertex(datum) ? datum : null;
-}
-
-function isPlacedVertex(value: unknown): value is PlacedVertex {
-  return (
-    typeof value === 'object' && value !== null && 'resourceID' in value && 'platform' in value
-  );
-}
-
-/** A one-row tooltip naming the node's registry — the resource's own name is already the chart's
- * title-equivalent via its label lines, so the tooltip only has to add what the label omits. */
-function provenanceVertexTooltipContent(vertex: PlacedVertex | null): ChartTooltipContent {
-  if (!vertex) {
-    return { rows: [] };
-  }
-  return {
-    title: vertex.label,
-    rows: [{ label: 'Registry', value: platformLabel(vertex.platform) }],
+    lines: [name, `(${platformLabel(platform)})`],
   };
 }
