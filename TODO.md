@@ -166,3 +166,9 @@ memory. Only a restart proves the retired key was persisted, and nothing automat
 **The scheduler's clocks are not asserted.** Jobs are driven directly through a test queue context.
 That the hourly and monthly registrations are wired correctly is verified by observation, not by a
 test.
+
+**The Collect now button has not been seen run.** The endpoint, the verdict logic, and the disabled
+state for uncollectable platforms all carry tests, and both suites pass. What is unverified is the
+rendered row: the status text updating through queued → result, and the polling stopping on its own.
+The local stack could not boot to check it — `TAPIS_TOKEN` had expired, and the vault keyset read is
+one of the paths `.testing` skips. Worth a look on the next real boot.

@@ -44,6 +44,7 @@ remove history.
 | `GET` | `/api/resources/:resourceID` | public |
 | `PATCH` | `/api/resources/:resourceID` | admin |
 | `DELETE` | `/api/resources/:resourceID` | admin |
+| `POST` | `/api/resources/:resourceID/collect` | admin |
 | `GET` | `/api/releases` | public |
 | `POST` | `/api/releases` | admin |
 | `GET` | `/api/releases/:releaseID` | public |
