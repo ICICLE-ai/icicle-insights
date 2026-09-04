@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import type {
   Account,
   Admin,
+  CollectionDispatch,
   MintedServiceToken,
   Resource,
   ServiceToken,
@@ -92,6 +93,18 @@ export class AdminApi {
 
   deleteResource(id: string): Promise<void> {
     return firstValueFrom(this.http.delete<void>(this.url(`/resources/${id}`)));
+  }
+
+  /**
+   * Enqueues a collection for one resource, outside its schedule.
+   *
+   * Resolves when the job is queued, not when it has run. Read the outcome by polling
+   * `loadRecentMetrics` and `loadJobFailures` against the returned `dispatchedAt`.
+   */
+  collectResource(id: string): Promise<CollectionDispatch> {
+    return firstValueFrom(
+      this.http.post<CollectionDispatch>(this.url(`/resources/${id}/collect`), null),
+    );
   }
 
   createRelease(input: CreateReleaseInput): Promise<Release> {

@@ -141,3 +141,24 @@ extension Resource {
     return links
   }
 }
+
+extension Resource {
+  /// Acknowledgement that a manual collection was enqueued.
+  ///
+  /// Carries `dispatchedAt` because the caller needs it to read the outcome. The job runs on the
+  /// worker well after this response is written, so the dashboard decides what happened by
+  /// watching for a metric or a job failure for this resource that is newer than this timestamp.
+  /// Without it there is no way to tell a result caused by this dispatch from one already sitting
+  /// in the table.
+  struct CollectionDispatch: Content, WithExample {
+    /// The resource whose sync was enqueued.
+    var resourceID: UUID
+    /// When the dispatch happened, for correlating the outcome that follows.
+    var dispatchedAt: Date
+
+    static let example = CollectionDispatch(
+      resourceID: UUID(uuidString: "0ba5c0de-0000-0000-0000-000000000000")!,
+      dispatchedAt: Date(timeIntervalSince1970: 1_780_000_000),
+    )
+  }
+}

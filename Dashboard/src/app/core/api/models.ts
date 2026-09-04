@@ -109,6 +109,18 @@ export interface Metric {
   recordedAt?: string;
 }
 
+/**
+ * Acknowledgement that a manual collection was enqueued.
+ *
+ * `dispatchedAt` is the whole point of the response: the job runs on the worker long after this
+ * returns, so it is what separates a metric or failure caused by this dispatch from one already
+ * sitting in the table.
+ */
+export interface CollectionDispatch {
+  resourceID: string;
+  dispatchedAt: string;
+}
+
 /** A published version of a resource. `version` is free text, not guaranteed semver. */
 export interface Release {
   id?: string;

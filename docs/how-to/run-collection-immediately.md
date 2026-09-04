@@ -10,6 +10,22 @@ its linked GitHub repository, or when verifying a deployment.
 A `queues --queue metrics` worker must be running. These commands only enqueue; the worker does the
 collecting. Without one, jobs pile up in Valkey and nothing is written.
 
+## From the console, for one resource
+
+No terminal needed. Open **Catalog → Resources** and press **Collect now** on the row.
+
+The row reports its own outcome: the metrics that landed, the failure detail, or `No result
+appeared` if nothing arrives within a minute. Treat that last one as a real answer rather than a
+slow one — a resource deleted mid-flight and a stopped worker both write nothing at all, so check
+the queue depth on **Operations**.
+
+The button is disabled for GHCR, npm, and PyPI. Those are catalogued but have no collector.
+
+Two things separate it from every command below. It never touches the schedule, so it cannot shift a
+cadence. And it runs with no retry budget, so the answer arrives in seconds instead of the ten and a
+half minutes a scheduled job spends backing off first — which means a transient blip reads as a
+failure here where the sweep would have recovered. Press it again.
+
 ## Pick a command
 
 | Command | Collects | Changes the schedule |

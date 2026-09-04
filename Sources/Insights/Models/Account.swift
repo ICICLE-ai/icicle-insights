@@ -42,6 +42,22 @@ enum Platform: String, Codable, CaseIterable {
     case .patra: nil
     }
   }
+
+  /// Whether a sync job exists to collect this platform at all.
+  ///
+  /// Mirrors the routing in `Queue.dispatchSync`, and both switches are exhaustive on purpose: a
+  /// new platform fails to compile in both places rather than silently becoming uncollectable in
+  /// one of them.
+  ///
+  /// The sweep does not need this — skipping a catalogued-but-uncollectable resource is the right
+  /// behaviour there. An operator-triggered collection does: dispatching nothing and returning
+  /// success leaves the caller waiting on a verdict that can never arrive.
+  var isCollectable: Bool {
+    switch self {
+    case .github, .huggingface, .patra: true
+    case .ghcr, .npm, .pypi: false
+    }
+  }
 }
 
 /// A platform identity that owns resources and optionally references a Tapis Vault secret.

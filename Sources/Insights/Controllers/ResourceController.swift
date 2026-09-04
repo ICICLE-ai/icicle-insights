@@ -46,6 +46,14 @@ struct ResourceController: RouteCollection {
           statusCode: 204,
           auth: .bearer(),
         )
+      resource.grouped(Require.admin).post("collect", use: collect)
+        .openAPI(
+          tags: "Resources",
+          summary: "Collect this resource now",
+          response: .type(Resource.CollectionDispatch.self),
+          statusCode: 202,
+          auth: .bearer(),
+        )
     }
   }
 
@@ -199,5 +207,76 @@ struct ResourceController: RouteCollection {
 
     try await resource.delete(on: req.db)
     return .noContent
+  }
+
+  /// Enqueues a sync for one resource immediately, outside its schedule.
+  ///
+  /// For the operator who has just repaired a credential or shipped a collector fix and wants to
+  /// know whether it worked. Waiting is otherwise the only option, and it is a bad one: a
+  /// credential failure re-books an hour out, but every other failure keeps the due date the sweep
+  /// already advanced, which can be a full cadence away.
+  ///
+  /// Dispatched with no retry budget. The scheduled budget spends roughly ten and a half minutes
+  /// across its backoff before it reports, which is correct for an unattended sweep riding out a
+  /// throttle and useless to someone watching for an answer. A transient blip therefore reads as a
+  /// failure here where the sweep would have recovered — the operator clicks again.
+  ///
+  /// Scheduling state is left alone deliberately. This returns before the job runs, so the only
+  /// thing it could do is move `nextCollectionAt` without knowing the outcome, which would push a
+  /// broken resource a further cadence out on every attempt to fix it. The redundant collection
+  /// that occasionally follows is harmless: watermarks already make a repeated fold safe.
+  ///
+  /// - Returns: 202 with the dispatch timestamp, which is what lets the caller tell an outcome
+  ///   caused by this dispatch from one already in the table.
+  /// - Throws: 404 when the resource does not exist, 422 when its platform has no collector.
+  @Sendable
+  func collect(req: Request) async throws -> Response {
+    guard
+      let resource = try await Resource.query(on: req.db)
+        .filter(\.$id == req.parameters.require("resourceID", as: UUID.self))
+        .with(\.$account)
+        .first()
+    else {
+      throw Abort(.notFound)
+    }
+
+    let platform = resource.account.platform
+
+    // Refusing beats a 202 here. `dispatchSync` skips these silently, which is right for the
+    // sweep and wrong for a request: nothing would be enqueued, no metric or failure would ever
+    // appear, and the caller would poll until it timed out with no way to tell why.
+    guard platform.isCollectable else {
+      throw Abort(
+        .unprocessableEntity,
+        reason:
+          "\(platform.rawValue) resources are catalogued but not collected. There is no collector to run for this platform."
+      )
+    }
+
+    // Read before the dispatch, never after. The worker can write a metric the instant the job is
+    // picked up, and a timestamp taken afterwards could land past it — which would make a
+    // successful collection invisible to whoever is polling for it.
+    let dispatchedAt = Date()
+    let resourceID = try resource.requireID()
+
+    try await req.queues(.metrics).dispatchSync(
+      for: resource,
+      platform: platform,
+      logger: req.logger,
+      maxRetryCount: 0,
+    )
+
+    req.logger.notice(
+      "Collection dispatched on request.",
+      metadata: [
+        "resource": .string(resourceID.uuidString),
+        "platform": .string(platform.rawValue),
+      ]
+    )
+
+    return try await Resource.CollectionDispatch(
+      resourceID: resourceID,
+      dispatchedAt: dispatchedAt,
+    ).encodeResponse(status: .accepted, for: req)
   }
 }

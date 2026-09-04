@@ -67,6 +67,25 @@ Each resource belongs to one account and carries its own collection cadence.
 Cadence is capped per platform, at half that platform's retention window where one exists. See
 [Collection schedule](collection-schedule.md) and [Add a resource](../how-to/add-a-resource.md).
 
+Each row also carries **Collect now**, which queues a collection outside the schedule and reports
+the result in the row.
+
+| Row state | Meaning |
+|---|---|
+| `Queueing collection…` | The request is in flight |
+| `Waiting for the worker to report.` | Queued; the worker has not written anything yet |
+| `Metrics recorded at …` | A reading landed for this resource after the dispatch |
+| The failure detail | The job failed, with the same text the Operations watchlist shows |
+| `No result appeared…` | Nothing was written within a minute |
+
+`No result appeared` is an outcome, not a timeout to retry past. A resource deleted mid-flight and a
+stopped worker both write nothing, so check queue depth on [Operations](#operations).
+
+The button is disabled for GHCR, npm, and PyPI resources, which have no collector. The run carries
+no retry budget, so a transient failure that a scheduled sweep would have ridden out is reported
+here as a failure. It never changes `Next collection`. See
+[Run collection immediately](../how-to/run-collection-immediately.md).
+
 ### Releases and Metrics
 
 Two further tabs list published releases and individual metric readings. Both are read-mostly;

@@ -156,6 +156,29 @@
   padding: 0.3125rem 0.625rem;
 }
 
+/* Outcome of a manual collection, under the row's own actions. Colour carries the state, but the
+   text says it too — the detail is the part an operator acts on, and it has to survive being read
+   without colour. */
+.ins-collect-status {
+  margin: 0.375rem 0 0;
+  text-align: right;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--ins-text-muted, #5f5e5a);
+}
+
+.ins-collect-status[data-state='succeeded'] {
+  color: var(--ins-text-success, #3b6d11);
+}
+
+.ins-collect-status[data-state='failed'] {
+  color: var(--ins-text-danger, #a32d2d);
+}
+
+.ins-collect-status[data-state='noVerdict'] {
+  color: var(--ins-text-warning, #854f0b);
+}
+
 .ins-admin-empty,
 .ins-admin-loading {
   display: grid;

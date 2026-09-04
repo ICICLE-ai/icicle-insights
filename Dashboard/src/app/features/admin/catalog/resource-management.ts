@@ -14,6 +14,24 @@ import { Paginator, pageSlice } from '../../../shared/ui/paginator';
 import { AdminStore } from '../admin-store';
 import { groupAccountsByPlatform } from '../option-groups';
 import { CatalogTabs } from './catalog-tabs';
+import { resolveCollectionOutcome, type CollectionRunOutcome } from './collection-run';
+
+/**
+ * How often a pending run re-reads the metric and failure tables.
+ *
+ * A manual run carries no retry budget, so a healthy collection reports within a second or two and
+ * a failure is not far behind. Polling faster buys nothing but load on two unindexed list
+ * endpoints.
+ */
+const POLL_INTERVAL_MS = 2_000;
+
+/**
+ * How long to wait before admitting no result is coming.
+ *
+ * Generous against a queue with a backlog, but bounded: with no retries in play, a job that has
+ * said nothing in a minute is one nothing is going to say anything about.
+ */
+const VERDICT_TIMEOUT_MS = 60_000;
 
 interface ResourceFormModel {
   readonly name: string;
@@ -86,6 +104,15 @@ interface ResourceEditModel {
                       <button
                         type="button"
                         class="ins-admin-action is-secondary"
+                        [disabled]="!resource.id || !collectable(resource) || running(resource)"
+                        [title]="collectHint(resource)"
+                        (click)="collectNow(resource)"
+                      >
+                        {{ running(resource) ? 'Collecting…' : 'Collect now' }}
+                      </button>
+                      <button
+                        type="button"
+                        class="ins-admin-action is-secondary"
                         [disabled]="!resource.id"
                         (click)="openEdit(resource)"
                       >
@@ -100,6 +127,16 @@ interface ResourceEditModel {
                         Delete
                       </button>
                     </div>
+                    @if (run(resource); as outcome) {
+                      <p
+                        class="ins-collect-status"
+                        [attr.data-state]="outcome.state"
+                        role="status"
+                        aria-live="polite"
+                      >
+                        {{ outcome.detail }}
+                      </p>
+                    }
                   </td>
                 </tr>
               }
@@ -313,6 +350,8 @@ export class ResourceManagement {
   protected readonly dialogStyle = { width: '31rem', maxWidth: 'calc(100vw - 2rem)' };
   protected readonly createOpen = signal(false);
   protected readonly resourcePage = signal(0);
+  /** Latest manual-collection outcome per resource id, for the row that triggered it. */
+  protected readonly runs = signal<Record<string, CollectionRunOutcome>>({});
   protected readonly saving = signal(false);
   protected readonly formError = signal<ApiError | null>(null);
   protected readonly resourceModel = signal<ResourceFormModel>(emptyResourceModel());
@@ -498,6 +537,107 @@ export class ResourceManagement {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  /** Platform of the account this resource belongs to, or null when it cannot be resolved. */
+  private platformOf(resource: Resource): Platform | null {
+    return (
+      this.store.snapshot().accounts.find((account) => account.id === resource.accountID)
+        ?.platform ?? null
+    );
+  }
+
+  /**
+   * Mirrors `Platform.isCollectable` on the server.
+   *
+   * Disabled rather than hidden: ghcr, npm and pypi resources are legitimately catalogued, and a
+   * button that simply is not there reads as a bug to anyone who does not already know which
+   * platforms have collectors. The hint says which it is.
+   */
+  protected collectable(resource: Resource): boolean {
+    const platform = this.platformOf(resource);
+    return platform === 'github' || platform === 'huggingface' || platform === 'patra';
+  }
+
+  protected collectHint(resource: Resource): string {
+    return this.collectable(resource)
+      ? 'Queue a collection now, outside this resource’s schedule.'
+      : 'This platform is catalogued but has no collector, so there is nothing to run.';
+  }
+
+  protected run(resource: Resource): CollectionRunOutcome | null {
+    const id = resource.id;
+    return id ? (this.runs()[id] ?? null) : null;
+  }
+
+  protected running(resource: Resource): boolean {
+    return this.run(resource)?.state === 'running';
+  }
+
+  /**
+   * Dispatches a collection and then watches for its result.
+   *
+   * The endpoint returns as soon as the job is queued, so the outcome has to be inferred from rows
+   * the worker writes afterwards. Polling stops on the first settled verdict, including
+   * `noVerdict` — see `resolveCollectionOutcome` for why that is a real answer and not a timeout
+   * to hide.
+   */
+  protected async collectNow(resource: Resource): Promise<void> {
+    const id = resource.id;
+    if (!id || this.running(resource) || !this.collectable(resource)) {
+      return;
+    }
+
+    this.setRun(id, { state: 'running', detail: 'Queueing collection…' });
+
+    let dispatchedAt: string;
+    try {
+      dispatchedAt = (await this.api.collectResource(id)).dispatchedAt;
+    } catch (error) {
+      const failure = toApiError(error);
+      this.setRun(id, { state: 'failed', detail: failure.message });
+      return;
+    }
+
+    const startedAt = Date.now();
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+      let outcome: CollectionRunOutcome;
+      try {
+        const [metrics, failures] = await Promise.all([
+          this.api.loadRecentMetrics(200),
+          this.api.loadJobFailures(50),
+        ]);
+        outcome = resolveCollectionOutcome({
+          resourceID: id,
+          dispatchedAt,
+          metrics,
+          failures,
+          elapsedMs: Date.now() - startedAt,
+          timeoutMs: VERDICT_TIMEOUT_MS,
+        });
+      } catch {
+        // A failed poll says nothing about the job, which is still running on the worker. Keep
+        // waiting rather than reporting a verdict this did not observe.
+        outcome = { state: 'running', detail: 'Waiting for the worker to report.' };
+      }
+
+      this.setRun(id, outcome);
+      if (outcome.state === 'running') {
+        continue;
+      }
+
+      if (outcome.state === 'succeeded') {
+        // New metrics landed, so the catalog's last-collected and due dates are stale.
+        this.store.reload();
+      }
+      return;
+    }
+  }
+
+  private setRun(id: string, outcome: CollectionRunOutcome): void {
+    this.runs.update((current) => ({ ...current, [id]: outcome }));
   }
 
   protected typeName(type: ResourceType | undefined): string {
