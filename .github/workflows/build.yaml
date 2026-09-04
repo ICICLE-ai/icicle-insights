@@ -115,9 +115,9 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      # The image builds a binary named `Insights` — SwiftPM names it after the product, and the
-      # Dockerfile's ENTRYPOINT is ["./Insights"]. Copying `/app/icicle-insights` failed every
-      # tagged release. Renamed on the way out so the published asset keeps its existing name.
+      # The image builds a binary named `Insights` — SwiftPM names it after the product, and it is
+      # what the entrypoint script execs. Copying `/app/icicle-insights` failed every tagged
+      # release. Renamed on the way out so the published asset keeps its existing name.
       - name: Extract binary from image
         run: |
           docker pull ghcr.io/icicle-ai/insights:${{ github.sha }}

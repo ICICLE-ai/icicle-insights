@@ -70,9 +70,12 @@ Migrations are the coupling point. Everything else is independent.
 2. **Start the API and worker.** Both scale freely; roll them however you like.
 3. **Start the scheduler**, at one replica.
 
-Repeat step 1 on any deploy carrying a migration. The API's readiness probe fails until migrations
-have run, because it queries a real table — so an un-migrated rollout stays out of the load balancer
-rather than serving errors.
+Repeat step 1 on any deploy carrying a migration.
+
+**Nothing keeps an un-migrated API out of the load balancer.** `/ready` counts `admins`, a table
+created by an early migration, so it answers 200 while a *later* migration is still pending. The
+pod goes live and returns 500s on every route touching a column the binary expects and the database
+does not have. Watch the migration job itself; readiness will not tell you.
 
 Step 1 is belt and braces rather than strictly required. The image's entrypoint runs
 `migrate-locked` itself when the command is `serve`, so an API container migrates before it serves
@@ -86,6 +89,26 @@ their own argument lists and are untouched by it — migrating unconditionally i
 would mean three concurrent migrators on every stack start. Running step 1 explicitly still buys
 you a migration failure that surfaces in its own job, before any container is rolled.
 
+**Setting a container `command` skips all of it.** A `command` replaces the image's `ENTRYPOINT`
+outright, so `docker-entrypoint.sh` never runs and nothing migrates — the container goes straight
+to the binary. Leave the command unset and let `ENTRYPOINT` plus `CMD` do their job, or name the
+script explicitly:
+
+```json
+"command": ["/app/docker-entrypoint.sh", "serve"]
+```
+
+A correct start prints these, in this order, before the server line — the configure block appears
+twice because `migrate-locked` is its own process:
+
+```
+[ NOTICE ] Waiting for the migration lock.
+[ NOTICE ] Migrations applied.
+```
+
+Their absence means the entrypoint was bypassed, and combined with a readiness probe that cannot
+detect a pending migration, the only symptom is 500s in production.
+
 ### First deployment only
 
 ```bash
@@ -98,6 +121,20 @@ Once per deployment, and staging and production are separate vaults — a keyset
 does not carry over. Until it exists, webhook authentication recognises nobody while administrator
 access, public reads, and collection all work normally. It is logged at `critical` on every boot,
 naming the command.
+
+## On Tapis Pods
+
+Two pod fields decide whether this runs at all.
+
+| Field | Set it to | Or else |
+|---|---|---|
+| `persistent` | `true` | The pod runs to completion and stops. Tapis reports it *finished*, with a clean exit |
+| `command` | unset, or the entrypoint script | Migrations never run — see [Rollout order](#rollout-order) |
+
+`persistent` is the one that reads as success. All three processes are long-running services, not
+jobs, so a non-persistent pod exits 0 once and Tapis will not restart it. The status page says
+"This pod has finished" over a green tick, the logs end after `Server started` with no error, and
+every route returns 503.
 
 ## Probes
 
