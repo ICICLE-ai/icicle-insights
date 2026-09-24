@@ -9,6 +9,7 @@ erDiagram
     RESOURCE ||--o{ METRIC : records
     RESOURCE ||--o{ RELEASE : publishes
     RESOURCE ||--o{ METRIC_WATERMARK : tracks
+    RESOURCE ||--o{ METRIC_DAILY_TOTAL : snapshots
     RESOURCE ||--o{ SERVICE_TOKEN : authorizes
     RESOURCE ||--o{ PATRA_CARD : names
 ```
@@ -21,6 +22,7 @@ erDiagram
 | `resources` | The things being measured, and their collection cadence |
 | `metrics` | Individual readings, one row per sweep per metric |
 | `metric_watermarks` | Newest completed day already folded into an all-time total |
+| `metric_daily_totals` | Each all-time total's closing value per UTC day. History starts at deploy |
 | `releases` | Published versions |
 | `patra_cards` | One (name, version) card per Patra model or datasheet, with cross-registry links |
 | `vaults` | References to credentials stored outside PostgreSQL |
@@ -34,7 +36,7 @@ erDiagram
 
 | Field | Meaning |
 |---|---|
-| `next_collection_at` | When this resource may next be dispatched. Null means never |
+| `next_collection_at` | When this resource may next be dispatched. Null means never. Set to the creation instant on create |
 | `collection_interval_days` | Spacing booked after a successful dispatch. Default 7 |
 | `last_collected_at` | When a collection last *succeeded*. Null until the first one |
 | `stall_notified_at` | When the retention-window alert last fired. Cleared on the next success |
@@ -44,6 +46,18 @@ erDiagram
 | Field | Meaning |
 |---|---|
 | `counted_through` | Newest completed UTC day already added to the all-time total |
+
+**`metric_daily_totals`** — one row per `(resource, all-time type, UTC day)`, unique on all three.
+
+| Field | Meaning |
+|---|---|
+| `type` | An `*AllTime` type, never its rolling counterpart |
+| `day` | The UTC calendar day, a PostgreSQL `date` |
+| `reading` | The total after that day's last write. Upserted in the same transaction as the total |
+
+A day with no write has no row; readers carry the previous day's value forward. There is no row
+from before the `MetricDailyTotals` migration, because the totals were overwritten in place and
+nothing recorded their past values. See [Metric history](../explanation/metric-history.md).
 
 `next_collection_at` and `counted_through` answer different questions: *when to fetch next* versus
 *what has already been counted*. Keeping them apart is what lets a late sweep resume exactly where
@@ -122,6 +136,7 @@ Applied in order, all registered in `configure.swift`.
 | `JobFailures` | Durable failure records |
 | `CollectionBackoff` | Collection history, and clamps GitHub cadences to the current cap |
 | `PatraPlatform` | The `patra`, `agent`, and `deployments` enum values, and `patra_cards` |
+| `MetricDailyTotals` | `metric_daily_totals`. No backfill |
 | `ICICLESnapshotJuly2026` | Seed data. **Development only** |
 | `PatraCatalogAugust2026` | Seed data. **Development only** |
 

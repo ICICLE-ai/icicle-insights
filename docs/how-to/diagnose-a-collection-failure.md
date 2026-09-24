@@ -25,6 +25,18 @@ container logs -f queues
 
 Restart the worker. The HTTP server and the scheduler do not execute jobs.
 
+## Every account stopped at once
+
+Almost always `TAPIS_TOKEN`. Every account's credential is read through it, so its expiry stops all
+collection while the platforms stay healthy.
+
+1. Find `tapis_token_expires_at` on the `Secret provider selected.` line of the boot log.
+2. If that time has passed, renew the token in Tapis.
+3. Update `TAPIS_TOKEN` on every process and restart them.
+
+The next hourly sweep resumes collection. The `WarnExpiringTapisToken` alert gives 7, 3, and 1
+days' notice, then one critical alert once the token has lapsed.
+
 ## One account stopped collecting
 
 Almost always its credential.
@@ -35,13 +47,21 @@ account at once, while the platform APIs are perfectly healthy.
 Rotate the credential on the platform, then use **Rotate** on the Vaults screen. The next sweep
 picks it up. No backfill is needed.
 
-## The same alert fires every hour
+## The same alert repeats every six hours
 
 Working as intended.
 
 A credential failure re-books its resource about an hour out rather than letting it sit out a full
-cadence, so the alert repeats until the credential is repaired. That is what makes a fixed token
-resume collection unattended.
+cadence, so it fails again every hour until the credential is repaired. Slack hears about it once
+per six hours; the rest are suppressed. That is what makes a fixed token resume collection
+unattended without flooding the channel.
+
+One alert can stand for many resources. To see every resource affected, search the log for the
+alert's identifier, or read the persisted failures:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" https://insights.example.org/api/admin/failures?limit=200
+```
 
 To silence it without fixing the credential, clear the resource's next-collection date. The sweep
 skips resources with no due date.
@@ -60,7 +80,7 @@ Check its **Next collection** date on the Catalog → Resources screen.
 
 | Shows | Means |
 |---|---|
-| `Not set` | Never swept. Correct for GHCR, npm, and PyPI, which have no collector yet |
+| `Not set` | Never booked. The sweep skips it. New resources are created due, so only older or hand-made rows show this |
 | A future date | Not due. Normal |
 | A past date | Due, but the sweep is not running or is failing |
 

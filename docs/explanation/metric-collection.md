@@ -15,7 +15,8 @@ A gauge needs no all-time row because **the series is the record**. One row per 
 as well as rise. That is what the dashboard's trend chart plots.
 
 A rolling window cannot simply be added, because consecutive responses overlap. See
-[Watermarks](watermarks.md), which is the whole answer to that problem.
+[Watermarks](watermarks.md), which is the whole answer to that problem. How the resulting totals
+gain a daily history is in [Metric history](metric-history.md).
 
 Hugging Face is the easy case: the Hub publishes its own lifetime downloads figure, so Insights
 assigns rather than accumulates and a repeated sweep is harmless.
@@ -27,11 +28,14 @@ assigns rather than accumulates and a repeated sweep is harmless.
 3. A worker claims the job and re-reads the resource from the database.
 4. The worker resolves the account's credential through `SecretProvider`.
 5. The worker fetches **every** response it needs.
-6. The worker writes snapshots and folds any rolling values.
+6. The worker writes snapshots and folds any rolling values, in one transaction.
 
 Step 5 is deliberate. `SyncGitHubRepoStats` collects all three responses before creating a single
 batch, so a failure partway through leaves no half-swept resource — gauges stranded without the
 traffic rows that share their timestamp. There is a test for this.
+
+Step 6 is the same guarantee against retries. A failure after the snapshot rows but before the
+commit rolls them back, so the retry does not write a second set.
 
 The due date is booked at **dispatch**, not on success. That keeps the sweep cheap and stateless,
 and is why a credential failure re-books the resource an hour out rather than letting it sit out a
@@ -59,6 +63,11 @@ hook, and the retry budget is fixed at dispatch, so throwing would spend four at
 roughly ten minutes rediscovering that a row is gone. A deleted subject is not a failure to recover
 from; it is work that no longer needs doing.
 
+A resource whose **account** is deleted is skipped the same way, but logged at `warning`. The API
+refuses to delete an account that still owns resources, so such an orphan predates that guard or
+was made by hand. The sweep leaves its due date alone, so restoring the account resumes collection
+on the next tick.
+
 ## Failure handling
 
 Failures divide into two kinds that want opposite treatment.
@@ -77,6 +86,13 @@ only way to tell them apart. That is why the error carries the body and the aler
 
 Alert delivery is never load-bearing. The notifier cannot throw: the worker clears a job only after
 the failure handler returns, so a failing alert channel would strand the job and stop the worker.
+
+Alerts are deduplicated; the record is not. An expired `TAPIS_TOKEN` fails every resource at once,
+and each re-books hourly, which used to mean about a hundred critical messages an hour. Now one
+alert per identifier and severity goes out per six hours, claimed with an atomic `SET NX EX` in
+Valkey so every worker shares it. Every failure is still logged and written to `job_failures`. If
+Valkey cannot answer, the alert is sent anyway, because a lost alert is worse than a repeat. The
+retention-window alert is exempt: it is already once per outage for each resource.
 
 ## Provider quirks worth knowing
 

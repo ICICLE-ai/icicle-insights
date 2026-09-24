@@ -1,4 +1,5 @@
 import Fluent
+import FluentSQL
 import Foundation
 import Testing
 
@@ -165,6 +166,40 @@ struct MetricAllTimeTests {
     }
   }
 
+  /// What the collectors' transactions rely on. FluentPostgresDriver nests `transaction` by
+  /// handing an already-transactional database straight to the closure, so the fold's own
+  /// `db.transaction` must not COMMIT, and its transaction-scoped lock must outlive the fold and
+  /// last to the caller's COMMIT. Checked on the caller's own connection, where an inner COMMIT
+  /// would already have released the lock.
+  @Test
+  func `A fold inside a caller's transaction holds its lock until the caller ends`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let id = try resource.requireID()
+      let now = Date()
+
+      let held = try await app.db.transaction { db in
+        try await Metric.foldDailyIntoAllTime(
+          on: db, resourceID: id, type: .clones, days: [self.day(-1, count: 4, from: now)],
+          now: now)
+
+        let sql = try #require(db as? any SQLDatabase)
+        return try await sql.raw(
+          """
+          SELECT count(*)::int AS held FROM pg_locks
+          WHERE locktype = 'advisory' AND granted AND pid = pg_backend_pid()
+          """
+        ).first()?.decode(column: "held", as: Int.self)
+      }
+
+      #expect(held == 1)
+      #expect(try await allTimeReading(on: app.db, id) == 4)
+    }
+  }
+
   @Test
   func `Gauges keep no all-time row`() async throws {
     try await withInsightsApp { app in
@@ -202,6 +237,129 @@ struct MetricAllTimeTests {
 
       #expect(totals.count == 1)
       #expect(totals.first?.reading == 1200)
+    }
+  }
+
+  /// Two Hub syncs of one resource used to race `setAllTime`'s read-then-insert: both found no
+  /// total and both created one. Many concurrent writers on separate pooled connections, over a
+  /// few fresh resources, make the window wide enough to hit reliably without the lock.
+  @Test
+  func `Concurrent all-time sets leave exactly one total`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db, name: "icicle", platform: .huggingface)
+      let accountID = try account.requireID()
+
+      for round in 0..<5 {
+        let resource = try await makeResource(
+          on: app.db, accountID: accountID, name: "model-\(round)")
+        let id = try resource.requireID()
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+          for reading in 1...16 {
+            group.addTask {
+              try await Metric.setAllTime(
+                on: app.db, resourceID: id, type: .downloads, reading: Double(reading))
+            }
+          }
+          try await group.waitForAll()
+        }
+
+        let totals = try await Metric.query(on: app.db)
+          .filter(\.$resource.$id == id)
+          .filter(\.$type == .downloadsAllTime)
+          .count()
+        #expect(totals == 1, "round \(round) left \(totals) all-time rows")
+      }
+    }
+  }
+
+  // MARK: - Daily snapshots
+
+  /// `(day, reading)` for every daily snapshot of `type`, oldest first.
+  private func snapshots(
+    on db: any Database, _ resourceID: Resource.IDValue, _ type: MetricType
+  ) async throws -> [String] {
+    try await MetricDailyTotal.query(on: db)
+      .filter(\.$resource.$id == resourceID)
+      .filter(\.$type == type)
+      .sort(\.$day)
+      .all()
+      .map { "\(UTCDay.string(from: $0.day))=\(Int($0.reading))" }
+  }
+
+  /// The history lifetime metrics never had. The total is one row updated in place, so each write
+  /// also upserts that UTC day's snapshot, which ends the day holding the day's closing value.
+  @Test
+  func `Every fold snapshots the day's closing total, one row per day`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let id = try resource.requireID()
+      let now = Date()
+      let today = UTCDay.string(from: now)
+      let tomorrow = UTCDay.string(from: now.addingTimeInterval(86_400))
+
+      try await Metric.foldDailyIntoAllTime(
+        on: app.db, resourceID: id, type: .clones, days: [day(-2, count: 5, from: now)], now: now)
+      #expect(try await snapshots(on: app.db, id, .clonesAllTime) == ["\(today)=5"])
+
+      // A second write the same day replaces that day's row rather than adding one.
+      try await Metric.foldDailyIntoAllTime(
+        on: app.db, resourceID: id, type: .clones, days: [day(-1, count: 7, from: now)], now: now)
+      #expect(try await snapshots(on: app.db, id, .clonesAllTime) == ["\(today)=12"])
+
+      // The next day starts a row of its own, and the previous day's closing value stays.
+      try await Metric.foldDailyIntoAllTime(
+        on: app.db, resourceID: id, type: .clones, days: [day(0, count: 3, from: now)],
+        now: now.addingTimeInterval(86_400))
+      #expect(
+        try await snapshots(on: app.db, id, .clonesAllTime) == ["\(today)=12", "\(tomorrow)=15"])
+    }
+  }
+
+  @Test
+  func `Set and adjust snapshot the total they write`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db, name: "icicle", platform: .huggingface)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let id = try resource.requireID()
+      let now = Date()
+      let yesterday = now.addingTimeInterval(-86_400)
+
+      try await Metric.setAllTime(
+        on: app.db, resourceID: id, type: .downloads, reading: 1000, now: yesterday)
+      try await Metric.setAllTime(on: app.db, resourceID: id, type: .downloads, reading: 1200)
+      // A hand-recorded reading moves the total, so it moves today's snapshot with it.
+      try await Metric.adjustAllTime(on: app.db, resourceID: id, type: .downloads, delta: 30)
+
+      #expect(
+        try await snapshots(on: app.db, id, .downloadsAllTime) == [
+          "\(UTCDay.string(from: yesterday))=1000", "\(UTCDay.string(from: now))=1230",
+        ])
+    }
+  }
+
+  /// Same transaction as the total, so a snapshot can never outlive a write that rolled back.
+  @Test
+  func `A rolled-back total leaves no snapshot`() async throws {
+    struct Abandon: Error {}
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let id = try resource.requireID()
+      let now = Date()
+
+      await #expect(throws: Abandon.self) {
+        try await app.db.transaction { db in
+          try await Metric.foldDailyIntoAllTime(
+            on: db, resourceID: id, type: .clones, days: [self.day(-1, count: 4, from: now)],
+            now: now)
+          throw Abandon()
+        }
+      }
+
+      #expect(try await MetricDailyTotal.query(on: app.db).count() == 0)
+      #expect(try await allTimeReading(on: app.db, id) == nil)
     }
   }
 

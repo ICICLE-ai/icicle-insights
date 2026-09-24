@@ -152,6 +152,41 @@ struct QueueSweepTests {
     }
   }
 
+  /// The outage an account delete used to cause. The due set is one query, and a plain eager
+  /// load of a soft-deleted account throws `missingParent`, so this sweep threw before
+  /// dispatching anything and the healthy account went uncollected too.
+  @Test
+  func `A resource under a deleted account is skipped without stopping the sweep`() async throws {
+    try await withQueueApp { app in
+      let retired = try await makeAccount(on: app.db, name: "retired")
+      let orphanDue = past(1)
+      let orphan = try await makeResource(
+        on: app.db, accountID: try retired.requireID(), name: "orphan",
+        nextCollectionAt: orphanDue)
+      // Deleted straight through Fluent, as an older deployment or a hand edit could have done.
+      // The API now refuses this while the account still owns a resource.
+      try await retired.delete(on: app.db)
+
+      let healthy = try await makeAccount(on: app.db, name: "healthy")
+      let collected = try await makeResource(
+        on: app.db, accountID: try healthy.requireID(), name: "collected",
+        nextCollectionAt: past(1))
+
+      try await CollectDueResources().run(context: queueContext(for: app))
+
+      #expect(
+        app.queues.asyncTest.all(SyncGitHubRepoStats.self).map(\.id) == [
+          try collected.requireID()
+        ])
+
+      // Neither dispatched nor re-booked: its due date stands, so restoring the account resumes
+      // collection on the next sweep instead of a full interval later.
+      let untouched = try #require(
+        try await Resource.find(orphan.id, on: app.db)?.nextCollectionAt)
+      #expect(abs(untouched.timeIntervalSince(orphanDue)) < 1)
+    }
+  }
+
   @Test
   func `Account stats dispatch one job per GitHub account`() async throws {
     try await withQueueApp { app in

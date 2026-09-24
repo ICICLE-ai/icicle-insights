@@ -128,6 +128,24 @@ See [Add a collector](docs/how-to/add-a-collector.md).
 `/api/metrics` caps at 1000 rows, newest first. At roughly 103 rows per weekly sweep that is about
 ten weeks of trailing history. Per-type fetches or downsampling is the follow-up when it gets tight.
 
+The `/api/insights` routes remove the need: they total in SQL with no row cap. What is left is
+moving the dashboard onto them and off per-type raw reads. See
+[Metric history](docs/explanation/metric-history.md).
+
+### Verify the collection-risk fixes against a real deployment
+
+`fix/backend-risks` was tested only against the suite, with a placeholder `TAPIS_TOKEN` and no
+Slack webhook. Four behaviours need a live check:
+
+- **The rate limiter behind the ingress.** It keys on the rightmost `X-Forwarded-For` entry, which
+  is correct only if exactly one proxy appends. Confirm the ingress appends rather than replaces,
+  and that nothing else sits in front of it.
+- **The `TAPIS_TOKEN` expiry line.** Boot with a real token and check `tapis_token_expires_at` on
+  `Secret provider selected.` reads the expected date.
+- **Alert deduplication with Slack.** One critical alert per six hours, however many resources fail.
+- **The account Delete guard in the console.** The API's 409 wording was matched to the
+  component's `deleteTitle`, not checked against the running screen.
+
 ### Fetch-on-create
 
 `ResourceController.create` already dispatches a sync and books the next collection. The path is

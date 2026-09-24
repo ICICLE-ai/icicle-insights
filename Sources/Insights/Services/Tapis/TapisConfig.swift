@@ -17,6 +17,15 @@ struct TapisConfig: Sendable {
   let admin: TapisAdmin
   let tenant: String
 
+  /// When `TAPIS_TOKEN` stops working, read from its own `exp` claim. Nil when the value is not
+  /// a JWT carrying one, like CI's placeholder.
+  ///
+  /// The token is a static environment variable, and when it lapses every vault read fails and
+  /// collection stops for every account at once. Nothing refreshes it, so the only defence is
+  /// knowing the date in advance: it is logged at boot and `WarnExpiringTapisToken` alerts ahead
+  /// of it.
+  let tokenExpiry: Date?
+
   init(baseURL: String, tenant: String, admin: TapisAdmin) {
     self.baseURL =
       baseURL.hasSuffix("/")
@@ -24,6 +33,42 @@ struct TapisConfig: Sendable {
       : baseURL
     self.tenant = tenant
     self.admin = admin
+    self.tokenExpiry = Self.expiry(ofJWT: admin.token.getSecretValue())
+  }
+
+  /// Reads the `exp` claim of a JWT **without verifying its signature**, or nil when the value
+  /// is not a three-part JWT whose payload carries a numeric `exp`.
+  ///
+  /// Unverified on purpose, and safe only because of what the answer is used for. This is this
+  /// deployment's own configured credential, not something a caller presented, and the date
+  /// only schedules a warning. It grants nothing and gates nothing. A forged `exp` could at worst
+  /// move a reminder about a token the operator set themselves, while verifying would need the
+  /// tenant key, which `.testing` never fetches and which a boot must not depend on just to log.
+  ///
+  /// Never throws, and never logs the token: a value that does not parse is simply not a JWT.
+  static func expiry(ofJWT token: String) -> Date? {
+    let segments = token.split(separator: ".", omittingEmptySubsequences: false)
+    guard segments.count == 3 else { return nil }
+
+    // base64url differs from base64 in two characters and omits the padding `Data` requires.
+    var encoded =
+      String(segments[1])
+      .replacingOccurrences(of: "-", with: "+")
+      .replacingOccurrences(of: "_", with: "/")
+    encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+
+    struct Claims: Decodable {
+      let exp: Double?
+    }
+
+    guard
+      let data = Data(base64Encoded: encoded),
+      let exp = (try? JSONDecoder().decode(Claims.self, from: data))?.exp
+    else {
+      return nil
+    }
+
+    return Date(timeIntervalSince1970: exp)
   }
 
   /// Base endpoint for user-scoped Tapis Vault secret operations.

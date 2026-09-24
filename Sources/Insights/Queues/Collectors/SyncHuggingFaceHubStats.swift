@@ -32,13 +32,19 @@ struct SyncHuggingFaceHubStats: AsyncJob, BackoffRetrying {
 
   /// Resolves credentials, fetches Hub statistics, and persists a coherent snapshot.
   func dequeue(_ context: QueueContext, _ payload: HuggingFaceResource) async throws {
+    // `withDeleted: true` and the skip below, for the same reason as `SyncGitHubRepoStats`.
     guard
       let resource = try await Resource.query(on: context.application.db)
         .filter(\.$id == payload.id)
-        .with(\.$account)
+        .with(\.$account, withDeleted: true)
         .first()
     else {
       context.entryVanished(id: payload.id, job: Self.name)
+      return
+    }
+
+    guard !resource.accountIsDeleted else {
+      context.orphanSkipped(resource, job: Self.name)
       return
     }
 
@@ -65,20 +71,25 @@ struct SyncHuggingFaceHubStats: AsyncJob, BackoffRetrying {
       Metric(resourceID: resourceID, reading: Double(stats.likes), type: .likes),
     ]
 
-    try await metrics.create(on: context.application.db)
+    // One transaction for every write, with the fetch above it, for the reason
+    // `SyncGitHubRepoStats` gives: a retry after a late failure must not find the snapshot rows
+    // of the attempt that failed.
+    try await context.application.db.transaction { db in
+      try await metrics.create(on: db)
 
-    // Set, not accumulated: `downloads` is a rolling 30-day window, and the Hub reports the
-    // lifetime figure itself, so a snapshot is both correct and safe to re-run.
-    try await Metric.setAllTime(
-      on: context.application.db,
-      resourceID: resourceID,
-      type: .downloads,
-      reading: Double(stats.downloadsAllTime)
-    )
+      // Set, not accumulated: `downloads` is a rolling 30-day window, and the Hub reports the
+      // lifetime figure itself, so a snapshot is both correct and safe to re-run.
+      try await Metric.setAllTime(
+        on: db,
+        resourceID: resourceID,
+        type: .downloads,
+        reading: Double(stats.downloadsAllTime)
+      )
 
-    // Same contract as the GitHub collector: the schedule advances only once the whole sweep has
-    // landed.
-    try await resource.recordSuccessfulCollection(on: context.application.db)
+      // Same contract as the GitHub collector: the schedule advances only once the whole sweep
+      // has landed.
+      try await resource.recordSuccessfulCollection(on: db)
+    }
   }
 
   /// Fetches expanded rolling downloads, lifetime downloads, and likes from the Hub API.

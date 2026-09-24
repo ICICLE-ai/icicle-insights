@@ -1,6 +1,9 @@
 import Fluent
+import Foundation
+import Queues
 import Testing
 import VaporTesting
+import XCTQueues
 
 @testable import Insights
 
@@ -86,6 +89,72 @@ struct ResourceControllerTests {
           #expect(res.status == .conflict)
           let count = try await Resource.query(on: app.db).count()
           #expect(count == 1)
+        },
+      )
+    }
+  }
+
+  /// Valkey down at the moment of creation. The row used to be inserted with no due date and
+  /// booked only after a successful dispatch, so this left it NULL, which the sweep's `<= now`
+  /// filter never matches: the resource existed and was never collected, with nothing to say so.
+  @Test
+  func `A failed first dispatch still creates the resource due for the next sweep`()
+    async throws
+  {
+    let driver = FlakyQueuesDriver()
+    try await withInsightsApp(setUp: { $0.queues.use(custom: driver) }) { app in
+      let account = try await makeAccount(on: app.db)
+      let payload = Resource.Create(
+        name: "insights", type: .repository, accountID: try account.requireID())
+
+      try await app.testing().test(
+        .POST,
+        "api/resources",
+        headers: app.adminAuth,
+        beforeRequest: { req in try req.content.encode(payload) },
+        afterResponse: { res async throws in
+          // Created, because it was: the row is committed and due. A 500 here would send the
+          // admin to retry into the unique index.
+          #expect(res.status == .created)
+        },
+      )
+
+      // Read from the table rather than the response, so the due date is checked even when the
+      // request itself went wrong.
+      let created = try #require(try await Resource.query(on: app.db).first())
+      let id = try created.requireID()
+      #expect(try #require(created.nextCollectionAt) <= Date())
+      #expect(driver.stored.withLockedValue { $0.isEmpty })
+
+      // The next sweep is what rescues it, and the driver has recovered by then.
+      try await CollectDueResources().run(context: queueContext(for: app))
+      #expect(driver.stored.withLockedValue { $0.count } == 1)
+      let rebooked = try #require(try await Resource.find(id, on: app.db)?.nextCollectionAt)
+      #expect(rebooked > Date())
+    }
+  }
+
+  /// The happy path keeps its lease: the dispatch books the next collection a full interval out,
+  /// so the sweep does not dispatch the new resource a second time while its first job runs.
+  @Test
+  func `A dispatched first collection books the next one an interval out`() async throws {
+    try await withQueueApp { app in
+      let account = try await makeAccount(on: app.db)
+      let payload = Resource.Create(
+        name: "insights", type: .repository, accountID: try account.requireID(),
+        collectionIntervalDays: 7)
+
+      try await app.testing().test(
+        .POST,
+        "api/resources",
+        headers: app.adminAuth,
+        beforeRequest: { req in try req.content.encode(payload) },
+        afterResponse: { res async throws in
+          #expect(res.status == .created)
+          let id = try #require(try res.content.decode(Resource.Public.self).id)
+          let next = try #require(try await Resource.find(id, on: app.db)?.nextCollectionAt)
+          #expect(abs(next.timeIntervalSinceNow - 7 * 86_400) < 60)
+          #expect(app.queues.asyncTest.all(SyncGitHubRepoStats.self).map(\.id) == [id])
         },
       )
     }
@@ -419,6 +488,41 @@ struct ResourceControllerTests {
           #expect(returned.contains { $0.id == datasheet.id })
         },
       )
+    }
+  }
+
+  /// One level down from the test above. Deleting an account now requires deleting its
+  /// resources first, so the normal path leaves a card pointing at a deleted resource whose
+  /// account is deleted too, and a plain load of that account throws the same `missingParent`.
+  @Test
+  func `Index still succeeds after a linked resource and its account are both deleted`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let hfAccount = try await makeAccount(on: app.db, name: "hf", platform: .huggingface)
+      let hfAccountID = try hfAccount.requireID()
+      let hubResource = try await makeResource(
+        on: app.db, accountID: hfAccountID, name: "can_benchmark", type: .dataset)
+      let hubResourceID = try hubResource.requireID()
+
+      let patraAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .patra)
+      let datasheet = try await makeResource(
+        on: app.db, accountID: try patraAccount.requireID(), name: "datasheet", type: .dataset)
+      try await makePatraCard(
+        on: app.db, resourceID: try datasheet.requireID(), hubResourceID: hubResourceID)
+
+      // The console's order: the resource first, then the account it no longer blocks.
+      for path in ["api/resources/\(hubResourceID)", "api/accounts/\(hfAccountID)"] {
+        try await app.testing().test(
+          .DELETE, path, headers: app.adminAuth,
+          afterResponse: { res async throws in #expect(res.status == .noContent) })
+      }
+
+      for path in ["api/resources", "api/resources/\(try datasheet.requireID())"] {
+        try await app.testing().test(
+          .GET, path,
+          afterResponse: { res async throws in #expect(res.status == .ok) })
+      }
     }
   }
 

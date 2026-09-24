@@ -36,14 +36,37 @@ extension QueueContext {
     )
   }
 
+  /// Records that a resource was not collected because its account has been soft-deleted.
+  ///
+  /// Returns rather than throws, for the reason `entryVanished` gives: nothing a retry does will
+  /// bring the account back, so throwing would only spend the retry budget rediscovering it.
+  ///
+  /// `warning`, not `notice` like a vanished entry. A vanished entry is an ordinary race with a
+  /// delete; an active resource under a deleted account is an inconsistency someone has to
+  /// resolve, by restoring the account or deleting the resource, and the API no longer creates
+  /// it. Repeating hourly while it persists is how it gets noticed.
+  func orphanSkipped(_ resource: Resource, job: String) {
+    logger.warning(
+      "Skipping resource: its account has been deleted. Restore the account or delete the resource.",
+      metadata: [
+        "job": .string(job),
+        "resource": .string(resource.id?.uuidString ?? "unsaved"),
+        "account": .string(resource.$account.id.uuidString),
+      ]
+    )
+  }
+
   /// Reports a resource sync that has exhausted its retries, and re-books it so the failure costs
   /// hours rather than the interval `CollectDueResources` already advanced it by at dispatch.
   /// Credential failures retry hourly until the token is repaired; everything else backs off on
   /// `CollectionSchedule`'s capped curve.
   func reportResourceSyncFailure(_ error: any Error, job: String, resourceID: UUID) async {
+    // `withDeleted: true`, matching the collectors. A plain load throws `missingParent` for a
+    // resource whose account was deleted mid-retry, and `try?` turned that into nil: the alert
+    // named a bare UUID and the resource was never re-booked.
     let resource = try? await Resource.query(on: application.db)
       .filter(\.$id == resourceID)
-      .with(\.$account)
+      .with(\.$account, withDeleted: true)
       .first()
 
     var metadata: Logger.Metadata = ["resource": .string(resourceID.uuidString)]
@@ -149,15 +172,43 @@ extension QueueContext {
     logger.critical(.init(stringLiteral: error.failureDescription), metadata: metadata)
   }
 
-  /// Sends the failure to the configured alert channel.
+  /// Sends the failure to the configured alert channel, at most once per identifier and severity
+  /// per ``AlertDeduplication/window``.
+  ///
+  /// Only the alert is deduplicated. The log line and the `job_failures` row are written for
+  /// every failure by the callers, so the console still lists each resource that failed; Slack
+  /// just hears about the pattern once. The retention-window breach does not come through here:
+  /// it is already once per outage per resource through `stallNotifiedAt`, and it names data
+  /// lost from one specific resource, which a shared key would hide.
   private func alert(_ error: any Error, job: String, subject: String) async {
+    let severity: AlertSeverity = error.isCredentialFailure ? .critical : .warning
+    let identifier = error.alertIdentifier
+
+    guard await claimAlert(identifier: identifier, severity: severity) else {
+      logger.notice(
+        "Alert suppressed: an identical one was sent within the deduplication window.",
+        metadata: [
+          "job": .string(job),
+          "subject": .string(subject),
+          "identifier": .string(identifier),
+          "window_hours": .stringConvertible(Int(AlertDeduplication.window / 3600)),
+        ]
+      )
+      return
+    }
+
+    // Said in the alert itself, because whoever reads it will otherwise assume the one resource
+    // it names is the only one affected, when an expired token has failed all of them.
+    let hours = Int(AlertDeduplication.window / 3600)
     await application.notifier.notify(
       FailureAlert(
-        severity: error.isCredentialFailure ? .critical : .warning,
+        severity: severity,
         job: job,
         subject: subject,
-        identifier: error.alertIdentifier,
-        details: error.alertDetails,
+        identifier: identifier,
+        details: error.alertDetails
+          + "\nFurther '\(identifier)' alerts are held back for \(hours) hours, however many "
+          + "resources fail. Every failure is still logged and recorded in job_failures.",
       ))
   }
 

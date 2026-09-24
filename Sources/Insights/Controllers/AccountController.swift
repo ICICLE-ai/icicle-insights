@@ -100,11 +100,54 @@ struct AccountController: RouteCollection {
   }
 
   @Sendable
-  /// Soft-deletes an account and returns an empty success response.
+  /// Soft-deletes an account that no longer owns anything, and returns an empty success response.
+  ///
+  /// Refused with 409 while the account still has an active resource or a Vault credential. A
+  /// soft-deleted account leaves its resources active and due, and every place that eager-loads a
+  /// resource's account then finds no parent: Fluent's default load excludes the deleted row and
+  /// throws `missingParent` rather than answering nil. `CollectDueResources` loads the whole due
+  /// set in one query, so before this guard a single such resource failed every hourly sweep and
+  /// nothing was collected for anyone.
+  ///
+  /// Mirrors the admin console's own guard (`account-management.ts`, `canDelete`/`deleteTitle`),
+  /// in the same order and with the same wording, so a caller that skips the console gets the
+  /// same answer. The console guard alone was not enough: it is advisory, and the API is public.
+  ///
+  /// Check-then-delete, not a lock: a resource created between the count and the delete still
+  /// leaves an orphan. That window is milliseconds on an admin-only route, and the sweep and the
+  /// sync jobs now tolerate an orphan rather than failing on it, so this guard prevents the
+  /// common case and the collectors absorb the rare one.
   func delete(req: Request) async throws -> HTTPStatus {
     guard let account = try await Account.find(req.parameters.get("accountID"), on: req.db)
     else {
       throw Abort(.notFound)
+    }
+
+    let accountID = try account.requireID()
+
+    // Fluent's default scope already excludes soft-deleted resources, which is the point: a
+    // resource an admin has deleted no longer blocks deleting its account.
+    let resources = try await Resource.query(on: req.db)
+      .filter(\.$account.$id == accountID)
+      .count()
+    guard resources == 0 else {
+      throw Abort(
+        .conflict,
+        reason:
+          "This account still has \(resources) active resource\(resources == 1 ? "" : "s"). "
+          + "Delete this account's resources first.",
+      )
+    }
+
+    // `vaults` has no soft delete, so any row is a live credential reference. Deleting the
+    // account around it would strand the Tapis secret with nothing in the console to rotate or
+    // remove it from.
+    let hasVault =
+      try await Vault.query(on: req.db)
+      .filter(\.$account.$id == accountID)
+      .first() != nil
+    guard !hasVault else {
+      throw Abort(.conflict, reason: "Delete this account's Vault credential first.")
     }
 
     try await account.delete(on: req.db)
