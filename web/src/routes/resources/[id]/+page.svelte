@@ -108,7 +108,9 @@
 		{@const d = data.data}
 		<div class="flex flex-wrap items-start justify-between gap-4">
 			<div class="min-w-0">
-				<h1 class="truncate text-2xl font-semibold tracking-tight">{d.resource.name}</h1>
+				<h1 class="text-2xl font-semibold tracking-tight [overflow-wrap:anywhere]">
+					{d.resource.name}
+				</h1>
 				<div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
 					<PlatformDot platform={view.platform} />
 					<Badge variant="secondary">{kindLabel(d.resource.type)}</Badge>
@@ -137,6 +139,8 @@
 
 		{#if d.resource.card}
 			{@const card = d.resource.card}
+			<!-- Patra records 0 when no accuracy was measured, so only a positive figure is shown. -->
+			{@const hasAccuracy = (card.accuracy ?? 0) > 0}
 			<section aria-labelledby="about-heading" class="rounded-xl border bg-card p-5">
 				<h2 id="about-heading" class="text-sm font-medium">
 					About this {card.kind === 'model' ? 'model' : 'dataset'}
@@ -145,10 +149,10 @@
 						{card.description}
 					</p>{/if}
 				<dl class="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-4">
-					{#each [['Author', card.author], ['Category', card.category], ['Framework', card.framework], ['Model type', card.modelType], ['Input', card.inputType], ['Licence', card.license], ['Version', card.version], ['Test accuracy', card.accuracy != null ? `${(card.accuracy * 100).toFixed(1)}%` : null], ['Size', card.size], ['Format', card.format], ['Published', card.publicationYear ? String(card.publicationYear) : null], ['Card updated', card.updatedAt ? formatDate(card.updatedAt) : null]].filter(([, value]) => value) as [label, value] (label)}
-						<div>
+					{#each [['Author', card.author], ['Category', card.category], ['Framework', card.framework], ['Model type', card.modelType], ['Input', card.inputType], ['Licence', card.license], ['Version', card.version], ['Test accuracy', hasAccuracy ? `${(card.accuracy! * 100).toFixed(1)}%` : null], ['Size', card.size], ['Format', card.format], ['Published', card.publicationYear ? String(card.publicationYear) : null], ['Card updated', card.updatedAt ? formatDate(card.updatedAt) : null]].filter(([, value]) => value) as [label, value] (label)}
+						<div class="min-w-0">
 							<dt class="text-xs text-muted-foreground">{label}</dt>
-							<dd>{value}</dd>
+							<dd class="break-words">{value}</dd>
 						</div>
 					{/each}
 				</dl>
@@ -162,14 +166,23 @@
 					</ul>
 				{/if}
 				{#if card.sourceURL}
-					<a
-						href={card.sourceURL}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="mt-4 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-					>
-						Source recorded in Patra <ExternalLink class="size-3" />
-					</a>
+					<!-- Patra's location is free text: often a URL, sometimes a bare Hub id such as
+					     ICICLE-AI/CAN_Benchmark, occasionally a placeholder. Only a real URL is a link. -->
+					{#if /^https?:\/\//i.test(card.sourceURL)}
+						<a
+							href={card.sourceURL}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="mt-4 inline-flex max-w-full items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+						>
+							<span class="truncate">Source recorded in Patra</span>
+							<ExternalLink class="size-3 shrink-0" />
+						</a>
+					{:else}
+						<p class="mt-4 text-xs text-muted-foreground">
+							Source recorded in Patra: <span class="font-mono break-all">{card.sourceURL}</span>
+						</p>
+					{/if}
 				{/if}
 			</section>
 		{/if}
