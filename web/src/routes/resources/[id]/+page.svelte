@@ -198,9 +198,7 @@
 				</section>
 			{:else if view.lifetime.length === 0}
 				<div class="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
-					No readings yet. {view.platform === 'ghcr' ||
-					view.platform === 'npm' ||
-					view.platform === 'pypi'
+					No readings yet. {view.platform === 'npm' || view.platform === 'pypi'
 						? 'This platform has no collector yet.'
 						: 'The first collection will fill this in.'}
 				</div>
