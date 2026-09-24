@@ -23,12 +23,43 @@ extension Metric {
     ).run()
   }
 
+  /// Upserts the resource's snapshot of an all-time total for the UTC day containing `now`.
+  ///
+  /// Called after every write of a total, on the same `db`, so it lands in the same transaction:
+  /// a snapshot can never record a total that then rolled back, and a total can never commit
+  /// without its snapshot. Later writes the same day overwrite the row, so it ends the day
+  /// holding that day's closing value. See `MetricDailyTotals` for why this table exists.
+  ///
+  /// Raw SQL because FluentKit has no upsert. The conflict target is the table's unique
+  /// constraint; `EXCLUDED.reading` is the value this statement tried to insert.
+  private static func recordDailyTotal(
+    on db: any Database,
+    resourceID: Resource.IDValue,
+    allTimeType: MetricType,
+    reading: Double,
+    now: Date
+  ) async throws {
+    guard let sql = db as? any SQLDatabase else { return }
+    try await sql.raw(
+      """
+      INSERT INTO metric_daily_totals (id, resource_id, type, day, reading, created_at, updated_at)
+      VALUES (
+        \(bind: UUID()), \(bind: resourceID), \(bind: allTimeType.rawValue)::metric_type,
+        \(bind: UTCDay.string(from: now))::date, \(bind: reading), now(), now()
+      )
+      ON CONFLICT (resource_id, type, day)
+      DO UPDATE SET reading = EXCLUDED.reading, updated_at = now()
+      """
+    ).run()
+  }
+
   /// Applies a signed delta to the all-time total. Assumes the caller holds the lock above.
   private static func applyAllTimeDelta(
     on db: any Database,
     resourceID: Resource.IDValue,
     allTimeType: MetricType,
-    delta: Double
+    delta: Double,
+    now: Date = Date()
   ) async throws {
     guard
       let total = try await Metric.query(on: db)
@@ -40,6 +71,8 @@ extension Metric {
       // never accumulated would invent a negative one out of nothing.
       guard delta > 0 else { return }
       try await Metric(resourceID: resourceID, reading: delta, type: allTimeType).create(on: db)
+      try await recordDailyTotal(
+        on: db, resourceID: resourceID, allTimeType: allTimeType, reading: delta, now: now)
       return
     }
 
@@ -48,6 +81,8 @@ extension Metric {
     // number any caller can interpret, and clamping keeps the series readable while it is fixed.
     total.reading = max(0, total.reading + delta)
     try await total.save(on: db)
+    try await recordDailyTotal(
+      on: db, resourceID: resourceID, allTimeType: allTimeType, reading: total.reading, now: now)
   }
 
   /// Folds `reading` into the resource's running all-time total, creating the row on first
@@ -61,11 +96,12 @@ extension Metric {
     on db: any Database,
     resourceID: Resource.IDValue,
     type: MetricType,
-    reading: Double
+    reading: Double,
+    now: Date = Date()
   ) async throws {
     guard let allTimeType = type.allTime else { return }
     try await applyAllTimeDelta(
-      on: db, resourceID: resourceID, allTimeType: allTimeType, delta: reading)
+      on: db, resourceID: resourceID, allTimeType: allTimeType, delta: reading, now: now)
   }
 
   /// Applies a signed delta to the resource's all-time total, under its own lock.
@@ -109,26 +145,28 @@ extension Metric {
     on db: any Database,
     resourceID: Resource.IDValue,
     type: MetricType,
-    reading: Double
+    reading: Double,
+    now: Date = Date()
   ) async throws {
     guard let allTimeType = type.allTime else { return }
 
     try await db.transaction { db in
       try await lockAllTime(on: db, resourceID: resourceID, type: type)
 
-      guard
-        let total = try await Metric.query(on: db)
-          .filter(\.$resource.$id == resourceID)
-          .filter(\.$type == allTimeType)
-          .first()
-      else {
+      if let total = try await Metric.query(on: db)
+        .filter(\.$resource.$id == resourceID)
+        .filter(\.$type == allTimeType)
+        .first()
+      {
+        total.reading = reading
+        try await total.save(on: db)
+      } else {
         try await Metric(resourceID: resourceID, reading: reading, type: allTimeType).create(
           on: db)
-        return
       }
 
-      total.reading = reading
-      try await total.save(on: db)
+      try await recordDailyTotal(
+        on: db, resourceID: resourceID, allTimeType: allTimeType, reading: reading, now: now)
     }
   }
 
@@ -181,7 +219,8 @@ extension Metric {
         on: db,
         resourceID: resourceID,
         type: type,
-        reading: fresh.reduce(0.0) { $0 + Double($1.count) }
+        reading: fresh.reduce(0.0) { $0 + Double($1.count) },
+        now: now
       )
 
       if let watermark {

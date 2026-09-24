@@ -33,6 +33,7 @@ cannot take the same one.
 | Fold only completed UTC days newer than the watermark | Today banked while still partial, then skipped once complete |
 | Advance watermarks only through completed days | The same |
 | Lock `(resource, metric type)` before any read-then-write of an all-time total: fold, adjust, or set | Two workers corrupt one all-time value, or both create one |
+| Every write of an all-time total upserts that day's `metric_daily_totals` row in the same transaction | Lifetime history misses a day, or records a total that rolled back |
 | Cadence stays at most half the platform's retention window | No headroom for a missed collection: one delayed sweep ages days out |
 | A gap past the retention window raises `collection_window_exceeded`, once per outage | Data loss stays silent |
 

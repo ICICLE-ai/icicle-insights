@@ -273,6 +273,96 @@ struct MetricAllTimeTests {
     }
   }
 
+  // MARK: - Daily snapshots
+
+  /// `(day, reading)` for every daily snapshot of `type`, oldest first.
+  private func snapshots(
+    on db: any Database, _ resourceID: Resource.IDValue, _ type: MetricType
+  ) async throws -> [String] {
+    try await MetricDailyTotal.query(on: db)
+      .filter(\.$resource.$id == resourceID)
+      .filter(\.$type == type)
+      .sort(\.$day)
+      .all()
+      .map { "\(UTCDay.string(from: $0.day))=\(Int($0.reading))" }
+  }
+
+  /// The history lifetime metrics never had. The total is one row updated in place, so each write
+  /// also upserts that UTC day's snapshot, which ends the day holding the day's closing value.
+  @Test
+  func `Every fold snapshots the day's closing total, one row per day`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let id = try resource.requireID()
+      let now = Date()
+      let today = UTCDay.string(from: now)
+      let tomorrow = UTCDay.string(from: now.addingTimeInterval(86_400))
+
+      try await Metric.foldDailyIntoAllTime(
+        on: app.db, resourceID: id, type: .clones, days: [day(-2, count: 5, from: now)], now: now)
+      #expect(try await snapshots(on: app.db, id, .clonesAllTime) == ["\(today)=5"])
+
+      // A second write the same day replaces that day's row rather than adding one.
+      try await Metric.foldDailyIntoAllTime(
+        on: app.db, resourceID: id, type: .clones, days: [day(-1, count: 7, from: now)], now: now)
+      #expect(try await snapshots(on: app.db, id, .clonesAllTime) == ["\(today)=12"])
+
+      // The next day starts a row of its own, and the previous day's closing value stays.
+      try await Metric.foldDailyIntoAllTime(
+        on: app.db, resourceID: id, type: .clones, days: [day(0, count: 3, from: now)],
+        now: now.addingTimeInterval(86_400))
+      #expect(
+        try await snapshots(on: app.db, id, .clonesAllTime) == ["\(today)=12", "\(tomorrow)=15"])
+    }
+  }
+
+  @Test
+  func `Set and adjust snapshot the total they write`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db, name: "icicle", platform: .huggingface)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let id = try resource.requireID()
+      let now = Date()
+      let yesterday = now.addingTimeInterval(-86_400)
+
+      try await Metric.setAllTime(
+        on: app.db, resourceID: id, type: .downloads, reading: 1000, now: yesterday)
+      try await Metric.setAllTime(on: app.db, resourceID: id, type: .downloads, reading: 1200)
+      // A hand-recorded reading moves the total, so it moves today's snapshot with it.
+      try await Metric.adjustAllTime(on: app.db, resourceID: id, type: .downloads, delta: 30)
+
+      #expect(
+        try await snapshots(on: app.db, id, .downloadsAllTime) == [
+          "\(UTCDay.string(from: yesterday))=1000", "\(UTCDay.string(from: now))=1230",
+        ])
+    }
+  }
+
+  /// Same transaction as the total, so a snapshot can never outlive a write that rolled back.
+  @Test
+  func `A rolled-back total leaves no snapshot`() async throws {
+    struct Abandon: Error {}
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let id = try resource.requireID()
+      let now = Date()
+
+      await #expect(throws: Abandon.self) {
+        try await app.db.transaction { db in
+          try await Metric.foldDailyIntoAllTime(
+            on: db, resourceID: id, type: .clones, days: [self.day(-1, count: 4, from: now)],
+            now: now)
+          throw Abandon()
+        }
+      }
+
+      #expect(try await MetricDailyTotal.query(on: app.db).count() == 0)
+      #expect(try await allTimeReading(on: app.db, id) == nil)
+    }
+  }
+
   /// The case from the defect report. `CollectDueResources` advances the due date when it
   /// dispatches, so before the fix a non-credential failure left that advance standing and cost a
   /// full interval: day 7 booked day 14, day 14 booked day 21, and the response on day 21 no
