@@ -36,7 +36,14 @@ struct HealthController: RouteCollection {
     do {
       // A count over `admins` rather than `SELECT 1`: it costs the same against a table bounded
       // by the number of people who administer this deployment, and it additionally proves the
-      // schema exists. A server whose migrations have not run is not ready to serve.
+      // schema exists.
+      //
+      // "The schema exists" is all it proves, and the distinction has cost a production outage.
+      // `admins` is created by an early migration, so this answers 200 while a *later* migration
+      // is still pending — the pod goes live and returns 500s on every route touching a column
+      // the binary expects and the database has not got. Detecting that would mean comparing
+      // registered migrations against `_fluent_migrations` on every probe, which is a different
+      // check with a different cost, not a wider version of this one.
       _ = try await Admin.query(on: req.db).count()
     } catch {
       req.logger.error(
