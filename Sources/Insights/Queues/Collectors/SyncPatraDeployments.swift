@@ -27,8 +27,21 @@ struct SyncPatraDeployments: AsyncJob, BackoffRetrying {
 
   /// Pages every card's deployments, sums them, and writes one `.deployments` reading.
   func dequeue(_ context: QueueContext, _ payload: PatraResource) async throws {
-    guard let resource = try await Resource.find(payload.id, on: context.application.db) else {
+    // Loads the account only to ask whether it is still live: this job never needs its name,
+    // but it should skip an orphan the same way the other collectors do. `withDeleted: true` for
+    // the reason `CollectDueResources` gives.
+    guard
+      let resource = try await Resource.query(on: context.application.db)
+        .filter(\.$id == payload.id)
+        .with(\.$account, withDeleted: true)
+        .first()
+    else {
       context.entryVanished(id: payload.id, job: Self.name)
+      return
+    }
+
+    guard !resource.accountIsDeleted else {
+      context.orphanSkipped(resource, job: Self.name)
       return
     }
 

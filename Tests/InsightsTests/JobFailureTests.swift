@@ -465,6 +465,34 @@ struct JobFailureTests {
     }
   }
 
+  // MARK: - Deleted accounts
+
+  /// The failure report loads the account too. A plain load threw `missingParent` for a resource
+  /// whose account was deleted mid-retry, and `try?` turned that into an alert naming a bare UUID
+  /// and a resource that was never re-booked.
+  @Test
+  func `A failure under a deleted account still names and re-books the resource`() async throws {
+    try await withInsightsApp { app in
+      let notifier = stubNotifier(on: app)
+      let resource = try await makeDueRepo(on: app)
+      resource.scheduleNextCollection()
+      try await resource.save(on: app.db)
+      let account = try #require(try await Account.find(resource.$account.id, on: app.db))
+      try await account.delete(on: app.db)
+
+      try await SyncGitHubRepoStats().error(
+        queueContext(for: app),
+        JobError.missingToken(id: resource.$account.id),
+        .init(id: try resource.requireID()),
+      )
+
+      #expect(notifier.recorded.first?.subject == "icicle-ai/insights")
+      let rebooked = try #require(
+        try await Resource.find(resource.id, on: app.db)?.nextCollectionAt)
+      #expect(abs(rebooked.timeIntervalSinceNow - 3600) < 60)
+    }
+  }
+
   // MARK: - Retention window
 
   @Test

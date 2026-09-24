@@ -59,6 +59,11 @@ hook, and the retry budget is fixed at dispatch, so throwing would spend four at
 roughly ten minutes rediscovering that a row is gone. A deleted subject is not a failure to recover
 from; it is work that no longer needs doing.
 
+A resource whose **account** is deleted is skipped the same way, but logged at `warning`. The API
+refuses to delete an account that still owns resources, so such an orphan predates that guard or
+was made by hand. The sweep leaves its due date alone, so restoring the account resumes collection
+on the next tick.
+
 ## Failure handling
 
 Failures divide into two kinds that want opposite treatment.

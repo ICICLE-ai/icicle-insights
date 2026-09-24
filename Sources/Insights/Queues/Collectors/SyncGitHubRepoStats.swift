@@ -75,13 +75,21 @@ struct SyncGitHubRepoStats: AsyncJob, BackoffRetrying {
 
   /// Resolves credentials, fetches all repository responses, then persists one coherent sweep.
   func dequeue(_ context: QueueContext, _ payload: GitHubResource) async throws {
+    // `withDeleted: true` so a job dispatched just before its account was deleted completes as
+    // a skip instead of throwing `missingParent` through its whole retry budget. See
+    // `CollectDueResources` for why the account is loaded this way everywhere.
     guard
       let resource = try await Resource.query(on: context.application.db)
         .filter(\.$id == payload.id)
-        .with(\.$account)
+        .with(\.$account, withDeleted: true)
         .first()
     else {
       context.entryVanished(id: payload.id, job: Self.name)
+      return
+    }
+
+    guard !resource.accountIsDeleted else {
+      context.orphanSkipped(resource, job: Self.name)
       return
     }
 

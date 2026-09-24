@@ -32,13 +32,19 @@ struct SyncHuggingFaceHubStats: AsyncJob, BackoffRetrying {
 
   /// Resolves credentials, fetches Hub statistics, and persists a coherent snapshot.
   func dequeue(_ context: QueueContext, _ payload: HuggingFaceResource) async throws {
+    // `withDeleted: true` and the skip below, for the same reason as `SyncGitHubRepoStats`.
     guard
       let resource = try await Resource.query(on: context.application.db)
         .filter(\.$id == payload.id)
-        .with(\.$account)
+        .with(\.$account, withDeleted: true)
         .first()
     else {
       context.entryVanished(id: payload.id, job: Self.name)
+      return
+    }
+
+    guard !resource.accountIsDeleted else {
+      context.orphanSkipped(resource, job: Self.name)
       return
     }
 

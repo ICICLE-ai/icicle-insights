@@ -422,6 +422,41 @@ struct ResourceControllerTests {
     }
   }
 
+  /// One level down from the test above. Deleting an account now requires deleting its
+  /// resources first, so the normal path leaves a card pointing at a deleted resource whose
+  /// account is deleted too, and a plain load of that account throws the same `missingParent`.
+  @Test
+  func `Index still succeeds after a linked resource and its account are both deleted`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let hfAccount = try await makeAccount(on: app.db, name: "hf", platform: .huggingface)
+      let hfAccountID = try hfAccount.requireID()
+      let hubResource = try await makeResource(
+        on: app.db, accountID: hfAccountID, name: "can_benchmark", type: .dataset)
+      let hubResourceID = try hubResource.requireID()
+
+      let patraAccount = try await makeAccount(on: app.db, name: "icicle-ai", platform: .patra)
+      let datasheet = try await makeResource(
+        on: app.db, accountID: try patraAccount.requireID(), name: "datasheet", type: .dataset)
+      try await makePatraCard(
+        on: app.db, resourceID: try datasheet.requireID(), hubResourceID: hubResourceID)
+
+      // The console's order: the resource first, then the account it no longer blocks.
+      for path in ["api/resources/\(hubResourceID)", "api/accounts/\(hfAccountID)"] {
+        try await app.testing().test(
+          .DELETE, path, headers: app.adminAuth,
+          afterResponse: { res async throws in #expect(res.status == .noContent) })
+      }
+
+      for path in ["api/resources", "api/resources/\(try datasheet.requireID())"] {
+        try await app.testing().test(
+          .GET, path,
+          afterResponse: { res async throws in #expect(res.status == .ok) })
+      }
+    }
+  }
+
   @Test
   func `The Hub keeps its longer cadence, having no window to lose`() {
     // The Hub reports downloadsAllTime outright, so a missed sweep costs series density and never

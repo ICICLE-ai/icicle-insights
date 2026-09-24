@@ -17,6 +17,7 @@ not a patch.
 | `FailureNotifier.notify` never throws | The worker clears a job only after `error()` returns, so a failing alert channel strands the job |
 | Every exhausted resource failure re-books its resource | The sweep's dispatch-time due date stands, so one failure costs a full cadence and gaps compound past the retention window |
 | The failure backoff ceiling stays well inside `retentionWindowDays - maxCollectionIntervalDays` | The retry policy itself becomes the cause of a lost day |
+| Collectors load a resource's account `withDeleted: true` and skip one that is deleted | A plain eager load throws `missingParent`, and the sweep loads every due resource in one query, so one orphan stops all collection |
 
 Named workers may scale freely. Valkey claims each available payload atomically, so two workers
 cannot take the same one.
@@ -75,6 +76,7 @@ aborts the boot.
 | DTOs are validated and normalised before becoming models | Invalid rows |
 | Database TLS defaults secure | Plaintext connections by omission |
 | Response-header middleware registers `at: .beginning` | Headers are applied on the way out, so anything later never sees an error response, and a 4xx without CORS headers is unreadable to the browser that caused it |
+| An account is deleted only once it owns no active resource and no vault | An orphaned resource: never collected, and a hazard to every eager load of its account |
 | Rate limiting fails open | A limiter that takes the API down with its counter store causes more harm than the abuse it prevents |
 
 ## Testing

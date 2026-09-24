@@ -57,6 +57,7 @@ at once and re-books hourly. Fix the credential and it resumes unattended.
 - Patra accounts need no credential either, but unlike those three, Patra **is** collected. Its
   jobs call the public API anonymously by design — a token would let them see records Patra marks
   private, and this dashboard is public. Skip **Add its credential** for a Patra account.
-- Deleting an account deletes its resources and their history. There is no undo.
+- An account can be deleted only once its resources and its credential are gone. Delete those
+  first; until then the **Delete** button is disabled and the API answers 409.
 
 #icicle-insights# #How-To# #Administrator# #catalog#

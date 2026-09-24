@@ -202,6 +202,39 @@ struct SyncJobTests {
     }
   }
 
+  /// A job already queued when its account was deleted. A plain eager load throws
+  /// `missingParent` here and the job burns its whole retry budget on it; every collector now
+  /// completes as a skip instead, without spending a request.
+  @Test
+  func `A sweep for a resource under a deleted account is a no-op in every collector`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let requests = stubPagedAPI(on: app) { _ in nil }
+
+      var ids: [Platform: Resource.IDValue] = [:]
+      for platform in [Platform.github, .huggingface, .patra] {
+        let account = try await makeAccount(on: app.db, name: "retired", platform: platform)
+        let accountID = try account.requireID()
+        _ = try await makeVault(on: app.db, accountID: accountID, name: "\(platform)-token")
+        let resource = try await makeResource(on: app.db, accountID: accountID, type: .model)
+        try await PatraCard(resourceID: try resource.requireID(), cardUUID: "\(platform)-card")
+          .create(on: app.db)
+        try await account.delete(on: app.db)
+        ids[platform] = try resource.requireID()
+      }
+
+      let context = queueContext(for: app)
+      try await SyncGitHubRepoStats().dequeue(context, .init(id: try #require(ids[.github])))
+      try await SyncHuggingFaceHubStats().dequeue(
+        context, .init(id: try #require(ids[.huggingface])))
+      try await SyncPatraDeployments().dequeue(context, .init(id: try #require(ids[.patra])))
+
+      #expect(requests.withLockedValue { $0 }.isEmpty)
+      #expect(try await Metric.query(on: app.db).count() == 0)
+    }
+  }
+
   /// Every fetch completes before anything is written, so a failure partway through leaves no
   /// half-swept resource — gauges without the traffic rows that share their timestamp.
   @Test

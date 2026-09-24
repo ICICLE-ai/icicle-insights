@@ -106,6 +106,16 @@ final class Resource: Model, @unchecked Sendable {
     self.deletedAt = deletedAt
   }
 
+  /// Whether the owning account has been soft-deleted while this resource was left active.
+  ///
+  /// Only answerable when `account` was eager-loaded with `withDeleted: true`. A plain eager load
+  /// never gets this far for an orphan: Fluent excludes the deleted account and throws
+  /// `missingParent` rather than returning it, which is why every collector that loads the
+  /// account opts into deleted rows and then asks this instead.
+  var accountIsDeleted: Bool {
+    account.deletedAt != nil
+  }
+
   /// From `now`, not the previous due date: after downtime a stale date would leave the
   /// resource due again immediately, dispatching once per missed interval.
   /// - Parameter now: The successful dispatch time from which the next interval begins.

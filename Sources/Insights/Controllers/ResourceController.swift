@@ -66,14 +66,20 @@ struct ResourceController: RouteCollection {
   /// `GET /resources/:id`) 500s — including the admin console's own call, which is the one this
   /// endpoint feeds — until someone fixes it at the database layer, since the UI that would let an
   /// admin undo the delete never loads either.
+  ///
+  /// The nested `account` loads carry `withDeleted: true` for the same reason one level down.
+  /// `AccountController.delete` requires an account's resources to be deleted first, so "delete
+  /// the resources, then the account" is the normal path, and it leaves a card pointing at a
+  /// deleted resource whose account is deleted too. A plain load of that account throws the
+  /// same `missingParent`.
   func index(req: Request) async throws -> [Resource.Public] {
     try await Resource.query(on: req.db)
       .with(\.$patraCards) { card in
         card.with(\.$hubResource, withDeleted: true) { hub in
-          hub.with(\.$account)
+          hub.with(\.$account, withDeleted: true)
         }
         card.with(\.$repositoryResource, withDeleted: true) { repository in
-          repository.with(\.$account)
+          repository.with(\.$account, withDeleted: true)
         }
       }
       .all()
@@ -127,7 +133,8 @@ struct ResourceController: RouteCollection {
   /// `withDeleted: true` on both eager loads for the same reason `index` above carries it: an
   /// `@OptionalParent` whose id survives its target's soft delete throws `missingParentError`
   /// rather than resolving to nil, so omitting this turns one soft-deleted resource into a
-  /// permanent 500 for every card that ever pointed at it.
+  /// permanent 500 for every card that ever pointed at it. The nested `account` loads carry it
+  /// too, as `index` explains.
   func show(req: Request) async throws -> Resource.Public {
     guard let resourceID = req.parameters.get("resourceID", as: UUID.self) else {
       throw Abort(.notFound)
@@ -137,10 +144,10 @@ struct ResourceController: RouteCollection {
       .filter(\.$id == resourceID)
       .with(\.$patraCards) { card in
         card.with(\.$hubResource, withDeleted: true) { hub in
-          hub.with(\.$account)
+          hub.with(\.$account, withDeleted: true)
         }
         card.with(\.$repositoryResource, withDeleted: true) { repository in
-          repository.with(\.$account)
+          repository.with(\.$account, withDeleted: true)
         }
       }
 

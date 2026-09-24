@@ -92,7 +92,7 @@ Two token kinds are accepted. See [Authentication](../explanation/authentication
 |---|---|
 | 401 | Nobody authenticated. Absent, malformed, expired, or foreign-tenant token |
 | 403 | Authenticated, but not permitted |
-| 409 | Conflict, such as a duplicate vault name for one account |
+| 409 | Conflict, such as a duplicate vault name for one account, or deleting an account that still owns resources or a credential |
 | 429 | Rate limited. Honour `Retry-After` |
 | 502 | An upstream Tapis failure, not the caller's fault |
 | 503 | Not ready, or minting attempted with no signing keyset |
