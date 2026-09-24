@@ -26,7 +26,7 @@ concurrency:
 #
 #   test   debug build + suite      ─┐
 #   build  release binary           ─┼─> image (packages the binary, no compile) ─> release (tags)
-#   web    dashboard bundle         ─┘
+#   web    dashboard check + build  ─┘
 #
 # The release binary used to be compiled inside the Docker build, after `test` had already
 # compiled everything once in debug. Two cold compiles, one after the other, was twenty minutes.
@@ -177,26 +177,30 @@ jobs:
     runs-on: ubuntu-24.04
     defaults:
       run:
-        working-directory: Dashboard
+        working-directory: web
 
     steps:
       - uses: actions/checkout@v4
 
-      # Node 24 to match the Dockerfile's `frontend-build` stage.
-      - uses: actions/setup-node@v4
+      # The same Deno the Dockerfile's `frontend-build` stage uses. `cache` keeps Deno's download
+      # cache between runs, keyed on deno.lock.
+      - uses: denoland/setup-deno@v2
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: Dashboard/package-lock.json
+          deno-version: 2.9.7
+          cache: true
 
-      - run: npm ci --no-audit --no-fund
+      # `--frozen` fails on a lockfile that would change, rather than resolving something new in CI.
+      - run: deno install --frozen
 
-      - run: npm run build -- --output-path=dist-ci
+      # Type-check and unit-test before building: the Angular job only ever built, so a broken
+      # test there never failed a run.
+      - run: deno task check
+      - run: deno task test
+      - run: deno task build
 
-      # The application builder nests browser output one level down; Vapor serves it from
-      # Public/ directly, so the tarball holds the contents of `browser/`, not the folder.
+      # adapter-static writes the finished site to build/; Vapor serves it from Public/ as-is.
       - name: Package
-        run: tar -cf ../web.tar -C dist-ci/browser .
+        run: tar -cf ../web.tar -C build .
 
       - uses: actions/upload-artifact@v4
         with:

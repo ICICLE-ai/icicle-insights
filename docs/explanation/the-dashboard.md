@@ -1,117 +1,104 @@
 # The dashboard
 
-How the Angular application is built, served, and authenticated. For developers.
+How the SvelteKit application in `web/` is built, served, fed and authenticated. For developers.
 
-## One pod, no Node at runtime
+## One pod, no JavaScript runtime
 
 Vapor serves everything: the API under `/api`, and the built frontend as static files.
 
-A Node build stage in the `Dockerfile` compiles Angular and emits the bundle into Vapor's public
-directory. The runtime image contains no Node at all. CI builds the same bundle in its own `web`
-job instead; see [CI pipeline](../reference/ci-pipeline.md).
+A Deno stage in the `Dockerfile` builds the app with SvelteKit's static adapter into Vapor's public
+directory. The runtime image contains no Deno or Node at all. CI builds the same site in its own
+`web` job instead; see [CI pipeline](../reference/ci-pipeline.md).
 
-**No server-side rendering.** SSR would put Node in the runtime image or add a second pod. This is
-a dashboard, not a page that needs search indexing.
+**A single-page app, not prerendered pages.** Every screen is data, so there is nothing worth
+rendering ahead of time. The static adapter writes one `index.html` fallback, and Vapor serves it
+for every client-side route.
 
-**No CDN.** A single-region research dashboard behind an ingress does not have the traffic profile
-to justify one, and it adds a cache-invalidation failure mode. Hashed bundles with immutable cache
-headers plus ingress compression capture nearly all of the benefit.
+**No CDN.** A single-region research dashboard does not have the traffic to justify one. Hashed
+bundles with immutable cache headers plus ingress compression capture nearly all of the benefit.
 
 ## Serving
 
-**SPA fallback.** A catchall serves the application's entry point for non-API deep links. This is
-safe because Vapor's router prefers constant path components, so the API, the docs, the OpenAPI
-document, and the health probes all still win. Unknown API paths and file-like paths stay real 404s
-rather than becoming misleading HTML 200s.
+**SPA fallback.** A catchall serves the entry point for non-API deep links. Vapor's router prefers
+constant path components, so the API, the docs and the health probes still win. Unknown API paths
+and file-like paths stay real 404s rather than becoming misleading HTML 200s.
 
-**Cache headers.** Long-lived and immutable for hashed bundles; no-cache for the entry point.
-Without the second, clients pin to a stale entry point referencing chunks that no longer exist.
+**Cache headers.** Everything under `/_app/immutable/` is content-hashed by SvelteKit and cached
+for a year. The entry point is `no-cache`, or clients pin to one referencing chunks that are gone.
+
+## Where the numbers come from
+
+Screens render view models shaped like the server's `/api/insights/*` responses: tiles, series and
+resource rows. Two sources can produce them.
+
+- **Summary.** The server aggregates in SQL over the whole history.
+- **Legacy.** The browser computes the same shapes from `/api/metrics`, one request per metric type.
+
+The app asks `/api/insights/summary` once per visit. A 404 means the server predates it, and the
+legacy source takes over. Any other failure is shown, not papered over.
+
+The legacy source inherits two limits. `/api/metrics` returns at most 1,000 readings per request,
+so a metric past that has its oldest history cut, and the overview says which metrics. And
+all-time totals are one row updated in place, so they get a value and no trend.
+
+Totals carry each resource's newest reading forward day by day. Resources are collected on their
+own weekly schedules, so summing only one day's readings would collapse on most days.
 
 ## Anonymous is the normal case
 
-Reads need no credential, so the application renders fully for a signed-out visitor. Administrator
-features are progressive enhancement, not a gate.
+Reads need no credential, so the app renders fully for a signed-out visitor. Administration lives
+under `/admin` behind its own sign-in.
 
-There is no `/me` route. Admin state is discovered by attempting an admin-only read and reading the
-status code. See [HTTP API](../reference/http-api.md).
+There is no `/me` route. The console asks `GET /api/admins`: 200 is an administrator, 401 a token
+that did not verify, 403 a valid user without admin rights. See [HTTP API](../reference/http-api.md).
 
 ## Getting a token
 
-The frontend resolves a token into memory, in this order:
+The app holds a token in memory only, from one of three places:
 
-1. a `postMessage` from an allowed parent origin,
-2. a readable `X-Tapis-Token` cookie on the Insights document,
-3. manual paste, for recovery and development.
+1. a readable `X-Tapis-Token` cookie on the Insights document,
+2. a `postMessage` from the parent frame,
+3. a token pasted on the sign-in screen, for recovery and development.
 
 **Memory only.** Web storage survives the tab and is readable by any script that achieves XSS.
 
-The parent handoff is the path that works everywhere. An iframe cannot generally read its parent's
-cookies across origins; the cookie route only works when Tapis sets a shared-domain, non-HttpOnly
-cookie covering the pod hostname, which is a deployment detail and must not be the only path.
+A message is accepted only from `window.parent` itself, and only from an origin in
+`VITE_TRUSTED_PARENT_ORIGINS`, which defaults to `https://icicleai.tapis.io`. The Angular app had
+the same check but never configured the list, so an embedded dashboard never received a token.
 
-```js
-// Parent
-frame.contentWindow.postMessage({ tapisToken: token }, INSIGHTS_ORIGIN);
-
-// Insights
-window.addEventListener('message', (event) => {
-  if (event.origin !== EXPECTED_PARENT_ORIGIN) return;   // never skip this
-  token = event.data.tapisToken;
-});
-```
-
-The origin check is not optional. Without it any page that can reach the frame can inject a token.
-
-The server accepts only the resulting bearer header. It never authenticates from a cookie — see
-[Authentication](authentication.md) for why.
-
-Embedding also needs the server's permission. See
-[Embed the dashboard](../how-to/embed-the-dashboard.md).
+The server accepts only the resulting bearer header. See [Authentication](authentication.md), and
+[Embed the dashboard](../how-to/embed-the-dashboard.md) for the server side of embedding.
 
 ## Development loop
 
-The dev server proxies `/api` to Vapor, so browser requests are same-origin and hot reload keeps
-working. No CORS configuration is needed through the proxy.
+`just web` runs Vite on port 5174 and proxies `/api` and `/openapi.json` to Vapor on 8080, so
+requests are same-origin and hot reload works. Set `INSIGHTS_API` to proxy somewhere else.
 
-The alternative — building straight into Vapor's public directory on watch — makes development
-byte-identical to production but loses hot reload. The proxy is the better default.
+API types in `web/src/lib/api/schema.d.ts` are generated from the running server's OpenAPI
+document by `just web-types`. Regenerate after a server change rather than editing them.
 
-Proxy configuration is read only at startup. Restart after changing it.
+## Provenance
 
-## The provenance graph
+Patra imports models and datasets that already live on another registry, so one artifact is often
+several resource rows. Each Patra card links its row to the others it names, and the connected
+groups of those links are the artifacts. The Provenance page draws one card per group, led by the
+row that recorded the links, in a fixed order so the same catalog always draws the same way.
 
-Patra imports models and datasets that already live in another registry. The Provenance tab's
-`provenance-graph.ts` draws one node per `Resource` and one edge per link a Patra card recorded
-between them, so the same real artifact under two registries reads as one connected pair, not two
-disconnected catalog rows. There is no hub node: a resource earns a place in the graph only by
-taking part in an edge, and its label is its name over `platformLabel(platform)`.
+Most model cards produce no link, and that is correct. Their locations name accounts this
+deployment does not track. Three datasheets name Hugging Face datasets under `icicle-ai`, so those
+do.
 
-**Model card links mostly render empty, and that is correct, not a bug.** Patra resolves a
-`location` for most of its live model cards, but none name an account this deployment tracks. Its
-Hugging Face URLs belong to third-party accounts, and its GitHub URLs name
-`ICICLE-ai/camera_traps`, a different repository from the `ICICLE-ai/Camera_Trap` Insights
-actually collects.
+## Charts
 
-Datasheets are different: three of Patra's live datasets carry a Hugging Face identifier under the
-`icicle-ai` account Insights already tracks (CAN Benchmark, the HLO feature dataset, and the
-Organization SIC Code dataset), so those three do produce edges. The rest fill in once someone
-registers the remaining matching accounts and resources.
-
-## Accessibility is a gate, not a goal
-
-Every chart ships with an exact table alternative, keyboard support, and an accessible name. New
-work stays AXE-clean in both themes.
-
-A chart without a table alternative is unreadable to a screen reader, and this is a public dashboard
-for a publicly funded institute.
+Every chart has a table view with every value, a keyboard path, and an accessible name. Platform
+colours come from one validated palette and follow the platform, never its rank, so filtering
+never repaints a line.
 
 ## Content-Security-Policy
 
-Only `frame-ancestors` ships today.
-
-A fuller policy waits on settling the bundle's asset origins, because a wrong `script-src` breaks
-the application rather than degrading it. The Angular application vendors its runtime and chart
-dependencies, but the API reference at `/docs` still loads from a CDN. Vendor that or account for it
-explicitly before extending the policy.
+Only `frame-ancestors` ships today. The bundle serves its own scripts and fonts, but SvelteKit
+starts the app from an inline script, so a `script-src` needs that script's hash. SvelteKit's
+`kit.csp` setting can emit it. The API reference at `/docs` still loads from a CDN; account for
+that before extending the policy.
 
 #icicle-insights# #Explanation# #Developer# #frontend#

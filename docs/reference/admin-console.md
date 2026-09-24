@@ -2,158 +2,133 @@
 
 Every screen in the console, and what each one shows. For administrators.
 
-The console lives at `/admin`. It appears only for administrators; everyone else sees the public
-dashboard. Access is confirmed by the API on every load, never inferred from the token.
+The console lives at `/admin`, with its sections in a sidebar. Signing in asks the API whether the
+token's holder is an administrator; the answer is never inferred from the token itself.
 
-Two top-level modes sit in the header: **Overview** is the public dashboard, **Administration** is
-the console.
+| Sign-in message | Means |
+|---|---|
+| This token did not verify | Expired, malformed, or from another Tapis tenant (401) |
+| Signed in but is not an administrator | A valid Tapis user without admin rights (403) |
+
+Every table has one actions menu (`…`) per row. An action that cannot run says why in the menu.
+Create and edit open a side sheet; a failed request keeps the sheet open with the server's reason.
 
 ## Operations
 
 `/admin` — the landing screen. Read it first when something looks wrong.
 
-![Operations console](../../assets/screenshots/admin-operations.png)
+| Section | Shows |
+|---|---|
+| Waiting | Jobs queued on `metrics` |
+| In progress | Jobs a worker has claimed |
+| Scheduler | Healthy, Stale, Not seen yet, or Valkey unreachable, with the last heartbeat |
+| Recent failures | The 50 newest exhausted jobs: severity, subject, job, cause, and when. Select a cause for its details |
+| Watermarks | How far each rolling metric has been counted into its all-time total, oldest first |
 
-Four status tiles across the top:
+A Stale scheduler is the first sign collection has stopped. "Not seen yet" is normal on a new
+deployment until the scheduler's first run.
 
-| Tile | Reads | Clear when |
-|---|---|---|
-| Collections on schedule | Resources collected recently, out of the total | Nothing is overdue |
-| Collection pipeline | Jobs waiting, running, and failures in 7 days | Scheduler online, queue draining |
-| Vault credentials healthy | Live credentials, out of the total | None expired or expiring within 30 days |
-| Active service tokens | Live webhook tokens | None expiring within 30 days |
+## Accounts
 
-The **Operational watchlist** below lists anything needing review, most urgent first. Empty is the
-healthy state.
-
-**Administrator context** on the right reports the current session: identity, where the token came
-from, scheduler heartbeat, watermark count, recent job failures, and the administrator count.
-A stale scheduler timestamp is the first sign collection has stopped.
-
-## Catalog
-
-`/admin/catalog` — what Insights collects. Four tabs.
-
-### Accounts
-
-A platform account owns resources and at most one vault credential.
-
-![Catalog accounts](../../assets/screenshots/admin-catalog-accounts.png)
+`/admin/accounts` — platform accounts. Each owns resources and at most one vault credential.
 
 | Column | Meaning |
 |---|---|
 | Account | Name on the platform |
-| Registry | GitHub, GHCR, Hugging Face, npm, PyPI, or Patra |
+| Platform | GitHub, Hugging Face, Patra, GHCR, npm, or PyPI |
 | Resources | How many resources this account owns |
-| Vault | Whether a credential is configured |
-| Created | When the account was registered |
+| Credential | Whether a vault credential is stored |
+| Added | When the account was registered |
 
-See [Register an account](../how-to/register-an-account.md).
+**Delete** is offered only once the account has no resources and no credential. See
+[Register an account](../how-to/register-an-account.md).
 
-### Resources
+## Resources
 
-Each resource belongs to one account and carries its own collection cadence.
-
-![Catalog resources](../../assets/screenshots/admin-catalog-resources.png)
+`/admin/resources` — what is collected, filterable by name, kind or account.
 
 | Column | Meaning |
 |---|---|
-| Resource | Name on the platform |
+| Resource | Name on the platform, stored lowercase |
 | Kind | Agent, container, dataset, model, package, repository, or service |
-| Account | Owning account |
-| Cadence | Days between successful collections. Default 7 |
-| Next collection | When it next becomes eligible. `Not set` means it is never swept |
+| Account | Owning account and its platform |
+| Cadence | Days between collections. Default 7 |
+| Next collection | When it next becomes due |
 
-Cadence is capped per platform, at half that platform's retention window where one exists. See
-[Collection schedule](collection-schedule.md) and [Add a resource](../how-to/add-a-resource.md).
+Cadence is capped per platform: 7 days on GitHub, 30 elsewhere. Editing cannot move a resource to
+another account. See [Collection schedule](collection-schedule.md) and
+[Add a resource](../how-to/add-a-resource.md).
 
-### Releases and Metrics
+## Releases
 
-Two further tabs list published releases and individual metric readings. Both are read-mostly;
-readings normally arrive from collection rather than by hand.
+`/admin/releases` — published versions, recorded to the month. Add, edit, or delete.
+
+## Metrics
+
+`/admin/metrics` — the 100 newest readings.
+
+| Action | Effect on the all-time total |
+|---|---|
+| Record reading | Adds the reading |
+| Correct reading | Moves the total by the difference |
+| Delete reading | Takes the reading back out |
+
+All-time rows cannot be recorded or corrected, only deleted. Collection then rebuilds the total
+from the next uncounted day, not from the beginning.
 
 ## Vaults
 
 `/admin/vaults` — platform credentials, by metadata only.
 
-![Vaults](../../assets/screenshots/admin-vaults.png)
-
 | Column | Meaning |
 |---|---|
-| Credential | Name of the secret in Tapis Vault, generated from the account and registry |
 | Account | Which account uses it |
-| Expires | Operational expiry you recorded |
-| Last rotated | When the value was last written |
+| Secret name | The secret's name in Tapis Vault |
+| Expires | The expiry you recorded. Marked within 14 days, and once past |
 
-Adding one asks for three things: the account, the platform token, and an expiry date. The name is
-derived rather than entered, and previewed before you save. Only accounts without a credential
-appear in the picker, so there is at most one per account.
-
-**Secret values are never returned to this screen.** The rows hold names and dates. The value
-lives in Tapis Vault and is read in-process by collection jobs.
-
-**Rotate** replaces the stored value and records a new expiry in one operation.
+Adding asks for the account, the token, and its expiry date. Only accounts without a credential
+are offered. **Replace token** writes a new value and expiry. **Secret values are never returned
+to this screen.**
 
 ## Service tokens
 
 `/admin/service-tokens` — write access for deployed services.
 
-![Service tokens](../../assets/screenshots/admin-service-tokens.png)
-
-A service token lets one deployed service post metrics for exactly one resource. Minting asks for
-the resource, a deployment label, and a lifetime in days — 1 to 365, defaulting to 90. Tokens can be
-revoked immediately.
-
-Tokens can only be minted for a resource whose kind is **Service**. With none registered, the
-screen says so rather than offering an unusable form.
-
-Two controls sit at the top:
-
-| Control | Does |
+| Column | Meaning |
 |---|---|
-| Mint token | Issues a token for one service resource. Shown once, never again |
-| Rotate signing key | Adds a new signing key. Existing tokens keep working |
+| Label | Where the token is deployed |
+| Service | The one resource it may report for |
+| Status | Active, Revoked, or Expired |
+| Expires | When it stops working |
 
-Revoked rows stay visible as an audit trail. See
-[Issue a service token](../how-to/issue-a-service-token.md).
+**Issue token** asks for a resource of kind Service, a label, and a lifetime of 1 to 365 days
+(default 90). The token is shown once, with the endpoint to post to. **Rotate signing key** adds a
+key; existing tokens keep working. See [Issue a service token](../how-to/issue-a-service-token.md).
 
 ## Administrators
 
 `/admin/administrators` — who holds administrator access.
 
-![Administrators](../../assets/screenshots/admin-administrators.png)
-
-*Usernames in this screenshot are placeholders.*
-
 | Column | Meaning |
 |---|---|
-| Username | Tapis username |
-| Access source | `Protected root` for the environment root, `Granted record` for everyone else |
-| Granted by | Who added them, or `ROOT_ADMIN_USERNAME` for the root |
-| Granted | When |
+| Username | Tapis username. The root is marked Root |
+| Added by | Who granted it, or Deployment environment for the root |
+| Since | When it was granted |
 
-The root administrator comes from `ROOT_ADMIN_USERNAME` and **cannot be removed here**. It is the
-recovery path: administrators are managed from this screen, so deleting the last row would
-otherwise lock everyone out of the screen needed to fix it.
-
-Revocation takes effect on the next request, not at the next restart. See
-[Manage administrators](../how-to/manage-administrators.md).
+The root comes from `ROOT_ADMIN_USERNAME` and cannot be removed here. Removal takes effect on the
+next request. See [Manage administrators](../how-to/manage-administrators.md).
 
 ## Public dashboard
 
-`/` — what an anonymous visitor sees. Four tabs.
+`/` and its sibling pages — what an anonymous visitor sees. Filters in the header apply to every
+page and live in the URL, so any view can be shared as a link.
 
-| Tab | Shows |
+| Page | Shows |
 |---|---|
-| Portfolio | Resource mix, and all-time totals per metric |
-| Top Resources | Ranked reach across resources |
-| Trends | Change over time, per metric, over a chosen window |
-| Releases | Published release history |
-| Provenance | Resources Patra recorded as the same artifact under another registry |
-
-![Public dashboard](../../assets/screenshots/dashboard-portfolio.png)
-
-Every figure is a point-in-time reading rather than a live counter, and each states the window it
-covers.
+| Overview | Metric tiles with change and trend, a chart of the selected metric by platform, catalog mix, and the resources reporting it |
+| Resources | Every resource in scope, sortable, with change over the range |
+| Resource | One resource: tiles, a chart per metric, releases, and the same artifact on other registries |
+| Releases | Releases per month and the newest releases |
+| Provenance | Artifacts Patra recorded under more than one registry |
 
 #icicle-insights# #Reference# #Administrator# #console#

@@ -7,7 +7,7 @@ import Vapor
 /// 500 is exactly the page worth protecting.
 ///
 /// The Content-Security-Policy emitted here covers `frame-ancestors` and nothing else. A full
-/// policy needs the Angular bundle's asset origins settled, and a wrong `script-src` breaks the
+/// policy needs the dashboard bundle's script hashes settled, and a wrong `script-src` breaks the
 /// app rather than degrading it. `frame-ancestors` does not depend on any of that, which is why
 /// it ships ahead of the rest.
 struct SecurityHeadersMiddleware: AsyncMiddleware {

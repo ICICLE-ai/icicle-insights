@@ -8,6 +8,11 @@ collected a metric on demand, and seen it appear on the dashboard.
 You need administrator access. If you do not have it, start with
 [Get admin access](../how-to/get-admin-access.md).
 
+> **This walkthrough predates the rebuilt console.** The console now has a sidebar instead of tabs,
+> and the catalog's tabs are separate sections. The steps still apply; the screen names and
+> screenshots below do not yet. [Admin console](../reference/admin-console.md) describes the
+> current screens. See `TODO.md`.
+
 ## 1. Find your way around
 
 Open the dashboard and sign in.

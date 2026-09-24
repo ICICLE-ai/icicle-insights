@@ -59,8 +59,13 @@ The dashboard holds a token in memory only. The parent sends it.
 frame.contentWindow.postMessage({ tapisToken: token }, INSIGHTS_ORIGIN);
 ```
 
-Target the exact Insights origin, never `*`. The dashboard checks the sender's origin before
-accepting anything.
+Target the exact Insights origin, never `*`. The dashboard accepts a token only from its direct
+parent frame, and only from an origin in `VITE_TRUSTED_PARENT_ORIGINS`. That list is built into the
+bundle and defaults to `https://icicleai.tapis.io`. For another parent, rebuild with it set:
+
+```bash
+container build --build-arg VITE_TRUSTED_PARENT_ORIGINS=https://parent.example.org --tag icicle-insights .
+```
 
 Without a token the dashboard still renders fully, as a public dashboard. Administration features
 appear only once a token arrives.
@@ -88,7 +93,8 @@ sends a token.
 the parent's origin, or the service was not restarted.
 
 **The frame loads but stays anonymous.** The token never arrived. Check the parent targets the exact
-Insights origin in its `postMessage`, and that the dashboard's expected parent origin matches.
+Insights origin in its `postMessage`, and that the parent's origin is in
+`VITE_TRUSTED_PARENT_ORIGINS` for the build you deployed.
 
 **Cross-origin API calls arrive anonymous.** The browser is refusing to send the header. Add the
 parent's origin to `CORS_ORIGINS`.

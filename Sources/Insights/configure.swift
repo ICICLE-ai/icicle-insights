@@ -64,10 +64,10 @@ func configure(_ app: Application) async throws {
   )
 
   // Both policies sit outside FileMiddleware in the chain so they can classify the response it
-  // returns. Hashed Angular assets are immutable; index.html and SPA deep links revalidate.
+  // returns. Hashed dashboard assets are immutable; index.html and SPA deep links revalidate.
   app.middleware.use(StaticAssetCacheMiddleware(), at: .beginning)
 
-  // Serve the Angular artifacts produced into /Public by the Docker frontend stage.
+  // Serve the dashboard's static build, produced into /Public by the Docker frontend stage.
   app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
 
   // Postgres serves its image's self-signed `CN=localhost` cert, which no CA can vouch

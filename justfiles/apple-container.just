@@ -112,7 +112,7 @@ up: runtime
 # Image and containers
 # ---------------------------------------------------------------------------
 
-# The Dockerfile does `COPY . .`, so the context is assembled by hand. The Dashboard's
+# The context is assembled by hand rather than handing over the repository. The dashboard's
 # node_modules is the wrong platform's binaries and hundreds of megabytes, and that cost
 # lands before the builder ever reads .dockerignore.
 
@@ -131,9 +131,9 @@ build: builder
     # Tests is included because SwiftPM errors when a declared target's directory
     # is missing, even building only the Insights product.
     cp -R Sources Tests Public "$context/"
-    mkdir -p "$context/Dashboard"
-    tar -cf - -C Dashboard --exclude=node_modules --exclude=dist --exclude=.angular . \
-      | tar -xf - -C "$context/Dashboard"
+    mkdir -p "$context/web"
+    tar -cf - -C web --exclude=node_modules --exclude=build --exclude=.svelte-kit . \
+      | tar -xf - -C "$context/web"
     cd "$context"
     container build --dns '{{ build_dns }}' --dns '{{ build_dns_alt }}' \
       --tag '{{ image }}' --file Dockerfile .
