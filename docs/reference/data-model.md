@@ -84,6 +84,35 @@ cites it. Only an `alternate_identifier` of type `HuggingFace`, or a `related_id
 `relation_type` is `IsVariantFormOf` or `IsIdenticalTo`, counts as the same artifact elsewhere. See
 `SyncPatraCatalog.resolveDatasheetProvenance` for the full rule.
 
+**Descriptive columns** on `patra_cards`, for display only. The source is the card's detail
+response unless marked *list*, meaning its `/datasheets` entry. "First" means the first entry
+with a usable value.
+
+| Column | Type | Model card source | Datasheet source |
+|---|---|---|---|
+| `description` | text | `short_description`, else `ai_model.description`, else `full_description` | First `descriptions[].description` |
+| `author` | text | `author`, else `ai_model.owner` | *list* `creator`, else first `creators[].creator_name` |
+| `category` | text | `categories` | *list* `category`, else first `subjects[].subject` |
+| `license` | text | `ai_model.license` | First `rights_list[].rights` |
+| `framework` | text | `ai_model.framework` | — |
+| `model_type` | text | `ai_model.model_type` | — |
+| `input_type` | text | `input_type` | — |
+| `accuracy` | double | `ai_model.test_accuracy`, unscaled, normally 0–1 | — |
+| `keywords` | text | `keywords`, the raw comma-separated string | — |
+| `is_gated` | bool | `is_gated` | — |
+| `size` | text | — | `size` |
+| `format` | text | — | `format` |
+| `publication_year` | int | — | `publication_year` |
+
+| Rule | Detail |
+|---|---|
+| Nullable | Every column. Patra leaves many of these null itself |
+| Refreshed | Rewritten by every catalog sweep, for existing cards as well as new ones |
+| Cleaned | Strings are trimmed. An empty string is stored as null |
+| Lenient | A value of an unexpected type is stored as null; the sweep does not fail |
+| Also accepted | `keywords` as an array of strings, joined with `, `. `test_accuracy` and `publication_year` as numeric strings |
+| Before the first sweep | Rows from before `PatraCardDetails` stay null until the next catalog sweep. There is no backfill |
+
 **`service_tokens`**
 
 | Field | Meaning |
@@ -137,6 +166,7 @@ Applied in order, all registered in `configure.swift`.
 | `CollectionBackoff` | Collection history, and clamps GitHub cadences to the current cap |
 | `PatraPlatform` | The `patra`, `agent`, and `deployments` enum values, and `patra_cards` |
 | `MetricDailyTotals` | `metric_daily_totals`. No backfill |
+| `PatraCardDetails` | The descriptive columns on `patra_cards`. No backfill; the next catalog sweep fills them |
 | `ICICLESnapshotJuly2026` | Seed data. **Development only** |
 | `PatraCatalogAugust2026` | Seed data. **Development only** |
 
