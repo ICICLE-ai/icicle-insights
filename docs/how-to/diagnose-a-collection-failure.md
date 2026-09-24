@@ -60,7 +60,7 @@ Check its **Next collection** date on the Catalog → Resources screen.
 
 | Shows | Means |
 |---|---|
-| `Not set` | Never swept. Correct for GHCR, npm, and PyPI, which have no collector yet |
+| `Not set` | Never booked. The sweep skips it. New resources are created due, so only older or hand-made rows show this |
 | A future date | Not due. Normal |
 | A past date | Due, but the sweep is not running or is failing |
 

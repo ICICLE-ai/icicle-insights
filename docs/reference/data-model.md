@@ -34,7 +34,7 @@ erDiagram
 
 | Field | Meaning |
 |---|---|
-| `next_collection_at` | When this resource may next be dispatched. Null means never |
+| `next_collection_at` | When this resource may next be dispatched. Null means never. Set to the creation instant on create |
 | `collection_interval_days` | Spacing booked after a successful dispatch. Default 7 |
 | `last_collected_at` | When a collection last *succeeded*. Null until the first one |
 | `stall_notified_at` | When the retention-window alert last fired. Cleared on the next success |

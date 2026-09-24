@@ -52,6 +52,9 @@ Patra's API does not publish agents today.
 
 The Resources screen shows the resource with a **Next collection** date about one cadence away.
 
+A **Next collection** date of now or earlier means the immediate collection could not be queued.
+The next hourly sweep collects it. No action is needed.
+
 To see readings sooner, run a collection now — see
 [Run collection immediately](run-collection-immediately.md).
 

@@ -88,6 +88,9 @@ struct ResourceController: RouteCollection {
 
   @Sendable
   /// Creates, immediately collects, and schedules a resource under an existing account.
+  ///
+  /// The resource is inserted already due, so a first collection that cannot be dispatched is
+  /// picked up by the next hourly sweep rather than never.
   func create(req: Request) async throws -> Response {
     let resource = try req.content.decode(Resource.Create.self).toModel()
 
@@ -103,6 +106,13 @@ struct ResourceController: RouteCollection {
       "collectionIntervalDays",
     )
 
+    // Due from the moment it exists. The row used to be inserted with no due date and booked only
+    // after a successful dispatch, so a dispatch that threw (Valkey unreachable) left it NULL, and
+    // the sweep's `<= now` filter never matches NULL: the resource was silently never collected.
+    // Inserted due, the worst a failed dispatch can cost is waiting for the next hourly sweep.
+    let now = Date()
+    resource.nextCollectionAt = now
+
     try await conflictOnConstraintFailure(
       "A \(resource.type.rawValue) named '\(resource.name)' already exists for this account.",
     ) {
@@ -110,12 +120,31 @@ struct ResourceController: RouteCollection {
     }
 
     // Collect now rather than waiting on the sweep, which could be up to an hour away.
-    try await req.queues(.metrics).dispatchSync(
-      for: resource,
-      platform: account.platform,
-      logger: req.logger,
-    )
-    resource.scheduleNextCollection()
+    //
+    // A dispatch failure is logged, not thrown. The row is already committed and due, so the
+    // resource *was* created and will be collected; answering 500 would tell the admin otherwise,
+    // and their retry would hit the unique index and get a confusing 409. Only the head start is
+    // lost, which is the same trade `CollectDueResources` makes when one dispatch fails.
+    do {
+      try await req.queues(.metrics).dispatchSync(
+        for: resource,
+        platform: account.platform,
+        logger: req.logger,
+      )
+    } catch {
+      req.logger.error(
+        "Could not dispatch the first collection for a new resource; the next sweep will collect it.",
+        metadata: [
+          "resource": .string(resource.id?.uuidString ?? "unsaved"),
+          "error": .string(String(reflecting: error)),
+        ]
+      )
+      return try await resource.toPublic().encodeResponse(status: .created, for: req)
+    }
+
+    // The dispatch is the lease, exactly as in the sweep: book the next collection from it, so
+    // the sweep does not dispatch a second job while this one is outstanding.
+    resource.scheduleNextCollection(from: now)
     try await resource.save(on: req.db)
 
     return try await resource.toPublic().encodeResponse(status: .created, for: req)
