@@ -26,6 +26,9 @@
 	} = $props();
 
 	const card = $derived(resource.card ?? null);
+	// Patra records 0 when no accuracy was measured; showing "0.0% test accuracy" would read as a
+	// score. Only a positive figure is one.
+	const hasAccuracy = $derived((card?.accuracy ?? 0) > 0);
 	const id = $derived(resource.id!.toLowerCase());
 
 	const facts = $derived(
@@ -50,11 +53,13 @@
 </script>
 
 <article
-	class="group relative flex h-full flex-col gap-3 rounded-xl border bg-card p-4 transition-colors hover:border-ring/60"
+	class="group relative flex h-full min-w-0 flex-col gap-3 rounded-xl border bg-card p-4 transition-colors hover:border-ring/60"
 >
 	<header class="flex items-start justify-between gap-3">
 		<div class="min-w-0">
-			<h3 class="leading-snug font-medium">
+			<!-- Names like Yolo_Object_Detecion__SoftToy have no spaces to break at; let them wrap anywhere
+			     rather than widening the card past a phone screen. -->
+			<h3 class="leading-snug font-medium [overflow-wrap:anywhere]">
 				<a
 					href={withScope(`/resources/${id}`, ['range'])}
 					class="outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-3 focus-visible:after:ring-ring/50"
@@ -76,9 +81,10 @@
 			</p>
 		</div>
 		{#if card?.version}
+			<!-- Truncated: some Patra versions are whole checkpoint filenames. -->
 			<span
-				class="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
-				>{card.version}</span
+				class="max-w-28 shrink-0 truncate rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+				title={card.version}>{card.version}</span
 			>
 		{/if}
 	</header>
@@ -102,7 +108,7 @@
 	{/if}
 
 	<footer class="mt-auto flex flex-col gap-2 border-t pt-3 text-xs">
-		{#if usage.length || card?.accuracy != null || card?.size}
+		{#if usage.length || hasAccuracy || card?.size}
 			<dl class="flex flex-wrap gap-x-4 gap-y-1">
 				{#each usage as item (item.label)}
 					<div class="flex items-baseline gap-1">
@@ -113,10 +119,12 @@
 						<dd class="text-muted-foreground" aria-hidden="true">{item.label}</dd>
 					</div>
 				{/each}
-				{#if card?.accuracy != null}
+				{#if hasAccuracy}
 					<div class="flex items-baseline gap-1">
 						<dt class="sr-only">Test accuracy</dt>
-						<dd class="font-semibold text-foreground">{(card.accuracy * 100).toFixed(1)}%</dd>
+						<dd class="font-semibold text-foreground">
+							{((card?.accuracy ?? 0) * 100).toFixed(1)}%
+						</dd>
 						<dd class="text-muted-foreground" aria-hidden="true">test accuracy</dd>
 					</div>
 				{/if}
