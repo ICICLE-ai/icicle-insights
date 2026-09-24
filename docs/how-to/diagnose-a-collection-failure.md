@@ -25,6 +25,18 @@ container logs -f queues
 
 Restart the worker. The HTTP server and the scheduler do not execute jobs.
 
+## Every account stopped at once
+
+Almost always `TAPIS_TOKEN`. Every account's credential is read through it, so its expiry stops all
+collection while the platforms stay healthy.
+
+1. Find `tapis_token_expires_at` on the `Secret provider selected.` line of the boot log.
+2. If that time has passed, renew the token in Tapis.
+3. Update `TAPIS_TOKEN` on every process and restart them.
+
+The next hourly sweep resumes collection. The `WarnExpiringTapisToken` alert gives 7, 3, and 1
+days' notice, then one critical alert once the token has lapsed.
+
 ## One account stopped collecting
 
 Almost always its credential.

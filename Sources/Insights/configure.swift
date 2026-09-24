@@ -181,14 +181,36 @@ func configure(_ app: Application) async throws {
   // The tenant and base URL are logged because getting either wrong is silent and expensive: a
   // mismatched tenant refuses every admin with a plain 403, and a base URL missing its `/v3`
   // fails the tenant key fetch below with an error that names the URL but not the setting.
+  //
+  // The token's expiry rides on the same line because an expired `TAPIS_TOKEN` is the commonest
+  // cause of every vault read failing, and it is otherwise invisible until collection has already
+  // stopped. Read from the JWT's own `exp`, unverified; see `TapisConfig.expiry(ofJWT:)`.
+  let tapisTokenExpiry = app.tapisConfig.tokenExpiry
   app.logger.notice(
     "Secret provider selected.",
     metadata: [
       "provider": .string(secretProviderName),
       "tapis_base_url": .string(app.tapisConfig.baseURL),
       "tapis_tenant": .string(app.tapisConfig.tenant),
+      "tapis_token_expires_at": .string(tapisTokenExpiry.map { "\($0)" } ?? "unknown"),
     ]
   )
+  if let tapisTokenExpiry {
+    if tapisTokenExpiry <= Date() {
+      // Booting is still right: the API, admin access, and every public read work without the
+      // service token. Only collection and vault writes need it, and they will fail loudly.
+      app.logger.critical(
+        "TAPIS_TOKEN has already expired. Every vault read will fail until it is renewed.",
+        metadata: ["tapis_token_expires_at": .string("\(tapisTokenExpiry)")]
+      )
+    }
+  } else {
+    // Once, here, rather than from the daily warner: a value that is not a JWT stays that way
+    // until a restart, and CI deliberately runs with a placeholder.
+    app.logger.notice(
+      "TAPIS_TOKEN carries no readable expiry; no warning will be sent before it lapses."
+    )
+  }
 
   // Rate limit counters share the Valkey instance queues already use, so limits hold across
   // pods rather than being granted afresh by each replica.
@@ -313,6 +335,10 @@ func configure(_ app: Application) async throws {
   // remaining days pass through it. Early morning, so a warning is waiting at the start of a
   // working day rather than arriving in the middle of one.
   app.queues.schedule(WarnExpiringServiceTokens()).daily().at(7, 0)
+
+  // Same clock and the same threshold mechanism, for the one credential every collection
+  // depends on at once.
+  app.queues.schedule(WarnExpiringTapisToken()).daily().at(7, 0)
 
   // One-shot equivalents for local testing and operator-initiated backfills. They invoke the
   // same scheduled job types without changing or waiting for the production clocks above.
