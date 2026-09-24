@@ -550,10 +550,14 @@ struct ICICLESnapshotJuly2026: AsyncMigration {
       let additionalAccountID = try additionalAccount.requireID()
 
       for resourceSpec in accountSpec.resources {
+        // GHCR rows are due from the start, so a fresh development database collects them like
+        // production does. `ScheduleGHCRResources` cannot do it here: it runs before this seed.
+        // npm and PyPI stay unscheduled, because nothing collects them.
         let resource = Resource(
           name: resourceSpec.name,
           type: resourceSpec.type,
-          accountID: additionalAccountID
+          accountID: additionalAccountID,
+          nextCollectionAt: accountSpec.platform == .ghcr ? Self.snapshotDate : nil
         )
         try await resource.create(on: database)
         let resourceID = try resource.requireID()
