@@ -214,7 +214,7 @@ struct SyncJobTests {
       let requests = stubPagedAPI(on: app) { _ in nil }
 
       var ids: [Platform: Resource.IDValue] = [:]
-      for platform in [Platform.github, .huggingface, .patra] {
+      for platform in [Platform.github, .huggingface, .patra, .ghcr] {
         let account = try await makeAccount(on: app.db, name: "retired", platform: platform)
         let accountID = try account.requireID()
         _ = try await makeVault(on: app.db, accountID: accountID, name: "\(platform)-token")
@@ -230,6 +230,7 @@ struct SyncJobTests {
       try await SyncHuggingFaceHubStats().dequeue(
         context, .init(id: try #require(ids[.huggingface])))
       try await SyncPatraDeployments().dequeue(context, .init(id: try #require(ids[.patra])))
+      try await SyncGHCRStats().dequeue(context, .init(id: try #require(ids[.ghcr])))
 
       #expect(requests.withLockedValue { $0 }.isEmpty)
       #expect(try await Metric.query(on: app.db).count() == 0)
@@ -1968,6 +1969,344 @@ struct SyncJobTests {
       #expect(try await Metric.query(on: app.db).count() == 0)
       let reloaded = try #require(try await Resource.find(id, on: app.db))
       #expect(reloaded.lastCollectedAt == nil)
+    }
+  }
+
+  // MARK: - SyncGHCRStats
+
+  /// The address the job tries first: every ICICLE package is filed under the organization.
+  /// Spelled out in full rather than built from the job's own helper, so a wrong URL cannot be
+  /// asserted against itself.
+  private func ghcrOrgURL(_ name: String) -> String {
+    "https://github.com/orgs/icicle-ai/packages/container/package/\(name)"
+  }
+
+  /// The fallback, for a package published by a personal account.
+  private func ghcrUserURL(_ name: String) -> String {
+    "https://github.com/users/icicle-ai/packages/container/package/\(name)"
+  }
+
+  /// A page as GitHub serves it. The job never reads `Content-Type`; it is set so the stub looks
+  /// like what it stands in for.
+  private func htmlResponse(_ status: HTTPResponseStatus, _ body: String) -> ClientResponse {
+    ClientResponse(
+      status: status,
+      headers: ["Content-Type": "text/html; charset=utf-8"],
+      body: ByteBuffer(string: body),
+    )
+  }
+
+  /// A GHCR account and one container under it. No vault: a GHCR account needs none, which the
+  /// happy path proves by succeeding where every other collector would throw `missingToken`.
+  private func makeGHCRPackage(on app: Application, name: String = "insights") async throws
+    -> Resource
+  {
+    let account = try await makeAccount(on: app.db, name: "icicle-ai", platform: .ghcr)
+    return try await makeResource(
+      on: app.db, accountID: try account.requireID(), name: name, type: .container)
+  }
+
+  @Test
+  func `A GHCR sweep stores the 30-day window and GitHub's lifetime total`() async throws {
+    try await withInsightsApp { app in
+      let resource = try await makeGHCRPackage(on: app)
+      let id = try resource.requireID()
+      let page = try ghcrFixture("package-page-2026-09.html")
+      let orgURL = ghcrOrgURL("insights")
+      let requests = stubPagedAPI(on: app) { url in
+        url == orgURL ? self.htmlResponse(.ok, page) : nil
+      }
+
+      try await SyncGHCRStats().dequeue(queueContext(for: app), .init(id: id))
+
+      // The chart's 30 days summed, and the page's own lifetime figure beside it.
+      let readings = try await readings(on: app.db, id)
+      #expect(readings[.pulls] == 38)
+      #expect(readings[.pullsAllTime] == 302)
+
+      // `setAllTime` writes today's snapshot in the same transaction, which is what gives the
+      // lifetime figure a history on the dashboard.
+      let daily = try await MetricDailyTotal.query(on: app.db)
+        .filter(\.$resource.$id == id)
+        .all()
+      #expect(daily.map(\.type) == [.pullsAllTime])
+      #expect(daily.first?.reading == 302)
+      #expect(daily.first.map { UTCDay.string(from: $0.day) } == UTCDay.string(from: Date()))
+
+      // Booked from this success, one cadence out.
+      let reloaded = try #require(try await Resource.find(id, on: app.db))
+      #expect(reloaded.lastCollectedAt != nil)
+      let next = try #require(reloaded.nextCollectionAt)
+      let cadence = Double(reloaded.collectionIntervalDays) * 86_400
+      #expect(abs(next.timeIntervalSinceNow - cadence) < 60)
+
+      // One request, to the exact page, saying who is asking and for what.
+      let sent = requests.withLockedValue { $0 }
+      #expect(sent.map(\.url.string) == [orgURL])
+      #expect(sent.first?.headers.first(name: .userAgent) == SyncGHCRStats.userAgent)
+      #expect(sent.first?.headers.first(name: .accept) == "text/html")
+    }
+  }
+
+  /// GitHub reports the lifetime figure itself, so it is assigned, not folded: a second sweep
+  /// replaces it rather than adding to it, while each sweep's 30-day window is its own row.
+  @Test
+  func `A second GHCR sweep replaces the lifetime total rather than adding to it`() async throws {
+    try await withInsightsApp { app in
+      let resource = try await makeGHCRPackage(on: app)
+      let id = try resource.requireID()
+      let orgURL = ghcrOrgURL("insights")
+
+      let august = try ghcrFixture("package-page-2026-08.html")
+      stubPagedAPI(on: app) { url in url == orgURL ? self.htmlResponse(.ok, august) : nil }
+      try await SyncGHCRStats().dequeue(queueContext(for: app), .init(id: id))
+
+      let september = try ghcrFixture("package-page-2026-09.html")
+      stubPagedAPI(on: app) { url in url == orgURL ? self.htmlResponse(.ok, september) : nil }
+      try await SyncGHCRStats().dequeue(queueContext(for: app), .init(id: id))
+
+      let totals = try await Metric.query(on: app.db)
+        .filter(\.$resource.$id == id)
+        .filter(\.$type == .pullsAllTime)
+        .all()
+      #expect(totals.map(\.reading) == [302])
+
+      let windows = try await Metric.query(on: app.db)
+        .filter(\.$resource.$id == id)
+        .filter(\.$type == .pulls)
+        .all()
+        .map(\.reading)
+        .sorted()
+      #expect(windows == [29, 38])
+      #expect(try await MetricWatermark.query(on: app.db).count() == 0)
+    }
+  }
+
+  /// The page is public, so nothing credential-shaped is touched. A vault row exists here and
+  /// `app.secrets` is an empty store that throws on any read, so a job that went looking would
+  /// fail; and every request the stub saw went to github.com, so none reached Tapis either.
+  @Test
+  func `A GHCR sweep makes no vault or Tapis request at all`() async throws {
+    try await withInsightsApp { app in
+      let resource = try await makeGHCRPackage(on: app)
+      _ = try await makeVault(on: app.db, accountID: resource.$account.id, name: "ghcr-token")
+      let page = try ghcrFixture("package-page-2026-08.html")
+      let orgURL = ghcrOrgURL("insights")
+      let requests = stubPagedAPI(on: app) { url in
+        url == orgURL ? self.htmlResponse(.ok, page) : nil
+      }
+      app.secrets = InMemorySecrets()
+
+      try await SyncGHCRStats().dequeue(
+        queueContext(for: app), .init(id: try resource.requireID()))
+
+      let hosts = requests.withLockedValue { $0.map(\.url.host) }
+      #expect(hosts == ["github.com"])
+      let paths = requests.withLockedValue { $0.map(\.url.path) }
+      #expect(!paths.contains { $0.contains("/security/vault") })
+    }
+  }
+
+  /// Container names may contain `/`, which GitHub's page takes as `%2F`. Left raw it would split
+  /// the name into two path segments and address a page that does not exist.
+  @Test
+  func `A package name containing a slash is requested as one encoded path segment`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let resource = try await makeGHCRPackage(on: app, name: "tools/harvest")
+      let page = try ghcrFixture("package-page-2026-08.html")
+      let orgURL = ghcrOrgURL("tools%2Fharvest")
+      let requests = stubPagedAPI(on: app) { url in
+        url == orgURL ? self.htmlResponse(.ok, page) : nil
+      }
+
+      try await SyncGHCRStats().dequeue(
+        queueContext(for: app), .init(id: try resource.requireID()))
+
+      #expect(requests.withLockedValue { $0.map(\.url.string) } == [orgURL])
+      // The path, not just the string: it is what the HTTP client puts on the wire, and a URI
+      // that decoded it would ask for `/package/tools/harvest` without anything else changing.
+      #expect(
+        requests.withLockedValue { $0.first?.url.path }
+          == "/orgs/icicle-ai/packages/container/package/tools%2Fharvest")
+    }
+  }
+
+  @Test
+  func `An organization 404 falls back to the user address`() async throws {
+    try await withInsightsApp { app in
+      let resource = try await makeGHCRPackage(on: app)
+      let id = try resource.requireID()
+      let page = try ghcrFixture("package-page-2026-08.html")
+      let userURL = ghcrUserURL("insights")
+      let requests = stubPagedAPI(on: app) { url in
+        url == userURL ? self.htmlResponse(.ok, page) : nil
+      }
+
+      try await SyncGHCRStats().dequeue(queueContext(for: app), .init(id: id))
+
+      #expect(
+        requests.withLockedValue { $0.map(\.url.string) } == [ghcrOrgURL("insights"), userURL])
+      let readings = try await readings(on: app.db, id)
+      #expect(readings[.pulls] == 29)
+      #expect(readings[.pullsAllTime] == 248)
+    }
+  }
+
+  /// GitHub answers 404 for a package that does not exist and for a private one viewed
+  /// anonymously. Neither is a credential problem, since no credential is ever sent, so it must
+  /// alert at warning and re-book on the ordinary backoff rather than asking for a token rotation.
+  @Test
+  func `Two 404s fail as a missing package, not a credential failure, and re-book`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let notifier = stubNotifier(on: app)
+      let resource = try await makeGHCRPackage(on: app)
+      let id = try resource.requireID()
+      // Where the sweep leaves a resource it has just dispatched: a full cadence out.
+      resource.scheduleNextCollection()
+      try await resource.save(on: app.db)
+      let requests = stubPagedAPI(on: app) { _ in nil }
+
+      let error = await thrownJobError {
+        try await SyncGHCRStats().dequeue(queueContext(for: app), .init(id: id))
+      }
+
+      guard case .apiRequestFailed(let url, let statusCode, let message)? = error else {
+        Issue.record("expected apiRequestFailed, got \(String(describing: error?.description))")
+        return
+      }
+      #expect(statusCode == 404)
+      #expect(url == ghcrUserURL("insights"))
+      #expect(message?.contains("private") == true)
+      #expect(error?.isCredentialFailure == false)
+      #expect(
+        requests.withLockedValue { $0.map(\.url.string) }
+          == [ghcrOrgURL("insights"), ghcrUserURL("insights")])
+      #expect(try await Metric.query(on: app.db).count() == 0)
+
+      // What the worker does once the retries are spent.
+      try await SyncGHCRStats().error(queueContext(for: app), try #require(error), .init(id: id))
+
+      #expect(notifier.recorded.map(\.severity) == [.warning])
+      let failure = try #require(try await JobFailure.query(on: app.db).first())
+      #expect(failure.identifier == "api_request_failed")
+      #expect(failure.severity == "warning")
+      // Brought back from a week out to the backoff floor, so the next hourly sweep retries it.
+      let rebooked = try #require(try await Resource.find(id, on: app.db)?.nextCollectionAt)
+      #expect(abs(rebooked.timeIntervalSinceNow - 3600) < 60)
+    }
+  }
+
+  /// Anything but 200 or 404 is the page failing, not the package being filed elsewhere, so it
+  /// is not retried at the user address.
+  @Test
+  func `Any other status fails at once without trying the user address`() async throws {
+    try await withInsightsApp { app in
+      let resource = try await makeGHCRPackage(on: app)
+      let orgURL = ghcrOrgURL("insights")
+      let requests = stubPagedAPI(on: app) { url in
+        url == orgURL ? self.htmlResponse(.tooManyRequests, "Too many requests") : nil
+      }
+
+      let error = await thrownJobError {
+        try await SyncGHCRStats().dequeue(
+          queueContext(for: app), .init(id: try resource.requireID()))
+      }
+
+      guard case .apiRequestFailed(_, let statusCode, let message)? = error else {
+        Issue.record("expected apiRequestFailed, got \(String(describing: error?.description))")
+        return
+      }
+      #expect(statusCode == 429)
+      #expect(message == "Too many requests")
+      #expect(requests.withLockedValue { $0.map(\.url.string) } == [orgURL])
+    }
+  }
+
+  /// A 200 whose markup has moved is the failure a scraper is built to expect. It writes
+  /// nothing, and its alert names the parser, since whoever is paged has probably never seen it.
+  @Test
+  func `A changed page layout fails with page_layout_changed and writes nothing`() async throws {
+    try await withInsightsApp { app in
+      let notifier = stubNotifier(on: app)
+      let resource = try await makeGHCRPackage(on: app)
+      let id = try resource.requireID()
+      let redesigned = try replacingOnce(
+        ">Total downloads<", with: ">Downloads<",
+        in: try ghcrFixture("package-page-2026-09.html"))
+      let orgURL = ghcrOrgURL("insights")
+      stubPagedAPI(on: app) { url in url == orgURL ? self.htmlResponse(.ok, redesigned) : nil }
+
+      let error = await thrownJobError {
+        try await SyncGHCRStats().dequeue(queueContext(for: app), .init(id: id))
+      }
+
+      guard case .pageLayoutChanged(let url, _)? = error else {
+        Issue.record("expected pageLayoutChanged, got \(String(describing: error?.description))")
+        return
+      }
+      #expect(url == orgURL)
+      #expect(error?.identifier == "page_layout_changed")
+      #expect(error?.isCredentialFailure == false)
+      #expect(try await Metric.query(on: app.db).count() == 0)
+      #expect(try #require(try await Resource.find(id, on: app.db)).lastCollectedAt == nil)
+
+      try await SyncGHCRStats().error(queueContext(for: app), try #require(error), .init(id: id))
+
+      let alert = try #require(notifier.recorded.first)
+      #expect(alert.identifier == "page_layout_changed")
+      #expect(alert.severity == .warning)
+      #expect(alert.details.contains("GHCRPackagePage"))
+    }
+  }
+
+  /// Same retry hazard as the other collectors: without the transaction, the failed attempt's
+  /// window row and daily snapshot would survive, and the retry would add a second window row.
+  @Test
+  func `A GHCR sweep that fails after its snapshot row leaves nothing for the retry to duplicate`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let resource = try await makeGHCRPackage(on: app)
+      let id = try resource.requireID()
+      let page = try ghcrFixture("package-page-2026-09.html")
+      let orgURL = ghcrOrgURL("insights")
+      stubPagedAPI(on: app) { url in url == orgURL ? self.htmlResponse(.ok, page) : nil }
+
+      try await failResourceUpdates(on: app)
+      await #expect(throws: (any Error).self) {
+        try await SyncGHCRStats().dequeue(queueContext(for: app), .init(id: id))
+      }
+      #expect(try await Metric.query(on: app.db).count() == 0)
+      #expect(try await MetricDailyTotal.query(on: app.db).count() == 0)
+
+      try await allowResourceUpdates(on: app)
+      try await SyncGHCRStats().dequeue(queueContext(for: app), .init(id: id))
+
+      let rows = try await Metric.query(on: app.db)
+        .filter(\.$resource.$id == id)
+        .all()
+        .map { "\($0.type.rawValue)=\(Int($0.reading))" }
+        .sorted()
+      #expect(rows == ["pulls=38", "pullsAllTime=302"])
+      #expect(try await MetricDailyTotal.query(on: app.db).count() == 1)
+      #expect(try #require(try await Resource.find(id, on: app.db)).lastCollectedAt != nil)
+    }
+  }
+
+  @Test
+  func `A sweep for a missing GHCR resource is a no-op rather than a retried failure`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let requests = stubPagedAPI(on: app) { _ in nil }
+
+      try await SyncGHCRStats().dequeue(queueContext(for: app), .init(id: UUID()))
+
+      #expect(requests.withLockedValue { $0 }.isEmpty)
     }
   }
 }

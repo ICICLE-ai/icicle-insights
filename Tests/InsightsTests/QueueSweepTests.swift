@@ -106,15 +106,38 @@ struct QueueSweepTests {
   }
 
   @Test
-  func `A platform with no sync job is skipped but still rebooked`() async throws {
+  func `A due GHCR resource dispatches SyncGHCRStats and is rebooked`() async throws {
     try await withQueueApp { app in
-      // GHCR is legitimately in the catalog, just not collectable yet, so the sweep logs and
-      // moves on rather than throwing and stranding the resource as permanently due.
+      // GHCR sat in the skip branch until its collector shipped. This pins that it now routes like
+      // any other platform with a job, rather than silently regressing to "logged and skipped".
       let account = try await makeAccount(on: app.db, name: "icicle-ai", platform: .ghcr)
       let resource = try await makeResource(
         on: app.db,
         accountID: try account.requireID(),
         type: .container,
+        nextCollectionAt: past(1),
+      )
+
+      try await CollectDueResources().run(context: queueContext(for: app))
+
+      #expect(
+        app.queues.asyncTest.all(SyncGHCRStats.self).map(\.id) == [try resource.requireID()])
+      let rebooked = try #require(
+        try await Resource.find(resource.id, on: app.db)?.nextCollectionAt)
+      #expect(rebooked > Date())
+    }
+  }
+
+  @Test
+  func `A platform with no sync job is skipped but still rebooked`() async throws {
+    try await withQueueApp { app in
+      // npm is legitimately in the catalog, just not collectable yet, so the sweep logs and
+      // moves on rather than throwing and stranding the resource as permanently due.
+      let account = try await makeAccount(on: app.db, name: "icicle-ai", platform: .npm)
+      let resource = try await makeResource(
+        on: app.db,
+        accountID: try account.requireID(),
+        type: .package,
         nextCollectionAt: past(1),
       )
 
@@ -249,6 +272,40 @@ struct QueueSweepTests {
       #expect(readings[.stars] == 12)
       #expect(readings[.clones] == 40)
       #expect(readings[.views] == 90)
+    }
+  }
+
+  /// The same proof for GHCR, whose job is registered separately and could drift on its own: the
+  /// sweep enqueues it, and the worker finds a job by that name, runs it, and writes both figures.
+  @Test
+  func `A swept GHCR resource runs end to end through the worker`() async throws {
+    try await withQueueApp { app in
+      let account = try await makeAccount(on: app.db, name: "icicle-ai", platform: .ghcr)
+      let resource = try await makeResource(
+        on: app.db,
+        accountID: try account.requireID(),
+        name: "insights",
+        type: .container,
+        nextCollectionAt: past(1),
+      )
+
+      let page = try ghcrFixture("package-page-2026-09.html")
+      stubPagedAPI(on: app) { url in
+        guard url == "https://github.com/orgs/icicle-ai/packages/container/package/insights"
+        else { return nil }
+        return ClientResponse(status: .ok, body: ByteBuffer(string: page))
+      }
+
+      try await CollectDueResources().run(context: queueContext(for: app))
+      try await app.queues.queue(.metrics).worker.run()
+
+      #expect(app.queues.asyncTest.queue.isEmpty)
+      let readings = try await Metric.query(on: app.db)
+        .filter(\.$resource.$id == resource.requireID())
+        .all()
+        .reduce(into: [MetricType: Double]()) { $0[$1.type] = $1.reading }
+      #expect(readings[.pulls] == 38)
+      #expect(readings[.pullsAllTime] == 302)
     }
   }
 }

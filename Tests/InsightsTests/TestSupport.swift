@@ -499,6 +499,31 @@ func stubPagedAPI(
   return requests
 }
 
+// MARK: - Saved GHCR pages
+
+/// A GHCR package page saved under `Tests/Fixtures/GHCR/`, trimmed to the blocks the parser reads.
+///
+/// Outside the test target's own directory, so SwiftPM neither warns about an unhandled file nor
+/// needs a `resources:` entry, and read through `#filePath`, as `PatraAPITimestampsTests` reads
+/// `data/`. CI runs the suite from a checkout, so the path resolves there too.
+func ghcrFixture(_ name: String) throws -> String {
+  let url = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()  // TestSupport.swift
+    .deletingLastPathComponent()  // InsightsTests
+    .appendingPathComponent("Fixtures/GHCR/\(name)")
+  return try String(contentsOf: url, encoding: .utf8)
+}
+
+/// Replaces exactly one occurrence of `original` in a fixture, failing the test if it is absent.
+///
+/// A test that mutates a real page should break loudly when the page it expects is not the one it
+/// got, rather than asserting against an unchanged copy and passing for the wrong reason.
+func replacingOnce(_ original: String, with replacement: String, in html: String) throws -> String {
+  let ranges = html.ranges(of: original)
+  try #require(ranges.count == 1, "fixture holds \(ranges.count) copies of \(original)")
+  return html.replacingOccurrences(of: original, with: replacement)
+}
+
 // MARK: - Alert channel stub
 
 /// Captures alerts instead of sending them, so a test can assert on what an operator would have

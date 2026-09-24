@@ -35,6 +35,8 @@ enum Platform: String, Codable, CaseIterable {
   /// Nil means this platform cannot lose data to a window at all. The Hub reports
   /// `downloadsAllTime` itself and `Metric.setAllTime` assigns it, so a late sweep costs nothing
   /// permanently; only GitHub's `clones` and `views` are accumulated day by day and age out.
+  /// GHCR is nil for the Hub's reason: its package page states the lifetime total, which is
+  /// assigned the same way, and its 30-day chart is stored as a window, never folded.
   var retentionWindowDays: Int? {
     switch self {
     case .github: 14

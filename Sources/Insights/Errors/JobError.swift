@@ -7,6 +7,13 @@ enum JobError: Error {
   case apiRequestFailed(url: String, statusCode: Int, message: String?)
   case missingToken(id: UUID)
   case decodingFailed(url: String, underlying: any Error)
+  /// A scraped page answered 200 but no longer carries the markup its parser reads.
+  ///
+  /// Its own case rather than `decodingFailed`, because the remedy differs: a JSON API that stops
+  /// decoding has usually changed a documented schema, whereas a web page changes whenever GitHub
+  /// redesigns it, with no notice and no version. `detail` says which part went missing, so the
+  /// alert alone points at the selector to fix.
+  case pageLayoutChanged(url: String, detail: String)
 }
 
 /// `DebuggableError`, not a bare `Error`: `Logger.report(error:)` reads `reason` and `logLevel` off
@@ -20,6 +27,7 @@ extension JobError: DebuggableError {
     case .apiRequestFailed: "api_request_failed"
     case .missingToken: "missing_token"
     case .decodingFailed: "decoding_failed"
+    case .pageLayoutChanged: "page_layout_changed"
     }
   }
 
@@ -35,6 +43,8 @@ extension JobError: DebuggableError {
       "Account \(id) has no access token"
     case .decodingFailed(let url, let underlying):
       "Could not decode response from \(url): \(underlying)"
+    case .pageLayoutChanged(let url, let detail):
+      "The page at \(url) no longer has the layout its parser expects: \(detail)"
     }
   }
 
@@ -49,7 +59,9 @@ extension JobError: DebuggableError {
       .critical
     case .apiRequestFailed(_, let statusCode, _):
       isCredentialStatus(statusCode) ? .critical : .warning
-    case .decodingFailed:
+    case .decodingFailed, .pageLayoutChanged:
+      // `.error`, alongside a body that will not decode: nothing retries its way past a changed
+      // layout, but no credential is involved either, so it is not raised to `.critical`.
       .error
     }
   }
@@ -65,6 +77,15 @@ extension JobError: DebuggableError {
       [
         "Check the platform token has not expired and still carries the scopes the endpoint needs.",
         "Rotate the token in Tapis Vault; collection resumes on the next hourly sweep.",
+      ]
+    case .pageLayoutChanged:
+      // Named file and fixtures, because whoever is paged has probably never opened either, and
+      // the parser is the only place that knows what the page is supposed to look like.
+      [
+        "GitHub has changed its package page. Open the URL above, find the new markup for the "
+          + "download figures, and update the selectors in `GHCRPackagePage`.",
+        "Replace the saved pages in `Tests/Fixtures/GHCR/` with a fresh copy, so the tests "
+          + "describe the page GitHub serves now.",
       ]
     default:
       []
@@ -89,7 +110,9 @@ extension JobError {
       true
     case .apiRequestFailed(_, let statusCode, _):
       isCredentialStatus(statusCode)
-    case .decodingFailed:
+    case .decodingFailed, .pageLayoutChanged:
+      // Not a credential failure: the page is public and fetched anonymously, so nothing an
+      // operator rotates will fix it. It re-books on the ordinary backoff and alerts at warning.
       false
     }
   }

@@ -316,12 +316,14 @@ func configure(_ app: Application) async throws {
   let syncHuggingFaceHubStats = SyncHuggingFaceHubStats()
   let syncPatraCatalog = SyncPatraCatalog()
   let syncPatraDeployments = SyncPatraDeployments()
+  let syncGHCRStats = SyncGHCRStats()
 
   app.queues.add(syncGitHubRepoStatsJob)
   app.queues.add(syncGitHubOrgStatsJob)
   app.queues.add(syncHuggingFaceHubStats)
   app.queues.add(syncPatraCatalog)
   app.queues.add(syncPatraDeployments)
+  app.queues.add(syncGHCRStats)
 
   // Run by the `--scheduled` worker. These only enqueue; the jobs run on the `metrics` queue,
   // so a slow sync never delays the next sweep.

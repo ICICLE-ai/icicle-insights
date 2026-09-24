@@ -35,7 +35,6 @@ docs/
 justfiles/
 docker-compose.yml
 justfile
-ghcr-sample.html
 README.md
 LICENSE
 
