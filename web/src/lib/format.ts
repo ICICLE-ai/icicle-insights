@@ -40,7 +40,7 @@ export const METRICS: Record<MetricType, MetricInfo> = {
 		kind: 'window',
 		window: 'a trailing 30 days'
 	},
-	pulls: { label: 'Pulls', short: 'Pulls', kind: 'window' },
+	pulls: { label: 'Pulls · 30 days', short: 'Pulls', kind: 'window', window: 'a trailing 30 days' },
 	authentications: { label: 'Authentications', short: 'Authentications', kind: 'window' },
 	viewsAllTime: { label: 'Views · all time', short: 'Views', kind: 'lifetime' },
 	clonesAllTime: { label: 'Clones · all time', short: 'Clones', kind: 'lifetime' },

@@ -64,7 +64,7 @@ Facts. Look things up; do not read start to finish.
 | [just recipes](reference/just-recipes.md) | Every recipe in both justfiles | Dev |
 | [CI pipeline](reference/ci-pipeline.md) | Workflow jobs, caches, Dockerfile targets | Dev |
 | [Invariants](reference/invariants.md) | Rules a change must not break | Dev |
-| [Test suite](reference/test-suite.md) | What the 312 tests cover | Dev |
+| [Test suite](reference/test-suite.md) | What the 365 tests cover | Dev |
 | [Glossary](reference/glossary.md) | Project vocabulary | Both |
 
 ## Explanation
@@ -81,6 +81,6 @@ Why the system is shaped the way it is.
 | [Queues and scheduling](explanation/queues-and-scheduling.md) | One scheduler, many workers |
 | [Secret providers](explanation/secret-providers.md) | Why credentials sit behind an interface |
 | [The dashboard](explanation/the-dashboard.md) | How the SvelteKit app is built, served and fed |
-| [Decisions](explanation/decisions/) | Eight architecture decision records |
+| [Decisions](explanation/decisions/) | Nine architecture decision records |
 
 #icicle-insights# #Reference# #Administrator# #Developer# #documentation-index#

@@ -78,7 +78,8 @@ Two schedulers dispatch every due resource twice. That is the one hard scaling c
 | GitHub repositories | Stars, forks, subscribers, clones, views | Active |
 | GitHub accounts | Followers | Active |
 | Hugging Face | Likes, rolling downloads, lifetime downloads | Active |
-| GHCR, npm, PyPI | — | Registered, not yet collected |
+| GHCR | 30-day pulls, lifetime pulls, read from the public package page | Active |
+| npm, PyPI | — | Registered, not yet collected |
 
 The scheduler scans hourly but each resource has its own cadence, seven days by default. See
 [Collection schedule](docs/reference/collection-schedule.md).

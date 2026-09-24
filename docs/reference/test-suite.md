@@ -2,7 +2,7 @@
 
 What the suite covers. For developers.
 
-**338 tests across 24 suites**, all in `Tests/InsightsTests/`. Parameterised tests count once.
+**365 tests across 25 suites**, all in `Tests/InsightsTests/`. Parameterised tests count once.
 
 ```bash
 just test
@@ -15,20 +15,21 @@ and their absence fails every test, not one.
 
 | Suite | Tests | Covers |
 |---|---|---|
-| `SyncJobTests` | 53 | Each platform's sweep against stubbed APIs, every error branch, orphans, retry safety, and Patra card text |
-| `HardeningTests` | 49 | Headers, CORS, rate limits and client addresses, request IDs, key rotation, admins, pool sizes, absent keyset |
+| `SyncJobTests` | 63 | Each platform's sweep against stubbed APIs and pages, every error branch, orphans, retry safety, and Patra card text |
+| `HardeningTests` | 50 | Headers, CORS, rate limits and client addresses, request IDs, key rotation, admins, pool sizes, absent keyset |
 | `JobFailureTests` | 31 | Failure classification, retries, backoff, re-booking, alert deduplication |
 | `MetricControllerTests` | 24 | Metric CRUD, filters, validation, admin guard |
 | `ResourceControllerTests` | 24 | Resource CRUD, cadence caps, admin guard, first dispatch, deleted links, the Patra `card` |
 | `AuthenticationTests` | 22 | Both credential paths and where they cross |
 | `VaultControllerTests` | 15 | Name normalisation, validation, upstream status mapping, rollback |
+| `GHCRPackagePageTests` | 14 | Reading GHCR's package page: the exact total, the 30 days, UTC dates, and every layout change that must throw |
 | `MetricAllTimeTests` | 13 | Double-count prevention, the watermark fold, its locks, daily snapshots |
 | `PatraCardDescriptionTests` | 13 | Reading Patra's card text: fallback order, lenient types, trimming |
 | `AccountControllerTests` | 12 | Account CRUD, validation, and the delete guard |
 | `InsightsControllerTests` | 12 | The three summary routes: carry-forward, filters, no row cap, lifetime history, parameters |
+| `QueueSweepTests` | 11 | Which job a platform dispatches, how due dates advance, orphans, GitHub and GHCR through the worker |
 | `ReleaseControllerTests` | 10 | Release CRUD and validation |
 | `ServiceTokenControllerTests` | 10 | Minting over HTTP, revocation, refusals |
-| `QueueSweepTests` | 9 | Which job a platform dispatches, how due dates advance, orphans |
 | `TapisTokenExpiryTests` | 9 | Reading `TAPIS_TOKEN`'s expiry and the daily warning |
 | `ServiceTokenExpiryTests` | 8 | The daily expiry warning and its thresholds |
 | `PatraCardProjectionTests` | 6 | Which card stands for a resource, `kind`, keywords, and the JSON shape |
@@ -52,8 +53,9 @@ Several `HardeningTests` cases also set process environment variables that `conf
 boot. Process environment is global; running those concurrently would make them read each other's
 settings.
 
-`TrafficDecodingTests`, `PatraAPITimestampsTests`, `PatraCardDescriptionTests`, and
-`PatraCardProjectionTests` need no database. They are pure decoding and projection.
+`TrafficDecodingTests`, `PatraAPITimestampsTests`, `PatraCardDescriptionTests`,
+`PatraCardProjectionTests`, and `GHCRPackagePageTests` need no database. They are pure decoding,
+parsing, and projection.
 
 ## Harness
 
@@ -81,10 +83,15 @@ anything enqueues.
 | `InMemorySecrets` | A dictionary-backed `SecretProvider` |
 | `StubClient` | Answers everything with a fixed status |
 | `StubHTTPClient` / `stubAPI` | Answers platform calls from canned routes and records requests |
+| `ghcrFixture` | Reads a saved GHCR package page from `Tests/Fixtures/GHCR/` |
+| `replacingOnce` | Changes exactly one passage of a saved page, failing if it is not there exactly once |
 | `RecordingNotifier` | Captures alerts instead of sending them |
 | `FlakyQueuesDriver` | First `set` throws, so the dispatch-failure branch is reachable |
 
 `stubAPI` matches paths exactly, because `/repos/o/n` is a prefix of `/repos/o/n/traffic/clones`.
+
+The saved GHCR pages are real, trimmed to the blocks the parser reads. They sit outside the test
+target's directory, so SwiftPM needs no resource declaration, and are read through `#filePath`.
 
 ## What `.testing` skips
 
@@ -117,5 +124,7 @@ hours, so "looks like a JWT" and "will authenticate" are different questions.
   restart proves the retired key was persisted.
 - The scheduler's clocks. Jobs are driven directly through `queueContext`; that `.hourly()` and
   `.monthly()` are wired correctly is not asserted.
+- GitHub's live package page. The GHCR parser reads saved copies, so a redesign surfaces in
+  production as `page_layout_changed`, not in the suite.
 
 #icicle-insights# #Reference# #Developer# #testing#

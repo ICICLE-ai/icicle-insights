@@ -107,7 +107,7 @@ collect everything.
 
 **Dispatched, but no readings appeared.** The worker is not running, or it failed. Check its logs.
 
-**A platform was skipped.** GHCR, npm, and PyPI have no collector yet. See
+**A platform was skipped.** npm and PyPI have no collector yet. See
 [Collection schedule](../reference/collection-schedule.md).
 
 **The all-time total did not move.** Often correct: no completed day newer than the watermark was

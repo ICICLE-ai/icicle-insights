@@ -19,14 +19,16 @@ A rolling window cannot simply be added, because consecutive responses overlap. 
 gain a daily history is in [Metric history](metric-history.md).
 
 Hugging Face is the easy case: the Hub publishes its own lifetime downloads figure, so Insights
-assigns rather than accumulates and a repeated sweep is harmless.
+assigns rather than accumulates and a repeated sweep is harmless. GHCR is the same case, because
+GitHub's package page states its lifetime pulls.
 
 ## A sweep, end to end
 
 1. The hourly clock finds resources whose due date has passed.
 2. For each, it enqueues a typed job onto the `metrics` queue and books the next due date.
 3. A worker claims the job and re-reads the resource from the database.
-4. The worker resolves the account's credential through `SecretProvider`.
+4. The worker resolves the account's credential through `SecretProvider`. GHCR and Patra need
+   none, so their jobs skip this step.
 5. The worker fetches **every** response it needs.
 6. The worker writes snapshots and folds any rolling values, in one transaction.
 
@@ -110,6 +112,9 @@ sweep.
 - **GitHub's traffic array key differs by endpoint** — `clones` on one, `views` on the other, with
   an otherwise identical response shape.
 - **The GitHub organisation endpoint is plural**: `/orgs/{org}`.
+- **GHCR has no download API.** Its figures are read from the public package page, whose markup
+  GitHub can change without notice. A change fails loudly as `page_layout_changed`. See
+  [ADR 009](decisions/009-scraping-ghcr.md).
 - **FluentKit has no row locking in this version.** The fold uses a PostgreSQL advisory transaction
   lock instead, which also covers the first sweep, where no watermark row exists yet.
 

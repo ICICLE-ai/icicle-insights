@@ -51,7 +51,7 @@ for counting.
 | Shape | Example | Handling |
 |---|---|---|
 | Rolling window with daily values | GitHub clones and views | Fold days newer than the watermark |
-| Provider reports a lifetime figure | Hugging Face downloads | Replace the total outright; no watermark |
+| Provider reports a lifetime figure | Hugging Face downloads, GHCR pulls | Replace the total outright; no watermark |
 | Current snapshot | Stars, forks, likes, followers | Store the reading; no all-time row |
 
 Hugging Face needs no watermark because the Hub reports its own lifetime number. Assigning it is

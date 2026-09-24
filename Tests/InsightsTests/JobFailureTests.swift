@@ -207,6 +207,16 @@ struct JobFailureTests {
     #expect(malformed.logLevel == .error)
     #expect(!malformed.isCredentialFailure)
     #expect(malformed.identifier == "decoding_failed")
+
+    // A redesigned page is as broken as a body that will not decode, and as far from a credential:
+    // the page is fetched anonymously, so there is nothing to rotate.
+    let redesigned = JobError.pageLayoutChanged(
+      url: "https://github.com/orgs/icicle-ai/packages/container/package/insights",
+      detail: "no \"Total downloads\" label")
+    #expect(redesigned.logLevel == .error)
+    #expect(!redesigned.isCredentialFailure)
+    #expect(redesigned.identifier == "page_layout_changed")
+    #expect(redesigned.suggestedFixes.contains { $0.contains("GHCRPackagePage") })
   }
 
   /// The vault, not the platform, is where a job's token comes from, so a `TapisClientError` is

@@ -17,5 +17,6 @@ decision away.
 | [006](006-api-authentication.md) | Two credential paths, one guard | Accepted |
 | [007](007-hardening.md) | Headers, limits, and live key rotation | Accepted |
 | [008](008-collection-backoff.md) | Failed collections back off, bounded | Accepted |
+| [009](009-scraping-ghcr.md) | GHCR is scraped, on the metrics queue | Accepted |
 
 #icicle-insights# #Explanation# #Developer# #decisions#

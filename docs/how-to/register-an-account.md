@@ -53,10 +53,10 @@ at once and re-books hourly. Fix the credential and it resumes unattended.
 ## Notes
 
 - One credential per account. Resources inherit it.
-- GHCR, npm, and PyPI accounts can be registered but are not collected yet. They need no credential.
-- Patra accounts need no credential either, but unlike those three, Patra **is** collected. Its
-  jobs call the public API anonymously by design — a token would let them see records Patra marks
-  private, and this dashboard is public. Skip **Add its credential** for a Patra account.
+- npm and PyPI accounts can be registered but are not collected yet. They need no credential.
+- GHCR and Patra accounts need no credential either, and both **are** collected. Their jobs read
+  public pages and APIs anonymously by design — a token would let them see private records, and
+  this dashboard is public. Skip **Add its credential** for a GHCR or Patra account.
 - An account can be deleted only once its resources and its credential are gone. Delete those
   first; until then the **Delete** button is disabled and the API answers 409.
 
