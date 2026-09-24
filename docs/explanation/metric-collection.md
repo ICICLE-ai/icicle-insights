@@ -15,7 +15,8 @@ A gauge needs no all-time row because **the series is the record**. One row per 
 as well as rise. That is what the dashboard's trend chart plots.
 
 A rolling window cannot simply be added, because consecutive responses overlap. See
-[Watermarks](watermarks.md), which is the whole answer to that problem.
+[Watermarks](watermarks.md), which is the whole answer to that problem. How the resulting totals
+gain a daily history is in [Metric history](metric-history.md).
 
 Hugging Face is the easy case: the Hub publishes its own lifetime downloads figure, so Insights
 assigns rather than accumulates and a repeated sweep is harmless.

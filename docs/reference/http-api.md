@@ -171,7 +171,7 @@ has a value, then has one point per day. Points are `{ "t": "YYYY-MM-DD", "v": n
 
 A `lifetime` tile's `atStart` and `series` come from daily snapshots that begin when
 `metric_daily_totals` was deployed. Before that they are `null` and empty. See
-[Metric collection](../explanation/metric-collection.md).
+[Metric history](../explanation/metric-history.md).
 
 | Row field | Meaning |
 |---|---|

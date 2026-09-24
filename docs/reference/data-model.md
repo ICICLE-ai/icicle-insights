@@ -57,7 +57,7 @@ erDiagram
 
 A day with no write has no row; readers carry the previous day's value forward. There is no row
 from before the `MetricDailyTotals` migration, because the totals were overwritten in place and
-nothing recorded their past values.
+nothing recorded their past values. See [Metric history](../explanation/metric-history.md).
 
 `next_collection_at` and `counted_through` answer different questions: *when to fetch next* versus
 *what has already been counted*. Keeping them apart is what lets a late sweep resume exactly where

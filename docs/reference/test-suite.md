@@ -2,7 +2,7 @@
 
 What the suite covers. For developers.
 
-**211 tests across 15 suites**, all in `Tests/InsightsTests/`.
+**312 tests across 22 suites**, all in `Tests/InsightsTests/`. Parameterised tests count once.
 
 ```bash
 just test
@@ -15,21 +15,28 @@ and their absence fails every test, not one.
 
 | Suite | Tests | Covers |
 |---|---|---|
-| `HardeningTests` | 40 | Headers, CORS, rate limits, request IDs, key rotation, admins, absent keyset |
-| `JobFailureTests` | 26 | Failure classification, retries, backoff, re-booking |
+| `HardeningTests` | 49 | Headers, CORS, rate limits and client addresses, request IDs, key rotation, admins, pool sizes, absent keyset |
+| `SyncJobTests` | 49 | Each platform's sweep against stubbed APIs, every error branch, orphans, and retry safety |
+| `JobFailureTests` | 31 | Failure classification, retries, backoff, re-booking, alert deduplication |
 | `MetricControllerTests` | 24 | Metric CRUD, filters, validation, admin guard |
 | `AuthenticationTests` | 22 | Both credential paths and where they cross |
+| `ResourceControllerTests` | 21 | Resource CRUD, cadence caps, admin guard, first dispatch, deleted links |
 | `VaultControllerTests` | 15 | Name normalisation, validation, upstream status mapping, rollback |
-| `ResourceControllerTests` | 13 | Resource CRUD, cadence caps, admin guard |
-| `SyncJobTests` | 11 | Each platform's sweep against stubbed APIs, and every error branch |
+| `MetricAllTimeTests` | 13 | Double-count prevention, the watermark fold, its locks, daily snapshots |
+| `AccountControllerTests` | 12 | Account CRUD, validation, and the delete guard |
+| `InsightsControllerTests` | 12 | The three summary routes: carry-forward, filters, no row cap, lifetime history, parameters |
 | `ReleaseControllerTests` | 10 | Release CRUD and validation |
 | `ServiceTokenControllerTests` | 10 | Minting over HTTP, revocation, refusals |
-| `AccountControllerTests` | 9 | Account CRUD and validation |
+| `QueueSweepTests` | 9 | Which job a platform dispatches, how due dates advance, orphans |
+| `TapisTokenExpiryTests` | 9 | Reading `TAPIS_TOKEN`'s expiry and the daily warning |
 | `ServiceTokenExpiryTests` | 8 | The daily expiry warning and its thresholds |
-| `MetricAllTimeTests` | 8 | Double-count prevention and the watermark fold |
-| `QueueSweepTests` | 7 | Which job a platform dispatches, and how due dates advance |
+| `PatraAPITests` | 4 | Paging and error handling against a stubbed Patra |
 | `AdminInsightControllerTests` | 4 | The admin-only operational projections |
 | `TrafficDecodingTests` | 4 | The `clones`/`views` array-key split |
+| `PatraAPITimestampsTests` | 2 | Patra's timestamp format, against captured responses |
+| `StubPagedAPITests` | 2 | The query-aware stub itself, in `TestSupport.swift` |
+| `MigrationLockTests` | 1 | `migrate-locked` takes its advisory lock |
+| `PatraCardTests` | 1 | `card_uuid` uniqueness |
 
 ## Why it is serial
 

@@ -63,7 +63,7 @@ Facts. Look things up; do not read start to finish.
 | [Data model](reference/data-model.md) | Tables, fields, enumerations | Dev |
 | [just recipes](reference/just-recipes.md) | Every recipe in both justfiles | Dev |
 | [Invariants](reference/invariants.md) | Rules a change must not break | Dev |
-| [Test suite](reference/test-suite.md) | What the 195 tests cover | Dev |
+| [Test suite](reference/test-suite.md) | What the 312 tests cover | Dev |
 | [Glossary](reference/glossary.md) | Project vocabulary | Both |
 
 ## Explanation
@@ -75,6 +75,7 @@ Why the system is shaped the way it is.
 | [Architecture](explanation/architecture.md) | The parts and how they fit |
 | [Metric collection](explanation/metric-collection.md) | Gauges, rolling windows, retention |
 | [Watermarks](explanation/watermarks.md) | Why totals are not double counted |
+| [Metric history](explanation/metric-history.md) | Daily totals, carried forward, and why lifetime history starts at deploy |
 | [Authentication](explanation/authentication.md) | Two credential paths, one guard |
 | [Queues and scheduling](explanation/queues-and-scheduling.md) | One scheduler, many workers |
 | [Secret providers](explanation/secret-providers.md) | Why credentials sit behind an interface |
