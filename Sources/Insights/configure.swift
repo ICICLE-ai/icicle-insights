@@ -142,6 +142,7 @@ func configure(_ app: Application) async throws {
   app.migrations.add(PatraPlatform())
   app.migrations.add(MetricDailyTotals())
   app.migrations.add(PatraCardDetails())
+  app.migrations.add(ScheduleGHCRResources())
 
   // Development-only seed data so the dashboard has something to render. Only ever
   // registered in `.development`, so it targets `dev` and never the `test` database.

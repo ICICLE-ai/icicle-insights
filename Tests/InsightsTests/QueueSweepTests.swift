@@ -1,4 +1,5 @@
 import Fluent
+import FluentSQL
 import Foundation
 import Queues
 import Testing
@@ -306,6 +307,73 @@ struct QueueSweepTests {
         .reduce(into: [MetricType: Double]()) { $0[$1.type] = $1.reading }
       #expect(readings[.pulls] == 38)
       #expect(readings[.pullsAllTime] == 302)
+    }
+  }
+
+  // MARK: - Unscheduled GHCR backfill
+
+  /// Drives `ScheduleGHCRResources.scheduleUnscheduledGHCRResources` directly: migrations have
+  /// already run once at app boot, so the test calls the backfill itself after inserting rows.
+  @Test
+  func `The GHCR backfill makes an unscheduled container due, and the sweep then dispatches it`()
+    async throws
+  {
+    try await withQueueApp { app in
+      let account = try await makeAccount(on: app.db, name: "icicle-ai", platform: .ghcr)
+      let resource = try await makeResource(
+        on: app.db, accountID: try account.requireID(), name: "insights", type: .container)
+
+      let sql = try #require(app.db as? any SQLDatabase)
+      try await ScheduleGHCRResources.scheduleUnscheduledGHCRResources(on: sql)
+
+      let booked = try #require(try await Resource.find(resource.id, on: app.db)?.nextCollectionAt)
+      #expect(abs(booked.timeIntervalSinceNow) < 60)
+
+      try await CollectDueResources().run(context: queueContext(for: app))
+      #expect(
+        app.queues.asyncTest.all(SyncGHCRStats.self).map(\.id) == [try resource.requireID()])
+    }
+  }
+
+  /// npm and PyPI are left unscheduled on purpose, and so is every other platform: the backfill
+  /// is for GHCR rows only. A scheduled GHCR row keeps its own date, and deleted rows stay out.
+  @Test
+  func `The GHCR backfill leaves every other row alone`() async throws {
+    try await withQueueApp { app in
+      var untouched: [Resource] = []
+      for platform in [Platform.npm, .pypi, .github, .huggingface, .patra] {
+        let account = try await makeAccount(on: app.db, name: "icicle-ai", platform: platform)
+        untouched.append(
+          try await makeResource(on: app.db, accountID: try account.requireID(), name: "pkg"))
+      }
+
+      let ghcr = try await makeAccount(on: app.db, name: "icicle-ai", platform: .ghcr)
+      let ghcrID = try ghcr.requireID()
+      let scheduledAt = future(3)
+      let scheduled = try await makeResource(
+        on: app.db, accountID: ghcrID, name: "scheduled", type: .container,
+        nextCollectionAt: scheduledAt)
+      let deleted = try await makeResource(
+        on: app.db, accountID: ghcrID, name: "deleted", type: .container)
+      try await deleted.delete(on: app.db)
+
+      let orphanAccount = try await makeAccount(on: app.db, name: "gone", platform: .ghcr)
+      let orphan = try await makeResource(
+        on: app.db, accountID: try orphanAccount.requireID(), name: "orphan", type: .container)
+      try await orphanAccount.delete(on: app.db)
+
+      let sql = try #require(app.db as? any SQLDatabase)
+      try await ScheduleGHCRResources.scheduleUnscheduledGHCRResources(on: sql)
+
+      for resource in untouched + [orphan] {
+        #expect(try await Resource.find(resource.id, on: app.db)?.nextCollectionAt == nil)
+      }
+      let kept = try #require(try await Resource.find(scheduled.id, on: app.db)?.nextCollectionAt)
+      #expect(abs(kept.timeIntervalSince(scheduledAt)) < 1)
+      let stillDeleted = try #require(
+        try await Resource.query(on: app.db).withDeleted()
+          .filter(\.$id == deleted.requireID()).first())
+      #expect(stillDeleted.nextCollectionAt == nil)
     }
   }
 }
