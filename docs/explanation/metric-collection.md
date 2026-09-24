@@ -27,11 +27,14 @@ assigns rather than accumulates and a repeated sweep is harmless.
 3. A worker claims the job and re-reads the resource from the database.
 4. The worker resolves the account's credential through `SecretProvider`.
 5. The worker fetches **every** response it needs.
-6. The worker writes snapshots and folds any rolling values.
+6. The worker writes snapshots and folds any rolling values, in one transaction.
 
 Step 5 is deliberate. `SyncGitHubRepoStats` collects all three responses before creating a single
 batch, so a failure partway through leaves no half-swept resource — gauges stranded without the
 traffic rows that share their timestamp. There is a test for this.
+
+Step 6 is the same guarantee against retries. A failure after the snapshot rows but before the
+commit rolls them back, so the retry does not write a second set.
 
 The due date is booked at **dispatch**, not on success. That keeps the sweep cheap and stateless,
 and is why a credential failure re-books the resource an hour out rather than letting it sit out a

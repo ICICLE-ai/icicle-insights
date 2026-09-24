@@ -129,23 +129,39 @@ struct SyncGitHubRepoStats: AsyncJob, BackoffRetrying {
       Metric(resourceID: resourceID, reading: Double(views.count), type: .views),
     ]
 
-    try await metrics.create(on: context.application.db)
+    // Every write in one transaction, and every fetch above it. Delivery is at-least-once: a
+    // failure after the snapshot rows but before the success is recorded used to leave the rows
+    // behind, and the retry inserted the same readings again, so the chart grew duplicate points.
+    // Now a failure anywhere in here rolls every row back and the retry starts clean. The HTTP
+    // calls stay outside so a slow platform never holds a connection, or the fold locks, open.
+    //
+    // The folds open their own `db.transaction`, and that nests safely. FluentPostgresDriver's
+    // `transaction` (`FluentPostgresDatabase.swift`) returns `closure(self)` when the database it
+    // is handed is already `inTransaction`: no SAVEPOINT and no inner COMMIT, the fold simply
+    // joins this one. So its `pg_advisory_xact_lock` is held until this outer transaction ends,
+    // and a fold that throws rolls back the snapshot rows written before it.
+    try await context.application.db.transaction { db in
+      try await metrics.create(on: db)
 
-    // Stars, forks, and subscribers are gauges — reported in full each time, so the series is
-    // the record and `MetricType.allTime` is nil for them. Only the rolling windows accumulate.
-    for (traffic, endpoint) in [(clones, TrafficEndpoint.clones), (views, .views)] {
-      try await Metric.foldDailyIntoAllTime(
-        on: context.application.db,
-        resourceID: resourceID,
-        type: endpoint.metric,
-        days: traffic.days
-      )
+      // Stars, forks, and subscribers are gauges — reported in full each time, so the series is
+      // the record and `MetricType.allTime` is nil for them. Only the rolling windows accumulate.
+      //
+      // Always clones then views, so two sweeps of one resource take the two fold locks in the
+      // same order and cannot deadlock now that both are held to the end of this transaction.
+      for (traffic, endpoint) in [(clones, TrafficEndpoint.clones), (views, .views)] {
+        try await Metric.foldDailyIntoAllTime(
+          on: db,
+          resourceID: resourceID,
+          type: endpoint.metric,
+          days: traffic.days
+        )
+      }
+
+      // Last, and only on the happy path: every fetch and both folds have to have succeeded
+      // before this counts as a collection. A partial sweep must leave the schedule alone so the
+      // failure handler can book a backoff instead.
+      try await resource.recordSuccessfulCollection(on: db)
     }
-
-    // Last, and only on the happy path: every fetch and both folds have to have succeeded before
-    // this counts as a collection. A partial sweep must leave the schedule alone so the failure
-    // handler can book a backoff instead.
-    try await resource.recordSuccessfulCollection(on: context.application.db)
   }
 
   /// Fetches the repository snapshot using the supplied GitHub bearer token.

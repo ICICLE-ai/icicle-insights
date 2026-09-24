@@ -1,4 +1,5 @@
 import Fluent
+import FluentSQL
 import Foundation
 import Testing
 
@@ -162,6 +163,40 @@ struct MetricAllTimeTests {
       )
 
       #expect(try await allTimeReading(on: app.db, id) == 21)
+    }
+  }
+
+  /// What the collectors' transactions rely on. FluentPostgresDriver nests `transaction` by
+  /// handing an already-transactional database straight to the closure, so the fold's own
+  /// `db.transaction` must not COMMIT, and its transaction-scoped lock must outlive the fold and
+  /// last to the caller's COMMIT. Checked on the caller's own connection, where an inner COMMIT
+  /// would already have released the lock.
+  @Test
+  func `A fold inside a caller's transaction holds its lock until the caller ends`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let resource = try await makeResource(on: app.db, accountID: try account.requireID())
+      let id = try resource.requireID()
+      let now = Date()
+
+      let held = try await app.db.transaction { db in
+        try await Metric.foldDailyIntoAllTime(
+          on: db, resourceID: id, type: .clones, days: [self.day(-1, count: 4, from: now)],
+          now: now)
+
+        let sql = try #require(db as? any SQLDatabase)
+        return try await sql.raw(
+          """
+          SELECT count(*)::int AS held FROM pg_locks
+          WHERE locktype = 'advisory' AND granted AND pid = pg_backend_pid()
+          """
+        ).first()?.decode(column: "held", as: Int.self)
+      }
+
+      #expect(held == 1)
+      #expect(try await allTimeReading(on: app.db, id) == 4)
     }
   }
 

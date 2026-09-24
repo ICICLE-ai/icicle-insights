@@ -82,6 +82,10 @@ transaction-scoped PostgreSQL advisory lock keyed on `(resource, metric type)` b
 watermark and updates the total. Read, check, add, and advance are atomic for that one metric,
 while unrelated resources proceed in parallel.
 
+The fold runs inside the collector's own transaction. FluentPostgresDriver nests a transaction by
+joining the open one rather than committing early, so the lock is held until the collector
+commits. The watermark therefore advances only if the sweep's readings land too.
+
 ## What a watermark cannot do
 
 It prevents double counting. It cannot recover data the provider no longer returns.

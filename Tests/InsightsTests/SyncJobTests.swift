@@ -1,4 +1,5 @@
 import Fluent
+import FluentSQL
 import Foundation
 import NIOConcurrencyHelpers
 import Queues
@@ -286,6 +287,127 @@ struct SyncJobTests {
         Issue.record("expected decodingFailed, got \(String(describing: error?.description))")
         return
       }
+    }
+  }
+
+  // MARK: - Retry safety
+
+  /// Makes every UPDATE of `resources` raise, so a collector fails at
+  /// `recordSuccessfulCollection`: after its snapshot rows and folds, before anything commits.
+  ///
+  /// A trigger rather than a seam in production code, because the point is a failure the job
+  /// cannot see coming, arriving from the database mid-sweep. `autoRevert` drops the table and
+  /// the trigger with it, but the function outlives both, so ``allowResourceUpdates(on:)`` drops
+  /// it explicitly.
+  private func failResourceUpdates(on app: Application) async throws {
+    let sql = try #require(app.db as? any SQLDatabase)
+    try await sql.raw(
+      """
+      CREATE OR REPLACE FUNCTION insights_test_fail_update() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'injected failure after the snapshot rows'; END
+      $$ LANGUAGE plpgsql
+      """
+    ).run()
+    try await sql.raw(
+      """
+      CREATE TRIGGER insights_test_fail_update BEFORE UPDATE ON resources
+      FOR EACH ROW EXECUTE FUNCTION insights_test_fail_update()
+      """
+    ).run()
+  }
+
+  /// Removes what ``failResourceUpdates(on:)`` installed.
+  private func allowResourceUpdates(on app: Application) async throws {
+    let sql = try #require(app.db as? any SQLDatabase)
+    try await sql.raw("DROP TRIGGER IF EXISTS insights_test_fail_update ON resources").run()
+    try await sql.raw("DROP FUNCTION IF EXISTS insights_test_fail_update()").run()
+  }
+
+  /// The retry that at-least-once delivery guarantees. Before the transaction, the failed attempt
+  /// left its five snapshot rows and both folded totals behind, and the retry added five more:
+  /// every chart point doubled for that sweep.
+  @Test
+  func
+    `A GitHub sweep that fails after its snapshot rows leaves nothing for the retry to duplicate`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let resource = try await makeGitHubRepo(on: app)
+      let id = try resource.requireID()
+
+      stubAPI(
+        on: app,
+        [
+          .ok(
+            "/repos/icicle-ai/insights",
+            #"{"stargazers_count": 12, "forks_count": 3, "subscribers_count": 5}"#),
+          .ok(
+            "/repos/icicle-ai/insights/traffic/clones",
+            trafficJSON(key: "clones", rolling: 12, days: [(-2, 5), (-1, 7)])),
+          .ok(
+            "/repos/icicle-ai/insights/traffic/views",
+            trafficJSON(key: "views", rolling: 20, days: [(-1, 20)])),
+        ])
+
+      try await failResourceUpdates(on: app)
+      await #expect(throws: (any Error).self) {
+        try await SyncGitHubRepoStats().dequeue(queueContext(for: app), .init(id: id))
+      }
+
+      // Rolled back whole: no snapshot rows, no totals, and no watermark claiming days counted.
+      #expect(try await Metric.query(on: app.db).count() == 0)
+      #expect(try await MetricWatermark.query(on: app.db).count() == 0)
+
+      try await allowResourceUpdates(on: app)
+      try await SyncGitHubRepoStats().dequeue(queueContext(for: app), .init(id: id))
+
+      let snapshots = try await Metric.query(on: app.db)
+        .filter(\.$resource.$id == id)
+        .filter(\.$type ~~ [.stars, .forks, .subscribers, .clones, .views])
+        .count()
+      #expect(snapshots == 5)
+      let readings = try await readings(on: app.db, id)
+      #expect(readings[.clonesAllTime] == 12)
+      #expect(readings[.viewsAllTime] == 20)
+      #expect(try #require(try await Resource.find(id, on: app.db)).lastCollectedAt != nil)
+    }
+  }
+
+  @Test
+  func `A Hub sweep that fails after its snapshot rows leaves nothing for the retry to duplicate`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db, name: "icicle", platform: .huggingface)
+      let accountID = try account.requireID()
+      _ = try await makeVault(on: app.db, accountID: accountID, name: "huggingface-token")
+      let resource = try await makeResource(
+        on: app.db, accountID: accountID, name: "insights", type: .model)
+      let id = try resource.requireID()
+
+      stubAPI(
+        on: app,
+        [
+          .ok(
+            "/api/models/icicle/insights",
+            #"{"downloads": 500, "downloadsAllTime": 12000, "likes": 7}"#)
+        ])
+
+      try await failResourceUpdates(on: app)
+      await #expect(throws: (any Error).self) {
+        try await SyncHuggingFaceHubStats().dequeue(queueContext(for: app), .init(id: id))
+      }
+      #expect(try await Metric.query(on: app.db).count() == 0)
+
+      try await allowResourceUpdates(on: app)
+      try await SyncHuggingFaceHubStats().dequeue(queueContext(for: app), .init(id: id))
+
+      let types = try await Metric.query(on: app.db)
+        .filter(\.$resource.$id == id)
+        .all()
+        .map(\.type.rawValue)
+        .sorted()
+      #expect(types == ["downloads", "downloadsAllTime", "likes"])
     }
   }
 
@@ -1611,6 +1733,38 @@ struct SyncJobTests {
       try await SyncPatraDeployments().dequeue(queueContext(for: app), .init(id: UUID()))
 
       #expect(requests.withLockedValue { $0 }.isEmpty)
+    }
+  }
+
+  /// Same retry hazard as the GitHub and Hub collectors, on the one row this job writes.
+  @Test
+  func `A Patra sweep that fails after its reading leaves nothing for the retry to duplicate`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let resource = try await makePatraModel(on: app, cardUUIDs: ["card-a"])
+      let id = try resource.requireID()
+
+      stubPagedAPI(on: app) { url in
+        guard url.contains("/modelcard/card-a/deployments"), url.contains("skip=0") else {
+          return nil
+        }
+        return self.jsonResponse(.ok, self.deploymentsJSON(count: 3))
+      }
+
+      try await failResourceUpdates(on: app)
+      await #expect(throws: (any Error).self) {
+        try await SyncPatraDeployments().dequeue(queueContext(for: app), .init(id: id))
+      }
+      #expect(try await Metric.query(on: app.db).count() == 0)
+
+      try await allowResourceUpdates(on: app)
+      try await SyncPatraDeployments().dequeue(queueContext(for: app), .init(id: id))
+
+      let readings = try await Metric.query(on: app.db)
+        .filter(\.$resource.$id == id)
+        .all()
+      #expect(readings.map(\.reading) == [3])
     }
   }
 

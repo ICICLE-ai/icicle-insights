@@ -72,16 +72,22 @@ struct SyncPatraDeployments: AsyncJob, BackoffRetrying {
       total += deployments.count
     }
 
-    // Written even when `total` is 0 — the endpoint answered, and zero deployments is what it
-    // said. `.deployments.allTime` is nil (see `MetricType`), so this reading is never folded;
-    // Patra's count is read whole on every sweep and there is no rolling window to accumulate.
-    try await Metric(
-      resourceID: payload.id, reading: Double(total), type: .deployments
-    ).create(on: context.application.db)
+    // The reading and the success in one transaction, for the reason `SyncGitHubRepoStats`
+    // gives: if recording the success failed after the reading landed, the retry wrote a second
+    // `.deployments` row for the same sweep.
+    let reading = Double(total)
+    try await context.application.db.transaction { db in
+      // Written even when `total` is 0 — the endpoint answered, and zero deployments is what it
+      // said. `.deployments.allTime` is nil (see `MetricType`), so this reading is never folded;
+      // Patra's count is read whole on every sweep and there is no rolling window to accumulate.
+      try await Metric(
+        resourceID: payload.id, reading: reading, type: .deployments
+      ).create(on: db)
 
-    // Anchors the backoff and the next due date on this success, last — the contract every
-    // per-resource collector follows. `SyncPatraCatalog` is the one exception: it is
-    // account-level and writes no metrics, so it has no per-resource cadence to anchor.
-    try await resource.recordSuccessfulCollection(on: context.application.db)
+      // Anchors the backoff and the next due date on this success, last — the contract every
+      // per-resource collector follows. `SyncPatraCatalog` is the one exception: it is
+      // account-level and writes no metrics, so it has no per-resource cadence to anchor.
+      try await resource.recordSuccessfulCollection(on: db)
+    }
   }
 }

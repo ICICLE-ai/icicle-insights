@@ -77,6 +77,11 @@ extension Metric {
   /// Unlike `addToAllTime` this opens its own transaction, because API writes arrive outside
   /// any sweep. It takes the same lock `foldDailyIntoAllTime` does, so a request and a
   /// concurrent sweep serialize rather than racing to read-modify-write the same row.
+  ///
+  /// Called from inside a caller's transaction, it joins that one instead: FluentPostgresDriver's
+  /// `transaction` hands an already-transactional database straight to the closure, with no
+  /// SAVEPOINT. The lock is then held until the caller's transaction ends, and a throw here rolls
+  /// back everything the caller wrote before it.
   static func adjustAllTime(
     on db: any Database,
     resourceID: Resource.IDValue,
@@ -125,6 +130,12 @@ extension Metric {
   ///
   /// Days that age out of the platform's retention window before a sweep runs are lost;
   /// neither endpoint offers backfill. `Platform.maxCollectionIntervalDays` bounds that.
+  ///
+  /// `SyncGitHubRepoStats` calls this inside its own transaction, so the snapshot rows and the
+  /// fold commit or roll back together. That relies on nesting joining rather than committing:
+  /// FluentPostgresDriver's `transaction` returns `closure(self)` for a database already
+  /// `inTransaction`, so the `db.transaction` below issues no BEGIN, the advisory lock lives until
+  /// the caller's COMMIT, and the watermark advances only if the caller's writes land too.
   static func foldDailyIntoAllTime(
     on db: any Database,
     resourceID: Resource.IDValue,

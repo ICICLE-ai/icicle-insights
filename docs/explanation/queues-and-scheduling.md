@@ -40,6 +40,10 @@ Jobs must therefore be safe to retry. For counting, that safety comes from water
 [Watermarks](watermarks.md). For anything new that reads, modifies, and writes, it has to come from
 somewhere equivalent.
 
+Snapshot rows get theirs from a transaction. Each collector fetches everything first, then makes
+every database write in one transaction: readings, folds, and the success stamp. A failure before
+the commit leaves nothing behind, so the retry cannot add a second set of readings for one sweep.
+
 Horizontal workers also introduce real concurrency. The metric fold takes a PostgreSQL advisory
 transaction lock keyed by resource and metric type, so two folds cannot corrupt the same all-time
 value while unrelated resources proceed in parallel. A new read-modify-write job needs its own

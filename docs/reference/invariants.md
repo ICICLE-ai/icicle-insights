@@ -27,6 +27,7 @@ cannot take the same one.
 | Rule | Breaking it causes |
 |---|---|
 | Fetch every provider response before writing a sweep | A partial snapshot: gauges stranded without the traffic rows sharing their timestamp |
+| A sweep's writes share one transaction: readings, folds, and `recordSuccessfulCollection` | A late failure leaves the readings, and the retry writes them again |
 | Fold rolling values through their watermark | Overlapping windows counted repeatedly |
 | Fold only completed UTC days newer than the watermark | Today banked while still partial, then skipped once complete |
 | Advance watermarks only through completed days | The same |
@@ -35,7 +36,9 @@ cannot take the same one.
 | A gap past the retention window raises `collection_window_exceeded`, once per outage | Data loss stays silent |
 
 `Metric.foldDailyIntoAllTime` takes a transaction-scoped `pg_advisory_xact_lock`. FluentKit has no
-row locking in this version. The hash uses PostgreSQL's `hashtext`, not Swift's `hashValue`, which
+row locking in this version. Called inside a collector's transaction, the fold's own
+`db.transaction` joins it: FluentPostgresDriver issues no SAVEPOINT or inner COMMIT, so the lock is
+held to the collector's commit. The hash uses PostgreSQL's `hashtext`, not Swift's `hashValue`, which
 is seeded per process.
 
 ## Credentials
