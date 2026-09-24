@@ -135,6 +135,45 @@
 			</dl>
 		</div>
 
+		{#if d.resource.card}
+			{@const card = d.resource.card}
+			<section aria-labelledby="about-heading" class="rounded-xl border bg-card p-5">
+				<h2 id="about-heading" class="text-sm font-medium">
+					About this {card.kind === 'model' ? 'model' : 'dataset'}
+				</h2>
+				{#if card.description}<p class="mt-2 max-w-3xl text-sm text-muted-foreground">
+						{card.description}
+					</p>{/if}
+				<dl class="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-4">
+					{#each [['Author', card.author], ['Category', card.category], ['Framework', card.framework], ['Model type', card.modelType], ['Input', card.inputType], ['Licence', card.license], ['Version', card.version], ['Test accuracy', card.accuracy != null ? `${(card.accuracy * 100).toFixed(1)}%` : null], ['Size', card.size], ['Format', card.format], ['Published', card.publicationYear ? String(card.publicationYear) : null], ['Card updated', card.updatedAt ? formatDate(card.updatedAt) : null]].filter(([, value]) => value) as [label, value] (label)}
+						<div>
+							<dt class="text-xs text-muted-foreground">{label}</dt>
+							<dd>{value}</dd>
+						</div>
+					{/each}
+				</dl>
+				{#if card.keywords?.length}
+					<ul class="mt-4 flex flex-wrap gap-1.5" aria-label="Keywords">
+						{#each card.keywords as keyword (keyword)}
+							<li class="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
+								{keyword}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+				{#if card.sourceURL}
+					<a
+						href={card.sourceURL}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="mt-4 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+					>
+						Source recorded in Patra <ExternalLink class="size-3" />
+					</a>
+				{/if}
+			</section>
+		{/if}
+
 		<div
 			class={data.loading
 				? 'flex flex-col gap-6 opacity-60 transition-opacity'
