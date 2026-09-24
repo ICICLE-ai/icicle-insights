@@ -16,8 +16,10 @@ final class PatraCard: Model, @unchecked Sendable {
   var id: UUID?
 
   @Parent(key: "resource_id")
-  /// Resource this card names. `type` is always `.model` today; `agent` exists for what Patra
-  /// catalogs next.
+  /// Resource this card names. `type` is `.model` for a model card and `.dataset` for a
+  /// datasheet, and that type is also what `PatraCard.Public.kind` reads, since the card row
+  /// itself does not record which catalog it came from. `agent` exists for what Patra catalogs
+  /// next.
   var resource: Resource
 
   @Field(key: "card_uuid")
@@ -26,9 +28,10 @@ final class PatraCard: Model, @unchecked Sendable {
   var cardUUID: String
 
   @OptionalField(key: "version")
-  /// The card's version string, as Patra reports it. Nil where the registry has none. Stored for
-  /// completeness but deliberately unexposed — rendering "this model has 11 variants" is a later
-  /// change with its own design.
+  /// The card's version string, as Patra reports it. Nil where the registry has none, which today
+  /// includes every datasheet: `/datasheets` sends no `version` at all. Exposed only as the newest
+  /// card's version on `Resource.Public.card`; rendering "this model has 11 variants" is still a
+  /// later change with its own design.
   var version: String?
 
   @OptionalField(key: "card_updated_at")
@@ -36,7 +39,10 @@ final class PatraCard: Model, @unchecked Sendable {
   var cardUpdatedAt: Date?
 
   @OptionalField(key: "source_url")
-  /// Patra's `AIModel.location`, stored raw so a failed resolution is auditable.
+  /// Patra's `AIModel.location` for a model card, or the one identifier provenance trusted for a
+  /// datasheet, stored raw so a failed resolution is auditable. Also shown as
+  /// `PatraCard.Public.sourceURL`, where the name oversells it: the datasheet value can be a bare
+  /// `owner/name`, and one live model card's is the literal string `"test"`.
   var sourceURL: String?
 
   @OptionalParent(key: "hub_resource_id")

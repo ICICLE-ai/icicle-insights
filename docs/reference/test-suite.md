@@ -2,7 +2,7 @@
 
 What the suite covers. For developers.
 
-**329 tests across 23 suites**, all in `Tests/InsightsTests/`. Parameterised tests count once.
+**338 tests across 24 suites**, all in `Tests/InsightsTests/`. Parameterised tests count once.
 
 ```bash
 just test
@@ -19,8 +19,8 @@ and their absence fails every test, not one.
 | `HardeningTests` | 49 | Headers, CORS, rate limits and client addresses, request IDs, key rotation, admins, pool sizes, absent keyset |
 | `JobFailureTests` | 31 | Failure classification, retries, backoff, re-booking, alert deduplication |
 | `MetricControllerTests` | 24 | Metric CRUD, filters, validation, admin guard |
+| `ResourceControllerTests` | 24 | Resource CRUD, cadence caps, admin guard, first dispatch, deleted links, the Patra `card` |
 | `AuthenticationTests` | 22 | Both credential paths and where they cross |
-| `ResourceControllerTests` | 21 | Resource CRUD, cadence caps, admin guard, first dispatch, deleted links |
 | `VaultControllerTests` | 15 | Name normalisation, validation, upstream status mapping, rollback |
 | `MetricAllTimeTests` | 13 | Double-count prevention, the watermark fold, its locks, daily snapshots |
 | `PatraCardDescriptionTests` | 13 | Reading Patra's card text: fallback order, lenient types, trimming |
@@ -31,6 +31,7 @@ and their absence fails every test, not one.
 | `QueueSweepTests` | 9 | Which job a platform dispatches, how due dates advance, orphans |
 | `TapisTokenExpiryTests` | 9 | Reading `TAPIS_TOKEN`'s expiry and the daily warning |
 | `ServiceTokenExpiryTests` | 8 | The daily expiry warning and its thresholds |
+| `PatraCardProjectionTests` | 6 | Which card stands for a resource, `kind`, keywords, and the JSON shape |
 | `PatraAPITests` | 4 | Paging and error handling against a stubbed Patra |
 | `AdminInsightControllerTests` | 4 | The admin-only operational projections |
 | `TrafficDecodingTests` | 4 | The `clones`/`views` array-key split |
@@ -51,8 +52,8 @@ Several `HardeningTests` cases also set process environment variables that `conf
 boot. Process environment is global; running those concurrently would make them read each other's
 settings.
 
-`TrafficDecodingTests`, `PatraAPITimestampsTests`, and `PatraCardDescriptionTests` need no
-database. They are pure decoding.
+`TrafficDecodingTests`, `PatraAPITimestampsTests`, `PatraCardDescriptionTests`, and
+`PatraCardProjectionTests` need no database. They are pure decoding and projection.
 
 ## Harness
 

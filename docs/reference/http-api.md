@@ -181,6 +181,39 @@ A `lifetime` tile's `atStart` and `series` come from daily snapshots that begin 
 | `atStart` | Metric type to value at the end of `from`, for every type that had one |
 | `spark` | The `sort` metric's daily points in the range |
 
+## Resource responses
+
+`GET /api/resources` and `GET /api/resources/:resourceID` add two fields built from the resource's
+Patra cards. Both come from one eager load, not a query per resource.
+
+| Field | Meaning |
+|---|---|
+| `links` | Other tracked resources this one's Patra cards resolved to. `[]` when none |
+| `card` | The resource's most recently updated Patra card. Absent when it has none |
+
+The most recently updated card is the one with the latest `updatedAt`. A card without one ranks
+last, and a tie goes to the card Insights discovered last.
+
+Every card key is always present. A value Patra did not give is `null`, never a missing key.
+
+| Card field | Meaning |
+|---|---|
+| `kind` | `model` on a `model` resource, `datasheet` on a `dataset` one. Resources of other kinds have no `card` |
+| `uuid` | Patra's identifier for the card |
+| `version` | The card's version. `null` for datasheets today |
+| `updatedAt` | When Patra last updated the card, not when Insights last read it |
+| `description`, `author`, `category`, `license` | Text, on both kinds |
+| `framework`, `modelType`, `inputType` | Text, on model cards. `null` on a datasheet |
+| `accuracy` | Patra's `test_accuracy`, unscaled, normally 0–1. Model cards only |
+| `keywords` | Array of strings, or `null` when there are none. Model cards only |
+| `gated` | Boolean. Model cards only |
+| `size`, `format` | Text, on datasheets. `null` on a model card |
+| `publicationYear` | Integer. Datasheets only |
+| `sourceURL` | The identifier Patra gave for the artifact elsewhere. **Not always a URL**: a datasheet's can be a bare `owner/name` |
+
+What each field is read from in Patra is in [Data model](data-model.md). Values refresh on every
+catalog sweep, so an edit in Patra shows here after the next one.
+
 ## Conventions
 
 - Timestamps are ISO 8601, UTC.

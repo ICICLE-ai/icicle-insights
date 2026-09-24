@@ -84,6 +84,14 @@ extension Resource {
     /// loaded Patra cards. Nil means not requested; an empty array means requested and none
     /// found — the same "loaded vs. not" contract every other relationship here keeps.
     var links: [ResourceLink]?
+    /// What Patra says about this artifact: the resource's most recently updated Patra card, as
+    /// chosen by `PatraCard.newest(of:)`. Nil for a resource with no Patra cards, a resource whose
+    /// type names no Patra catalog (see `PatraCard.Kind`), or a response that did not load cards.
+    ///
+    /// Unlike `links`, "loaded, none found" is nil here too, not an empty value: a card is one
+    /// object, and there is no empty object to stand for none. `links` still carries the
+    /// loaded-versus-not distinction for any client that needs it.
+    var card: PatraCard.Public?
     /// Earliest instant at which the due-resource sweep may dispatch it.
     var nextCollectionAt: Date?
     /// Number of days booked between successful dispatches.
@@ -93,12 +101,16 @@ extension Resource {
     var deletedAt: Date?
 
     enum CodingKeys: String, CodingKey {
-      case id, accountID, name, type, metrics, releases, links, nextCollectionAt,
+      case id, accountID, name, type, metrics, releases, links, card, nextCollectionAt,
         collectionIntervalDays, createdAt, updatedAt, deletedAt
     }
   }
 
   /// Projects loaded model fields and child collections into the public API shape.
+  ///
+  /// `links` and `card` both read only the Patra cards `index` and `show` already eager-loaded, so
+  /// adding `card` cost those routes no query at all. Neither is ever fetched from here: a caller
+  /// that did not load `patraCards` gets neither, never a lazy load per resource.
   func toPublic() -> Public {
     .init(
       id: id,
@@ -108,12 +120,24 @@ extension Resource {
       metrics: $metrics.value?.map { $0.toPublic() },
       releases: $releases.value?.map { $0.toPublic() },
       links: $patraCards.value.map(Self.links(from:)),
+      card: $patraCards.value.flatMap { Self.card(from: $0, resourceType: $type.value) },
       nextCollectionAt: $nextCollectionAt.value ?? nil,
       collectionIntervalDays: $collectionIntervalDays.value,
       createdAt: createdAt,
       updatedAt: updatedAt,
       deletedAt: deletedAt,
     )
+  }
+
+  /// The public form of the newest of a resource's loaded Patra cards, labelled with the kind its
+  /// type implies, or nil when there are no cards or the type names no Patra catalog.
+  private static func card(from cards: [PatraCard], resourceType: ResourceType?) -> PatraCard
+    .Public?
+  {
+    guard let resourceType, let kind = PatraCard.Kind(resourceType: resourceType),
+      let newest = PatraCard.newest(of: cards)
+    else { return nil }
+    return newest.toPublic(kind: kind)
   }
 
   /// Flattens a resource's Patra cards into the distinct non-nil hub/repository resources they

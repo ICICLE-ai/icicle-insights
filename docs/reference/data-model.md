@@ -69,7 +69,7 @@ version) pair, not a distinct model, so one resource commonly owns several.
 | Field | Meaning |
 |---|---|
 | `card_uuid` | Patra's own identifier. Unique — the only stable key; name alone is not |
-| `version` | The card's version string, as Patra reports it. Not exposed by the API |
+| `version` | The card's version string, as Patra reports it. Null for datasheets today: `/datasheets` sends none |
 | `card_updated_at` | The card's own `updated_at`, as Patra reports it |
 | `source_url` | The chosen cross-registry identifier for the artifact. Stored even when it resolves to nothing |
 | `hub_resource_id` | The Hugging Face resource `source_url` names, when it resolves |
