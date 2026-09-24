@@ -1,127 +1,53 @@
 # Run the tests
 
-Get the suite passing locally. For developers.
+How to run the server and dashboard test suites locally without touching production. For
+developers.
+
+## Server tests
+
+1. Make sure PostgreSQL and Valkey are running on `localhost`. See
+   [Run Insights locally](../tutorials/run-insights-locally.md).
+2. Create the `test` database once. The suite always uses it, whatever `.env` says:
+
+   ```bash
+   docker compose exec db psql -U vapor_username -d vapor_database -c 'CREATE DATABASE test'
+   ```
+
+   On the Apple Container stack, use `container exec db` instead of `docker compose exec db`.
+3. Check `.env` points at the **staging** tenant, `https://icicleai.staging.tapis.io/v3`. A few
+   vault tests write real secrets when `TAPIS_TOKEN` is a real token.
+4. Run the suite:
+
+   ```bash
+   just test
+   ```
+
+The suite runs serially because every test suite migrates and reverts the one `test` database.
+
+## Dashboard tests
 
 ```bash
-just test
+just web-check    # svelte-check and TypeScript
+just web-test     # vitest
 ```
 
-211 tests across 15 suites. Expect a few minutes; it runs serially by design.
+## In a container
 
-## Two settings that are not optional
+`just stack-test` runs the server suite inside the Apple Container network, against the stack's own
+database and Valkey. Use it when native tests fail with `Connection refused` to Valkey: on macOS,
+`localhost` can resolve to IPv6 first while the published ports are IPv4 only.
 
-Get either wrong and the **entire** suite fails during setup, not one test. It reads like the code
-is broken when it is not.
+## What CI runs
 
-**`.env` must exist.**
-
-```bash
-cp .env.example .env
-```
-
-Tapis configuration is parsed inside `configure`, which every test that boots an app runs. A missing
-file throws before any test body executes.
-
-**`DATABASE_TLS=disable`**
-
-The local PostgreSQL container serves no TLS. Without this, every connection fails with an SSL
-error.
-
-Dummy Tapis values are fine. The three tests needing real credentials skip themselves.
-
-## Start the backing services
-
-The suite needs PostgreSQL reachable on the default port.
-
-```bash
-container system start
-```
-
-```bash
-just db
-```
-
-```bash
-just valkey
-```
-
-Valkey is only needed for the suites that exercise rate limiting.
-
-## Why it is serial
-
-Every suite is `.serialized`, and `just test` adds `--no-parallel` on top.
-
-Suites share the one `test` database and each migrates and reverts around itself. Any overlap has
-one suite reverting the schema out from under another.
-
-Several hardening tests also set process environment variables that `configure` reads at boot.
-Process environment is global; running those concurrently would make them read each other's
-settings.
-
-**Do not remove `--no-parallel`.** The failures it prevents are intermittent and look like
-unrelated bugs.
-
-## Running a subset
-
-```bash
-swift test --no-parallel --filter AuthenticationTests
-```
-
-Keep `--no-parallel` even for one suite. It still migrates the shared database.
-
-## Tests that reach real Tapis
-
-Three vault tests write and destroy real secrets, because the adapter needs real credentials even to
-fail usefully.
-
-Point `.env` at the **staging** tenant and they run. Leave the token blank and they skip.
-
-```dotenv
-TAPIS_BASE_URL=https://icicleai.staging.tapis.io/v3
-TAPIS_TENANT=icicleai
-```
-
-Staging is a separate vault, so nothing you run locally touches production.
-
-The skip check reads the token's expiry, not just its shape. Tapis tokens last hours, so "looks like
-a JWT" and "will authenticate" are different questions — an expired token would otherwise produce
-confusing 500s indistinguishable from a real regression.
+The same commands, on every pull request to `main` or `dev`. CI uses a placeholder
+`TAPIS_TOKEN` that is not a JWT, so the vault tests skip themselves. See
+[CI pipeline](../reference/ci-pipeline.md).
 
 ## Formatting
 
 ```bash
-just fmt
+just fmt-check    # report problems
+just fmt          # fix them
 ```
 
-```bash
-just fmt-check
-```
-
-Run `just fmt` before committing. `swift-format` is authoritative.
-
-## Dashboard tests
-
-Separate toolchain, separate command:
-
-```bash
-just web-test
-```
-
-## Troubleshooting
-
-**Every test fails in setup.** `.env` is missing, or `DATABASE_TLS` is not `disable`.
-
-**Every connection fails with an SSL error.** `DATABASE_TLS=disable`.
-
-**Intermittent failures about missing tables.** Something is running in parallel. Check for a
-stray `swift test` without `--no-parallel`.
-
-**Vault tests fail with 500s.** The Tapis token expired. Blank it out and they will skip instead.
-
-## What the suite cannot catch
-
-Testing skips the Tapis tenant key fetch and the vault keyset read, so anything on those paths is
-invisible. Two real bugs hid there. Verify changes to those paths against staging, not just the
-suite. See [Test suite](../reference/test-suite.md).
-
-#icicle-insights# #How-To# #Developer# #testing#
+#icicle-insights# #How-To# #Developer#

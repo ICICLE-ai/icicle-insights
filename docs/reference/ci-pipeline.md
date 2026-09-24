@@ -1,76 +1,71 @@
 # CI pipeline
 
-The jobs in `.github/workflows/build.yaml`, what each one caches, and the `Dockerfile` targets they
-use. For developers.
+What `.github/workflows/build.yaml` runs, when, and what it publishes. For developers reading a CI
+result or changing the workflow.
 
 ## Triggers
 
-| Event | Branches | Pushes an image | Publishes a release |
-|---|---|---|---|
-| `push` | `main`, `dev` | Yes | No |
-| `push` | tags `v*` | Yes | Yes |
-| `pull_request` | into `main`, `dev` | No | No |
+| Event | Runs | Publishes |
+|---|---|---|
+| Pull request to `main` or `dev` | `test`, `build`, `web`, `image` | Nothing |
+| Push to `main` or `dev` | The same | Image to GHCR |
+| Push of a tag `v*` | The same, plus `release` | Image, and a GitHub release |
 
 A newer push to the same pull request cancels the older run. Pushes to branches and tags always
 finish.
 
 ## Jobs
 
-`test`, `build` and `web` start together. `image` waits for all three. `release` waits for `image`.
+`test`, `build` and `web` start together. `image` waits for all three.
 
-| Job | Runs in | Does | Output |
-|---|---|---|---|
-| `test` | `swift:6.3-noble` with Postgres and Valkey services | `swift build --build-tests`, then `swift test --no-parallel` | — |
-| `build` | `swift:6.3-noble` | Release build of `Insights` with static stdlib and jemalloc | `server` artifact: `server.tar` |
-| `web` | Deno 2.9 | `deno install --frozen`, then `check`, `test` and `build` in `web/` | `web` artifact: `web.tar` |
-| `image` | Docker Buildx | Assembles `.ci-staging/`, builds `--target prebuilt`, pushes to GHCR | `ghcr.io/icicle-ai/insights:{latest,<sha>}` |
-| `release` | Ubuntu | Extracts `Insights` from `server.tar`, renames it `icicle-insights`, tars it | GitHub release asset |
+| Job | Runs in | Does |
+|---|---|---|
+| `test` | `swift:6.3-noble`, with PostgreSQL 18 and Valkey 9 services | `swift build --build-tests`, then `swift test --no-parallel` against a `test` database |
+| `build` | `swift:6.3-noble` | Release build of `Insights`, statically linked with jemalloc. Uploads the binary as `server` |
+| `web` | Ubuntu with Deno 2.9.7 | `deno install --frozen`, `deno task check`, `deno task test`, `deno task build`. Uploads the site as `web` |
+| `image` | Ubuntu with Buildx | Unpacks both artifacts and builds the Dockerfile's `prebuilt` target. Pushes except on pull requests |
+| `release` | Ubuntu | Tags only. Publishes `icicle-insights-linux-amd64.tar.gz` |
 
-`image` needs `test` even though it uses nothing `test` produces. Nothing is published from a tree
-whose suite failed.
+## Test environment
+
+| Variable | Value |
+|---|---|
+| `TAPIS_BASE_URL` | `https://icicleai.staging.tapis.io/v3` |
+| `TAPIS_TENANT` | `icicleai` |
+| `TAPIS_USER` | `ci` |
+| `TAPIS_TOKEN` | `ci-placeholder-not-a-jwt`, so vault tests skip themselves |
+| `ROOT_ADMIN_USERNAME` | `ci-root-admin` |
+| `DATABASE_TLS` | `disable` |
 
 ## Caches
 
-| Cache | Job | Path | Key |
-|---|---|---|---|
-| `swift-debug-*` | `test` | `.build` | OS, `Package.resolved` hash, `Sources/**` and `Tests/**` hash |
-| `swift-release-*` | `build` | `.build` | OS, `Package.resolved` hash, `Sources/**` hash |
-| Deno | `web` | Deno's download cache | `web/deno.lock` hash, via `setup-deno` |
-| Docker layers | `image` | BuildKit `type=gha` | Managed by Buildx |
+| Cache | Key | Restores from |
+|---|---|---|
+| Debug `.build` | `swift-debug-<os>-<Package.resolved hash>-<Sources and Tests hash>` | The same resolved packages, then any debug build |
+| Release `.build` | `swift-release-<os>-<Package.resolved hash>-<Sources hash>` | The same resolved packages, then any release build |
+| Deno | `deno.lock` | Managed by `setup-deno` |
+| Docker layers | GitHub Actions cache | `cache-from` and `cache-to` `type=gha` |
 
-Each Swift cache falls back to the newest entry with the same `Package.resolved`, then to any entry
-for the OS. A restored `.build` recompiles only this repository's module, not Vapor, NIO or the
-other dependencies.
+Swift caches are saved right after building, before tests run, so a failing test does not throw
+away a good build.
 
-Swift caches are saved right after the build step, before tests run. A failing test still leaves a
-warm cache for the next run.
+## Image
+
+| Tag | Points at |
+|---|---|
+| `ghcr.io/icicle-ai/insights:latest` | The latest push to `main` or `dev` |
+| `ghcr.io/icicle-ai/insights:<commit sha>` | That commit |
+
+Pushing needs the repository secrets `REGISTRY_USERNAME` and `REGISTRY_PASSWORD`.
 
 ## Dockerfile targets
 
 | Target | Used by | Builds |
 |---|---|---|
-| `runtime` (default, last stage) | `just build`, `docker compose` | Frontend and server from source |
-| `prebuilt` | CI `image` job | Nothing. Copies `.ci-staging/` onto the runtime base |
+| `runtime` (default) | `docker build`, Compose, `just build` | The dashboard and the server from source |
+| `prebuilt` | CI | Copies an already built server and dashboard from `.ci-staging/` |
+| `runtime-base` | Both of the above | Ubuntu with the `vapor` user, entrypoint and production defaults |
 
-Both targets extend `runtime-base`, which holds the user, entrypoint and environment.
+Both final targets make `Public/` read-only.
 
-`.ci-staging/` has the same layout as the source build's `/staging`:
-
-| Path | From |
-|---|---|
-| `Insights` | `server.tar` |
-| `swift-backtrace-static` | `server.tar` |
-| `*.resources` | `server.tar`, when SwiftPM bundles any |
-| `Public/` | `web.tar`. The `prebuilt` stage makes it read-only |
-
-Artifacts are tarballs because an artifact upload drops the executable bit.
-
-## Expected durations
-
-| Run | Roughly |
-|---|---|
-| Cold caches, the first run after `Package.resolved` changes | 13–14 min |
-| Warm caches | 6–8 min |
-| Before this layout, every run | 21 min |
-
-#icicle-insights# #Reference# #Developer# #tooling#
+#icicle-insights# #Reference# #Developer#

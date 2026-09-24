@@ -1,93 +1,50 @@
 # Issue a service token
 
-Let a deployed service post its own metrics. For administrators.
+How to let a deployed ICICLE service report its own metrics, such as how many users authenticated.
+For administrators signed in to the console, and developers wiring up the service.
 
-A service token authorises one deployed service to write metrics for exactly one resource. It
-grants nothing else.
+A service token can write readings for one resource and nothing else.
 
-## Prerequisites
+## 1. Register the service
 
-- A resource of kind **service** exists. No other kind can be issued a token.
-- The signing keyset exists. If it does not, see [Deploy Insights](deploy-insights.md); the boot log
-  says so at `critical` and minting returns an error naming the command.
+1. Open **Resources** and click **Add resource**.
+2. Choose an account, name the service and set **Kind** to *service*.
 
-## From the console
+**Issue token** stays disabled until at least one *service* resource exists.
 
-1. Open **Administration → Service tokens**.
-2. Select **Mint token**.
-3. Choose the service resource.
-4. Enter a label naming the deployment, such as `prod-inference`.
-5. Set the lifetime in days, or leave the default of 90.
-6. Select **Mint**.
+## 2. Issue the token
 
-**Copy the token now.** It is shown exactly once. Nothing stores it and no screen reads it back.
+1. Open **Service tokens** and click **Issue token**.
+2. Choose the **Service**.
+3. Type a **Deployment label**, such as *prod pod* or *staging*.
+4. Set **Lifetime in days**, from 1 to 365. The default is 90.
+5. Click **Issue token**, then **Copy token**.
+6. Store it in the service's own secret store. It is not shown again.
 
-## From the command line
+Issuing a token for a service revokes that service's previous token.
 
-```bash
-just token issue --resource <uuid> --label prod-inference
-```
-
-The resource identifier is on the Catalog → Resources screen.
-
-## Configure the service
-
-The service needs two values, named however it already names its own configuration. Insights
-defines no variable names for this.
-
-| Value | What it is |
-|---|---|
-| Endpoint | `https://<your-host>/api/resources/<uuid>/metrics` |
-| Token | The value you just copied |
-
-It posts readings to that endpoint with the token as a bearer credential:
-
-```
-Authorization: Bearer <token>
-```
-
-It needs no Tapis identity and no vault access.
-
-## Confirm it worked
-
-The token appears on the Service tokens screen with the expiry you chose. Have the service post
-one reading and check it arrives on Catalog → Metrics.
-
-## Revoking
+## 3. Post readings from the service
 
 ```bash
-just token revoke --jti <uuid>
+curl -X POST "https://insights.pods.icicleai.tapis.io/api/resources/$RESOURCE_ID/metrics" \
+  -H "Authorization: Bearer $INSIGHTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reading": 42, "type": "authentications"}'
 ```
 
-Or use the console. Revocation takes effect on the **next request** — there is no cache and no
-restart.
+- `type` is any metric id except the lifetime ones. See [Metrics](../reference/metrics.md).
+- A `201` response returns the stored reading.
+- Retrying a request records the reading twice. Deduplicate in the service before posting.
+- The limit is 60 requests a minute per token. Beyond it the answer is `429` with `Retry-After`.
 
-Revoked rows stay visible as an audit trail.
+## Check it worked
 
-## Replacing a lost token
+The token's row shows **Status** *Active*. The service's readings appear on the **Metrics** page.
 
-Mint a new one for the same resource. Minting revokes any live token for that resource in the same
-transaction, so there is always exactly one working credential per resource.
+## When it expires
 
-A lost token cannot be recovered. Nothing persists the value.
+Insights alerts 14, 7, 3 and 1 days before expiry. Issue a new token and update the service before
+then. To withdraw one early, choose **Revoke token** in its row menu. The service gets `401` from its
+next request.
 
-## Expiry
-
-Tokens expire after their chosen lifetime, which defaults to 90 days and may be 1 to 365. A daily
-sweep warns at 14, 7, 3, and 1 days remaining, escalating to critical at three days or fewer.
-
-Warnings go wherever failure alerting points. With no Slack webhook configured they are log lines.
-`just token list` shows expiry dates directly.
-
-Replace an expiring token by minting a new one and updating the deployment's secret. Tokens cannot
-renew themselves: a leaked token that could renew itself would never expire, which removes the only
-thing expiry buys.
-
-## Notes
-
-- The resource binding and the expiry live inside the signature. The holder cannot widen either.
-- A service token can never mint another, and cannot reach any admin route.
-- Deletes are administrator-only everywhere. A malfunctioning service can at worst write bad rows,
-  never remove history.
-
-#icicle-insights# #How-To# #Administrator# #credentials#
+#icicle-insights# #How-To# #Administrator# #Developer#

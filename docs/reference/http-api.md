@@ -1,240 +1,98 @@
 # HTTP API
 
-Routes, guards, and conventions. For administrators and developers.
-
-The generated OpenAPI document is the source of truth for individual routes.
-
-| URL | Serves |
-|---|---|
-| `/docs` | Browsable API reference |
-| `/openapi.json` | The generated document |
-
-## Guards
-
-Reads are public. Writes are guarded. Vault and service-token reads are guarded too, because
-listing which credentials exist is reconnaissance.
-
-| Routes | Methods | Guard |
-|---|---|---|
-| `/api/accounts`, `/api/resources`, `/api/releases`, `/api/metrics` | `GET` | public |
-| `/api/insights/summary`, `/api/insights/series`, `/api/insights/resources` | `GET` | public |
-| `/api/accounts`, `/api/resources`, `/api/releases`, `/api/metrics` | `POST`, `PATCH`, `DELETE` | admin |
-| `/api/resources/:resourceID/metrics` | `POST` | resource-scoped token, or admin |
-| `/api/vaults` | all, reads included | admin |
-| `/api/service-tokens` | all | admin |
-| `/api/admins` | all | admin |
-| `/api/admin/watermarks`, `/api/admin/queues`, `/api/admin/failures` | `GET` | admin |
-| `/health`, `/ready` | `GET` | public, and outside `/api` |
-
-`POST /api/resources/:resourceID/metrics` is the only route a non-human can reach. Administrators
-are checked first within it, so a person is never locked out of a route a service can use.
-Deletes are admin-only everywhere: a malfunctioning service should at worst write bad rows, never
-remove history.
-
-## Full route list
-
-| Method | Path | Guard |
-|---|---|---|
-| `GET` | `/api/accounts` | public |
-| `POST` | `/api/accounts` | admin |
-| `GET` | `/api/accounts/:accountID` | public |
-| `PATCH` | `/api/accounts/:accountID` | admin |
-| `DELETE` | `/api/accounts/:accountID` | admin |
-| `GET` | `/api/resources` | public |
-| `POST` | `/api/resources` | admin |
-| `GET` | `/api/resources/:resourceID` | public |
-| `PATCH` | `/api/resources/:resourceID` | admin |
-| `DELETE` | `/api/resources/:resourceID` | admin |
-| `GET` | `/api/releases` | public |
-| `POST` | `/api/releases` | admin |
-| `GET` | `/api/releases/:releaseID` | public |
-| `PATCH` | `/api/releases/:releaseID` | admin |
-| `DELETE` | `/api/releases/:releaseID` | admin |
-| `GET` | `/api/metrics` | public |
-| `POST` | `/api/metrics` | admin |
-| `GET` | `/api/metrics/:metricID` | public |
-| `PATCH` | `/api/metrics/:metricID` | admin |
-| `DELETE` | `/api/metrics/:metricID` | admin |
-| `GET` | `/api/insights/summary` | public |
-| `GET` | `/api/insights/series` | public |
-| `GET` | `/api/insights/resources` | public |
-| `POST` | `/api/resources/:resourceID/metrics` | resource-scoped |
-| `GET` | `/api/vaults` | admin |
-| `POST` | `/api/vaults` | admin |
-| `GET` | `/api/vaults/:vaultID` | admin |
-| `PATCH` | `/api/vaults/:vaultID` | admin |
-| `DELETE` | `/api/vaults/:vaultID` | admin |
-| `GET` | `/api/service-tokens` | admin |
-| `POST` | `/api/service-tokens` | admin |
-| `POST` | `/api/service-tokens/:tokenID/revoke` | admin |
-| `POST` | `/api/service-tokens/rotate-key` | admin |
-| `GET` | `/api/admins` | admin |
-| `POST` | `/api/admins` | admin |
-| `DELETE` | `/api/admins/:adminID` | admin |
-| `GET` | `/api/admin/watermarks` | admin |
-| `GET` | `/api/admin/queues` | admin |
-| `GET` | `/api/admin/failures` | admin |
-
-## Credentials
-
-Send the token in the header. Cookies are never read.
-
-```
-Authorization: Bearer <token>
-```
-
-Two token kinds are accepted. See [Authentication](../explanation/authentication.md).
-
-| Token | Held by | May do |
-|---|---|---|
-| Tapis JWT | A person on the dashboard | Everything, if an administrator |
-| Webhook token | A deployed service | Post metrics for exactly one resource |
-
-## Status codes
-
-| Code | Means |
-|---|---|
-| 401 | Nobody authenticated. Absent, malformed, expired, or foreign-tenant token |
-| 403 | Authenticated, but not permitted |
-| 409 | Conflict, such as a duplicate vault name for one account, or deleting an account that still owns resources or a credential |
-| 429 | Rate limited. Honour `Retry-After` |
-| 502 | An upstream Tapis failure, not the caller's fault |
-| 503 | Not ready, or minting attempted with no signing keyset |
-
-A 401 never says *why* the credential failed. That is deliberate; the reason is in the server log,
-correlated by request ID.
-
-## Query parameters
-
-`GET /api/metrics` accepts three, all optional.
-
-| Parameter | Type | Notes |
-|---|---|---|
-| `resourceID` | UUID | Restrict to one resource |
-| `type` | metric type | See [Data model](data-model.md) |
-| `limit` | 1–1000 | Defaults to 1000 |
-
-The newest `limit` rows are selected, then returned **oldest first**, which is chart x-axis order.
-
-### Insights
-
-The three `/api/insights` routes total readings in the database and have no row cap. All accept
-these, all optional.
-
-| Parameter | Type | Notes |
-|---|---|---|
-| `from` | `YYYY-MM-DD` | First UTC day. Defaults to 90 days before `to` |
-| `to` | `YYYY-MM-DD` | Last UTC day, inclusive. Defaults to today; a later day is read as today |
-| `platform` | platform | Only resources whose account is on it |
-| `resourceID` | UUID | Only this resource |
-
-`from` must not be after `to`, and they may be at most 731 days apart. Anything else is a 400.
-Soft-deleted resources, and resources of soft-deleted accounts, are never counted.
-
-`GET /api/insights/series` adds:
-
-| Parameter | Values | Notes |
-|---|---|---|
-| `type` | metric type | **Required** |
-| `bucket` | `day`, `week` | Default `day`. A week's point is its last day inside the range |
-| `groupBy` | `none`, `platform` | Default `none`, one group keyed `all`. Otherwise keyed by platform |
-
-`GET /api/insights/resources` adds:
-
-| Parameter | Values | Notes |
-|---|---|---|
-| `sort` | metric type | Default `stars`. Ranks on each resource's latest value |
-| `order` | `asc`, `desc` | Default `desc`. Resources without the metric sort last either way |
-| `limit` | 1–500 | Default 50 |
-| `offset` | 0 or more | Default 0 |
-| `kind` | resource kind | Only resources of this kind |
-
-### Insights responses
-
-Every series is carried forward: a resource's value on a day is its latest reading by that day's
-end, and a group's is the sum over its resources. A series starts on the first day anything in it
-has a value, then has one point per day. Points are `{ "t": "YYYY-MM-DD", "v": number }`.
-
-| Route | Returns |
-|---|---|
-| `summary` | `generatedAt`, `from`, `to`, and one tile per metric type with data in scope |
-| `series` | `type`, `bucket`, and `groups`, each a `key` and its `points` |
-| `resources` | `total` in scope before paging, and `rows` |
-
-| Tile field | Meaning |
-|---|---|
-| `type` | Metric type |
-| `kind` | `lifetime` for the `*AllTime` types, `window` for `clones`, `views`, `downloads`, `authentications`, `pulls`, `gauge` for the rest |
-| `current` | Sum of each resource's latest value, whatever the range |
-| `atStart` | The same sum at the end of `from`. `null` when nothing had a value by then |
-| `series` | Daily points from the first day with data through `to` |
-
-A `lifetime` tile's `atStart` and `series` come from daily snapshots that begin when
-`metric_daily_totals` was deployed. Before that they are `null` and empty. See
-[Metric history](../explanation/metric-history.md).
-
-| Row field | Meaning |
-|---|---|
-| `id`, `name`, `kind`, `platform`, `account` | The resource, its kind, and its account's platform and name |
-| `lastCollectedAt` | Last successful collection, or `null` |
-| `latest` | Metric type to latest value, for every type the resource has |
-| `atStart` | Metric type to value at the end of `from`, for every type that had one |
-| `spark` | The `sort` metric's daily points in the range |
-
-## Resource responses
-
-`GET /api/resources` and `GET /api/resources/:resourceID` add two fields built from the resource's
-Patra cards. Both come from one eager load, not a query per resource.
-
-| Field | Meaning |
-|---|---|
-| `links` | Other tracked resources this one's Patra cards resolved to. `[]` when none |
-| `card` | The resource's most recently updated Patra card. Absent when it has none |
-
-The most recently updated card is the one with the latest `updatedAt`. A card without one ranks
-last, and a tie goes to the card Insights discovered last.
-
-Every card key is always present. A value Patra did not give is `null`, never a missing key.
-
-| Card field | Meaning |
-|---|---|
-| `kind` | `model` on a `model` resource, `datasheet` on a `dataset` one. Resources of other kinds have no `card` |
-| `uuid` | Patra's identifier for the card |
-| `version` | The card's version. `null` for datasheets today |
-| `updatedAt` | When Patra last updated the card, not when Insights last read it |
-| `description`, `author`, `category`, `license` | Text, on both kinds |
-| `framework`, `modelType`, `inputType` | Text, on model cards. `null` on a datasheet |
-| `accuracy` | Patra's `test_accuracy`, unscaled, normally 0–1. Model cards only |
-| `keywords` | Array of strings, or `null` when there are none. Model cards only |
-| `gated` | Boolean. Model cards only |
-| `size`, `format` | Text, on datasheets. `null` on a model card |
-| `publicationYear` | Integer. Datasheets only |
-| `sourceURL` | The identifier Patra gave for the artifact elsewhere. **Not always a URL**: a datasheet's can be a bare `owner/name` |
-
-What each field is read from in Patra is in [Data model](data-model.md). Values refresh on every
-catalog sweep, so an edit in Patra shows here after the next one.
+Every route the server answers, who may call it, and the rules it enforces. For developers and
+integrators. The live, generated reference is at `/docs`, from the document at `/openapi.json`.
 
 ## Conventions
 
-- Timestamps are ISO 8601, UTC.
-- Identifiers are UUIDs.
-- Every response carries `X-Request-ID`. Quote it in a bug report.
-- An inbound `X-Request-ID` is honoured and echoed, so a client can correlate its own trace.
-  Values are limited to letters, digits, `-` and `_`, at most 64 characters. Anything else is
-  replaced, because the header reaches log metadata verbatim.
+| Topic | Rule |
+|---|---|
+| Base path | `/api` for everything except probes, docs and the dashboard |
+| Format | JSON. Dates are ISO 8601. Days in query strings are `YYYY-MM-DD`, UTC |
+| Authentication | `Authorization: Bearer <token>`: a Tapis token for administrators, or a service token |
+| Unauthenticated | `401` on a route that needs a caller |
+| Not permitted | `403` for a recognised caller without permission |
+| Rate limit | 300 requests a minute per client address across `/api`. `429` with `Retry-After` beyond it |
+| Request ID | Send `X-Request-ID` to set one; every response carries it back |
 
-## Discovering administrator status
+**Who** below: *Public* needs no token. *Admin* needs an administrator's Tapis token. *Admin or
+service* also accepts the service token issued for that resource.
 
-There is no `/me` route. Attempt an admin-only read.
+## Summaries
 
-```
-GET /api/admins
-  200  the caller is an administrator
-  403  authenticated, not an administrator
-  401  no usable credential
-```
+| Method | Path | Who | Parameters |
+|---|---|---|---|
+| GET | `/api/insights/summary` | Public | `from`, `to`, `platform`, `resourceID` |
+| GET | `/api/insights/series` | Public | The above, plus `type` (required), `bucket` (`day` or `week`), `groupBy` (`none` or `platform`) |
+| GET | `/api/insights/resources` | Public | The above range filters, plus `sort` (metric id, default `stars`), `order` (`desc` or `asc`), `limit` (1–500, default 50), `offset`, `kind` |
 
-The distinction matters in a UI: 403 means "signed in, not permitted" and 401 means "not signed
-in". They call for different messages.
+`to` defaults to today, and a later day counts as today. `from` defaults to 90 days before `to`. A
+range may span at most 731 days.
 
-#icicle-insights# #Reference# #Administrator# #Developer# #api#
+## Catalog
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/api/accounts` | Public | |
+| POST | `/api/accounts` | Admin | `name`, `platform`. Name stored lowercase; unique per platform |
+| GET | `/api/accounts/{id}` | Public | |
+| PATCH | `/api/accounts/{id}` | Admin | `followers` |
+| DELETE | `/api/accounts/{id}` | Admin | `409` while it has resources or a credential |
+| GET | `/api/resources` | Public | Includes Patra card details and cross-registry `links` |
+| POST | `/api/resources` | Admin | `name`, `type`, `accountID`, optional `collectionIntervalDays`. Collected at once |
+| GET | `/api/resources/{id}` | Public | |
+| PATCH | `/api/resources/{id}` | Admin | `name`, `type`, `collectionIntervalDays` |
+| DELETE | `/api/resources/{id}` | Admin | Soft delete; history is kept |
+| GET | `/api/releases` | Public | |
+| POST | `/api/releases` | Admin | `resourceID`, `version`, `month`, `year` (1970–2100) |
+| GET | `/api/releases/{id}` | Public | |
+| PATCH | `/api/releases/{id}` | Admin | `version`, and `month` with `year` together |
+| DELETE | `/api/releases/{id}` | Admin | |
+
+## Metrics
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/api/metrics` | Public | `resourceID`, `type`, `limit` (1–1000, default 1000). The newest readings, returned oldest first |
+| POST | `/api/metrics` | Admin | `resourceID`, `type`, `reading` (0 or more). Not a lifetime type |
+| POST | `/api/resources/{id}/metrics` | Admin or service | `type`, `reading`. 60 requests a minute per service token |
+| GET | `/api/metrics/{id}` | Public | |
+| PATCH | `/api/metrics/{id}` | Admin | `reading`, `type` |
+| DELETE | `/api/metrics/{id}` | Admin | |
+
+A recorded, corrected or deleted reading of a windowed type also moves its lifetime total.
+
+## Administration
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/api/vaults` | Admin | Names and expiry dates; never secret values |
+| POST | `/api/vaults` | Admin | `accountID`, `token`, `expires` (`day`, `month`, `year`). Writes the secret to Tapis Vault |
+| GET | `/api/vaults/{id}` | Admin | |
+| PATCH | `/api/vaults/{id}` | Admin | `token`, `expires` |
+| DELETE | `/api/vaults/{id}` | Admin | Also destroys the secret in Tapis Vault |
+| GET | `/api/admins` | Admin | The console uses it to check a sign-in |
+| POST | `/api/admins` | Admin | `username`. `409` if already an administrator |
+| DELETE | `/api/admins/{id}` | Admin | `403` for the root administrator |
+| GET | `/api/service-tokens` | Admin | Every token issued, without values |
+| POST | `/api/service-tokens` | Admin | `resourceID`, `label`, `expiresInDays` (1–365, default 90). Returns the token once |
+| POST | `/api/service-tokens/{id}/revoke` | Admin | |
+| POST | `/api/service-tokens/rotate-key` | Admin | Returns the new `activeKid` |
+| GET | `/api/admin/queues` | Admin | Queue depth and scheduler heartbeat |
+| GET | `/api/admin/failures` | Admin | `limit` (1–200, default 50) |
+| GET | `/api/admin/watermarks` | Admin | |
+
+## Outside `/api`
+
+| Method | Path | Answers |
+|---|---|---|
+| GET | `/health` | `{"status":"ok"}` while the process runs |
+| GET | `/ready` | `{"status":"ready"}` when PostgreSQL and Valkey both answer, otherwise `503` |
+| GET | `/openapi.json` | The OpenAPI document |
+| GET | `/docs` | The interactive API reference |
+| GET | `/dashboard` | Permanent redirect to `/` |
+| GET | anything else | The dashboard, or `404` for unknown `/api` paths and missing files |
+
+Probes are not rate limited.
+
+#icicle-insights# #Reference# #Developer#

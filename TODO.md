@@ -1,233 +1,69 @@
 # TODO
 
-Current state and what is left. Rationale for decisions already made lives in
-[docs/explanation/decisions/](docs/explanation/decisions/); this file tracks work, not reasoning.
+Known problems and open work, found by using the live site on 2026-09-24 and reading the code. For
+whoever picks up the next change. Remove an item in the change that fixes it.
 
-## State
+## State on 2026-09-24
 
-Deployed and running at `insights.pods.icicleai.tapis.io`, collecting from GitHub and Hugging Face
-across 110 resources under 5 accounts.
+Production at <https://insights.pods.icicleai.tapis.io> tracks 148 resources under six accounts.
+They are 59 GitHub repositories, 45 GHCR containers, 30 Patra cards and datasheets, 6 Hugging Face
+models and datasets, 7 npm packages and 1 PyPI package. It is embedded in TapisUI, and TapisUI's
+sign-in carries over to both the embedded and the standalone dashboard. The scheduler is healthy
+and no failures are recorded.
 
-| Area | State |
+## Production problems
+
+| Problem | Evidence | Fix |
+|---|---|---|
+| GHCR containers are never collected | All 45 show **Next collection: Not scheduled**, and the sweep only picks up resources with a due date. They came from the July 2026 snapshot, which set no dates | [PR #30](https://github.com/ICICLE-ai/icicle-insights/pull/30) adds a migration that books them. It runs when the API starts after deploy |
+| No 30-day GHCR pulls yet | Only the lifetime totals imported on 2026-07-24 exist | Clears after the first sweep once PR #30 is deployed |
+| Three GHCR packages cannot be found | `fass-api`, `gnnfoodflowportal` and `isawfrontend` could not be read in an earlier check. They are likely private or deleted | Fix or delete them, or they will fail and retry every 1–12 hours once scheduled |
+| Patra cards show *No description in Patra.* | All 30 production cards have every detail field null. The catalog sweep refreshes every card's details on each run, so the new code has not run yet | Check the worker and scheduler run the same image as the API. Then run `collect-patra-catalog`, or wait for 04:00 |
+
+## Dashboard bugs seen on the live site
+
+| Where | Problem |
 |---|---|
-| Collection: GitHub repositories and accounts | Shipped |
-| Collection: Hugging Face | Shipped |
-| Collection: GHCR (package page scrape) | Shipped on `feat/ghcr-collector`, not yet merged or deployed |
-| Collection: npm, PyPI | Registered in the catalog, no collector |
-| Collection: Patra (catalog, deployments, provenance) | Shipped on `patra`, not yet merged or deployed |
-| Authentication, admins, webhook tokens | Shipped |
-| Hardening: headers, CORS, rate limits, key rotation | Shipped |
-| Failure classification and alerting | Shipped |
-| SvelteKit dashboard and admin console | Built; admin console not yet walked signed in |
-| Request ID middleware | Shipped |
-| Documentation | Rewritten on Diátaxis |
+| Resource page charts | With little data, axis labels repeat: *0 0 0 1 1 1* on the y axis, *Sep 21 Sep 21 Sep 22* on the x axis |
+| Model cards | Plurals are wrong: *1 deployments*, *1 likes* |
+| Overview for a platform with no current readings | Nothing below **Lifetime**, with no message saying why |
+| Resources, **Containers** | The columns stay Stars, Forks, Watchers and Views, all dashes. Columns should follow the kind |
+| Overview load | `/api/insights/summary` is requested twice for the same range |
 
-## Open
+## Admin console
 
-### Walk the new admin console signed in, then fix the docs that describe it
+| Where | Problem |
+|---|---|
+| **Add resource** | **Kind** stays *Repository* when the account changes to GHCR or Hugging Face |
+| **Add resource** | The cadence hint shows the raw platform id: *1 to 7 days on github* |
+| **Accounts** | Every row menu is labelled *Actions for icicle-ai*, so screen readers cannot tell them apart |
+| Row menus | After closing a sheet or menu with Escape, the next click on a trigger was sometimes ignored |
+| **Add resource** for npm or PyPI | The resource is booked and dispatched weekly, and the dispatcher skips it. The console shows a **Next collection** that never collects anything |
+| **Vaults** | Nothing warns before a platform token expires, unlike service tokens and `TAPIS_TOKEN`. Both current tokens expire 2027-08-24 |
+| Console | No way to collect one resource now; only the command line can |
 
-The SvelteKit console replaced the Angular one. Its screens were checked signed out (the sign-in
-gate, a rejected token) and every admin endpoint's response shape was checked against the code, but
-nobody has yet signed in and walked it. Until someone does:
+## Code and repository
 
-- walk every section against [Admin console](docs/reference/admin-console.md), which was written
-  from the new components;
-- rewrite [Administering Insights](docs/tutorials/administering-insights.md), which still walks the
-  Angular tabs and carries a notice saying so;
-- retake `assets/screenshots/`, which still show the Angular UI (the README embeds two). Capture
-  from staging or production, not a dev database, so the figures are real;
-- run an accessibility check (axe) in both themes; the Angular app's AXE-clean status did not carry
-  over automatically.
+- **Remove the dashboard's legacy data source** (`web/src/lib/data/legacy.ts`). Production serves the
+  summary endpoints and no longer calls `/api/metrics` for the dashboard.
+- **Remove the unused `layerchart` dependency** from `web/package.json`. The charts are drawn with
+  `d3-scale` and SVG, and nothing imports it.
+- **Fix `.github/dependabot.yml`.** It is the unfilled template, with `package-ecosystem: ""`.
+- **The `Platform` enum comment** in `Models/Account.swift` still refers to the Angular dashboard's
+  colour order, which no longer exists.
+- **Retake or delete `assets/screenshots/`.** Every image shows the old Angular dashboard, so the
+  README no longer shows any. Capture at 1440×900, 2× scale, light theme.
 
-Vault create, replace and delete, and signing-key rotation, write to Tapis. Try them against the
-staging tenant, never a local stack pointed at production.
+## Verify after the next deploy
 
-### Confirm the embed token handover
+- `/admin` → **Operations → Scheduler** is **Healthy**.
+- **Resources** in the console shows no *Not scheduled* GHCR rows. npm and PyPI rows stay that way.
+- The GHCR view on the dashboard has a **Pulls · 30 days** tile.
+- Patra model cards show descriptions and authors.
 
-`VITE_TRUSTED_PARENT_ORIGINS` defaults to `https://icicleai.tapis.io`. The Angular app never set its
-equivalent, so no embedded dashboard has ever received a token this way. Confirm from TapisUI that
-the ADMIN state appears after the parent posts a token.
+## Not planned
 
+- **npm and PyPI collection.** Both stay in the catalog, uncollected. Their download counts include
+  every CI runner and mirror that fetches a package, so they cannot say how many people use it.
 
-### Finish the documentation pass
-
-The Diátaxis rewrite landed in `8059515`. 43 pages under `docs/`, all links resolving, all tags
-well formed, every route and guard checked against the live deployment's OpenAPI document. What
-remains is verification that needed a running system, not writing.
-
-**Walk the console against the docs.** The console pages were written from the Angular components,
-not from the running UI. That shortcut is what let four wrong claims through the first time, and
-one of them — the vault credential form having a name field it does not have — survived until a
-human spotted it. Sign in and check each screen and form against
-[docs/reference/admin-console.md](docs/reference/admin-console.md) and the administrator how-tos.
-
-**Run the stack end to end.** `just build` is verified, as are `db`, `valkey`, `stop` and the
-recreate path. `just stack` and `just test` have never been run in the `docs` worktree, which has
-no `.env`. Copy one from a checkout that has it — do not copy the main one wholesale, the container
-stack expects local database values — and confirm the tutorials work as written.
-
-**Then push and open the PR.** Six commits sit unpushed on the `docs` branch.
-
-Conventions for any new page are in [CLAUDE.md](CLAUDE.md) under Documentation. Follow them for
-docs written alongside other work, so the set stays consistent while this is unfinished.
-
-### Verify Patra against a real boot
-
-This documentation pass (the last task of the Patra platform work) touched no code and ran neither
-`just migrate` nor `just run` — its brief scoped it to docs only. Two things it describes remain
-unverified against a live system:
-
-- **The console flow.** Registering the `icicleai` account on `patra`, running `just collect
-  --force`, and confirming 29 resources, 43 cards, and readings of 52 / 16 / 1 on MegaDetector,
-  ResNet50, and MobileNetV2 — all written from source, none walked by hand.
-- **The dashboard.** The Patra platform hue and the Provenance tab's two-line node labels, in both
-  the light and dark theme. `provenance-graph.spec.ts` covers the layout mechanism, but nobody has
-  loaded the running page against seeded or live data.
-- **The card text.** After the first catalog sweep that follows the `PatraCardDetails` migration,
-  every Patra resource in `GET /api/resources` should carry a `card`. The field mapping was checked
-  against fixtures copied from the live API, not against a live sweep writing to a real database.
-
-Model card provenance is expected to render empty either way: Patra's real `location` values
-resolve for most of its live model cards, but none name an account this deployment tracks (its
-Hugging Face URLs are third-party, and its GitHub URLs name `camera_traps`, not the `Camera_Trap`
-Insights collects). That is documented behaviour, not something this check would be looking to
-fix.
-
-Datasheet provenance is different: three datasheets (CAN Benchmark, the HLO feature dataset, and
-the Organization SIC Code dataset) carry a Hugging Face `alternate_identifier` or
-`related_identifier` naming a dataset under the `icicle-ai` account Insights already tracks, so
-those three edges are expected to render — the one part of the graph this check should actually
-see filled in.
-
-### `ResourceType.agent` has no publisher
-
-`agent` exists in the `resource_type` enum and every dashboard picker and admin form lists it, so
-it can be registered by hand today. Nothing collects one: no Patra endpoint and no other collector
-publishes an agent resource. `/agent-tools/*` are AI tooling routes, not agent records. The catalog
-job gains a third endpoint — beside `/modelcards` and `/datasheets` — if and when Patra ships one.
-
-### Verify the production signing keyset
-
-`service-token init-key` must have run against the **production** vault, not just staging — they
-are separate vaults and a keyset does not carry over. The console shows no issued tokens, so this
-is untested in production.
-
-Confirm by checking a production boot log for `Webhook token signing keys loaded.` If instead it
-says `No webhook token signing keyset found`, run `init-key` once and restart.
-
-### Document minting a token through the UI, once a service account protocol exists
-
-**Blocked on:** deciding how deployed ICICLE services register themselves — the service account
-protocol. Nothing to do until that is settled.
-
-No resource of kind `service` is registered anywhere, so the Service tokens screen has only ever
-shown its empty state: *"No service resources are registered."* That means the console half of
-[Issue a service token](docs/how-to/issue-a-service-token.md) was written from
-the Angular console's source, not from a flow anyone has run. The SvelteKit console's form
-(`web/src/routes/admin/service-tokens/+page.svelte`) keeps the same three fields.
-
-The form fields named there — Resource, Deployment label, Lifetime in days — are correct as source,
-and `ServiceTokenIssuer.swift:61` does enforce `resource.type == .service` server-side. What is
-unverified is everything around them: what the populated screen looks like, how the minted token is
-presented and copied, what the token list shows once a row exists, and what revoking looks like in
-the UI.
-
-When the protocol lands:
-
-- register a real service resource and mint a token through the console;
-- rewrite the console steps in that how-to against the actual flow;
-- replace `assets/screenshots/admin-service-tokens.png`, which currently shows the empty state, with
-  a populated list;
-- check whether the empty-state wording still belongs in `docs/reference/admin-console.md`.
-
-Treat the current console steps as provisional until then. The CLI half is verified and can be
-relied on.
-
-### Verify GHCR against production after deploy
-
-`SyncGHCRStats` was tested against two saved package pages and a stubbed client. The suite never
-fetches a live page, so check the first real sweeps:
-
-- **When it runs.** Existing GHCR resources are collected as their due dates come round, within
-  one cadence each (seven days by default). `collect-resources --force` collects them at once, but
-  it dispatches every resource on every platform and shifts all of their cadences forward, not just
-  GHCR's.
-- **The figures.** For a few containers, `pulls` should equal the sum of the page's 30-day chart and
-  `pullsAllTime` its "Total downloads". A `pullsAllTime` built from readings recorded by hand is
-  replaced on the first sweep.
-- **The redirect.** `insights` is linked to a repository, so its organization address answers 302.
-  Confirm it collects like the others.
-- **The worker log.** Look for `page_layout_changed` or a 429 from github.com. A forced run fetches
-  every package page in one burst, which the daily trickle never does.
-- **The dashboard.** The "Pulls · 30 days" tile and its "Each reading covers a trailing 30 days"
-  line have not been seen with real data.
-
-### Collectors for npm and PyPI
-
-Both can be registered and are re-booked normally, but the dispatcher logs and skips them. Both
-publish download APIs and should be straightforward.
-
-See [Add a collector](docs/how-to/add-a-collector.md).
-
-### Metric series pagination
-
-`/api/metrics` caps at 1000 rows, newest first. At roughly 103 rows per weekly sweep that is about
-ten weeks of trailing history. Per-type fetches or downsampling is the follow-up when it gets tight.
-
-The `/api/insights` routes remove the need: they total in SQL with no row cap. What is left is
-moving the dashboard onto them and off per-type raw reads. See
-[Metric history](docs/explanation/metric-history.md).
-
-### Verify the collection-risk fixes against a real deployment
-
-`fix/backend-risks` was tested only against the suite, with a placeholder `TAPIS_TOKEN` and no
-Slack webhook. Four behaviours need a live check:
-
-- **The rate limiter behind the ingress.** It keys on the rightmost `X-Forwarded-For` entry, which
-  is correct only if exactly one proxy appends. Confirm the ingress appends rather than replaces,
-  and that nothing else sits in front of it.
-- **The `TAPIS_TOKEN` expiry line.** Boot with a real token and check `tapis_token_expires_at` on
-  `Secret provider selected.` reads the expected date.
-- **Alert deduplication with Slack.** One critical alert per six hours, however many resources fail.
-- **The account Delete guard in the console.** The API's 409 wording was matched to the
-  component's `deleteTitle`, not checked against the running screen.
-
-### Fetch-on-create
-
-`ResourceController.create` already dispatches a sync and books the next collection. The path is
-live; nothing outstanding unless creation-time collection needs to become optional.
-
-## Deliberately not doing
-
-**Full Content-Security-Policy.** The bundle is same-origin, but SvelteKit starts the app from an
-inline script, so `script-src` needs its hash (`kit.csp` can emit it). A wrong policy breaks the
-application rather than degrading it. The headers that depend on nothing already
-ship. The API reference at `/docs` still loads from a CDN; vendor it or allow that origin explicitly
-first.
-
-**Tapis `kid` routing / JWKS.** Not possible as Tapis is deployed. Discovery works, but the
-advertised key-set URI points back at the tenant record, which serves a single PEM rather than a key
-set. There is nothing to route a `kid` against. Revisit only if Tapis starts publishing a real JWKS.
-
-**Webhook token self-renewal.** Tokens expire at 90 days and are replaced by minting a new one and
-updating the deployment's secret. A leaked token that could renew itself would never expire, which
-removes the only thing expiry buys.
-
-**Server-side rendering.** SvelteKit could render pages on a server, but that needs Deno or Node at
-runtime, so a second process or a bigger image. The dashboard ships as static files instead; every
-screen is data, and nothing needs search indexing.
-
-**Response compression.** The ingress may already handle it. Nobody has checked; this is an open
-question rather than a decision.
-
-**Finer rate limiting.** Per-address on the API and per-token on the reporting route are in.
-Per-route budgets and burst allowances wait for evidence that the flat limits are wrong.
-
-## Known rough edges
-
-**Rotation across a restart is only checked by hand.** The suite proves rotation is additive in
-memory. Only a restart proves the retired key was persisted, and nothing automates that.
-
-**The scheduler's clocks are not asserted.** Jobs are driven directly through a test queue context.
-That the hourly and monthly registrations are wired correctly is verified by observation, not by a
-test.
+#icicle-insights# #Reference# #Administrator# #Developer#

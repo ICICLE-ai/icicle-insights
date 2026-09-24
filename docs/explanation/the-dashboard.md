@@ -1,104 +1,63 @@
 # The dashboard
 
-How the SvelteKit application in `web/` is built, served, fed and authenticated. For developers.
+How the dashboard in `web/` is built and why. For developers changing it.
 
-## One pod, no JavaScript runtime
+## A static app served by the API
 
-Vapor serves everything: the API under `/api`, and the built frontend as static files.
+The dashboard is a SvelteKit application compiled to static files. There is no Node or Deno server
+in production. The Swift API serves the files from `Public/` and answers every unknown non-API path
+with `index.html`, so deep links work.
 
-A Deno stage in the `Dockerfile` builds the app with SvelteKit's static adapter into Vapor's public
-directory. The runtime image contains no Deno or Node at all. CI builds the same site in its own
-`web` job instead; see [CI pipeline](../reference/ci-pipeline.md).
+Everything on screen comes from the API at request time, so there is nothing to prerender. Serving
+from the same origin also means no CORS setup, and one image to deploy.
 
-**A single-page app, not prerendered pages.** Every screen is data, so there is nothing worth
-rendering ahead of time. The static adapter writes one `index.html` fallback, and Vapor serves it
-for every client-side route.
+Deno runs the toolchain: installing packages, the Vite dev server, type checks, tests and the build.
+Packages are pinned by `deno.lock` and installed with `--frozen` in CI and in the Docker build.
 
-**No CDN.** A single-region research dashboard does not have the traffic to justify one. Hashed
-bundles with immutable cache headers plus ingress compression capture nearly all of the benefit.
+## Figures are totalled on the server
 
-## Serving
+Screens ask for summaries, not raw readings:
 
-**SPA fallback.** A catchall serves the entry point for non-API deep links. Vapor's router prefers
-constant path components, so the API, the docs and the health probes still win. Unknown API paths
-and file-like paths stay real 404s rather than becoming misleading HTML 200s.
+| Endpoint | Gives |
+|---|---|
+| `/api/insights/summary` | One tile per metric: the total now, the total at the start of the range, and a daily series |
+| `/api/insights/series` | One metric over time, whole or split by platform, by day or by week |
+| `/api/insights/resources` | Resources ranked by a metric, with their figures and a sparkline |
 
-**Cache headers.** Everything under `/_app/immutable/` is content-hashed by SvelteKit and cached
-for a year. The entry point is `no-cache`, or clients pin to one referencing chunks that are gone.
+PostgreSQL does the adding up over the whole history. The response size depends on the range, not
+on how much has been collected.
 
-## Where the numbers come from
+An older path still exists. When the summary endpoint answers 404, the dashboard fetches raw
+readings from `/api/metrics` and adds them up in the browser. That path is capped at 1,000 readings
+per metric, so long histories are cut short. It remains only for deployments older than the summary
+endpoints, and screens never know which path they are using.
 
-Screens render view models shaped like the server's `/api/insights/*` responses: tiles, series and
-resource rows. Two sources can produce them.
+## State lives in the URL
 
-- **Summary.** The server aggregates in SQL over the whole history.
-- **Legacy.** The browser computes the same shapes from `/api/metrics`, one request per metric type.
+The range, platform, selected metric, sort and filters are query parameters. A view is therefore a
+link. The back button undoes a filter, and a reload keeps the view. Free-text filters are the
+exception; they are not worth sharing.
 
-The app asks `/api/insights/summary` once per visit. A 404 means the server predates it, and the
-legacy source takes over. Any other failure is shown, not papered over.
+## Charts are drawn by hand
 
-The legacy source inherits two limits. `/api/metrics` returns at most 1,000 readings per request,
-so a metric past that has its oldest history cut, and the overview says which metrics. And
-all-time totals are one row updated in place, so they get a value and no trend.
+Charts are SVG drawn with d3 scales and Svelte, not a charting library. Each platform keeps one
+colour on every chart, so filtering never repaints a line. Every full-size chart can show its data
+as a table, and hover shows exact values.
 
-Totals carry each resource's newest reading forward day by day. Resources are collected on their
-own weekly schedules, so summing only one day's readings would collapse on most days.
+Components come from shadcn-svelte, which copies source into `src/lib/components/ui/` instead of
+adding a dependency. Tables use TanStack Table.
 
-## Anonymous is the normal case
+## Embedded in TapisUI
 
-Reads need no credential, so the app renders fully for a signed-out visitor. Administration lives
-under `/admin` behind its own sign-in.
+The same build runs standalone and inside a TapisUI frame. Two settings make embedding work. The
+API's `FRAME_ANCESTORS` lets TapisUI frame it. The build's `VITE_TRUSTED_PARENT_ORIGINS` tells the
+dashboard which parent may hand it a token. See
+[Embed the dashboard in TapisUI](../how-to/embed-in-tapisui.md).
 
-There is no `/me` route. The console asks `GET /api/admins`: 200 is an administrator, 401 a token
-that did not verify, 403 a valid user without admin rights. See [HTTP API](../reference/http-api.md).
+## Types come from the API
 
-## Getting a token
+`web/src/lib/api/schema.d.ts` is generated from the running API's OpenAPI document. Screens import
+friendlier names from `$lib/api/types`. A change to a server response shows up as a type error in
+the dashboard once the types are regenerated.
 
-The app holds a token in memory only, from one of three places:
-
-1. a readable `X-Tapis-Token` cookie on the Insights document,
-2. a `postMessage` from the parent frame,
-3. a token pasted on the sign-in screen, for recovery and development.
-
-**Memory only.** Web storage survives the tab and is readable by any script that achieves XSS.
-
-A message is accepted only from `window.parent` itself, and only from an origin in
-`VITE_TRUSTED_PARENT_ORIGINS`, which defaults to `https://icicleai.tapis.io`. The Angular app had
-the same check but never configured the list, so an embedded dashboard never received a token.
-
-The server accepts only the resulting bearer header. See [Authentication](authentication.md), and
-[Embed the dashboard](../how-to/embed-the-dashboard.md) for the server side of embedding.
-
-## Development loop
-
-`just web` runs Vite on port 5174 and proxies `/api` and `/openapi.json` to Vapor on 8080, so
-requests are same-origin and hot reload works. Set `INSIGHTS_API` to proxy somewhere else.
-
-API types in `web/src/lib/api/schema.d.ts` are generated from the running server's OpenAPI
-document by `just web-types`. Regenerate after a server change rather than editing them.
-
-## Provenance
-
-Patra imports models and datasets that already live on another registry, so one artifact is often
-several resource rows. Each Patra card links its row to the others it names, and the connected
-groups of those links are the artifacts. The Provenance page draws one card per group, led by the
-row that recorded the links, in a fixed order so the same catalog always draws the same way.
-
-Most model cards produce no link, and that is correct. Their locations name accounts this
-deployment does not track. Three datasheets name Hugging Face datasets under `icicle-ai`, so those
-do.
-
-## Charts
-
-Every chart has a table view with every value, a keyboard path, and an accessible name. Platform
-colours come from one validated palette and follow the platform, never its rank, so filtering
-never repaints a line.
-
-## Content-Security-Policy
-
-Only `frame-ancestors` ships today. The bundle serves its own scripts and fonts, but SvelteKit
-starts the app from an inline script, so a `script-src` needs that script's hash. SvelteKit's
-`kit.csp` setting can emit it. The API reference at `/docs` still loads from a CDN; account for
-that before extending the policy.
-
-#icicle-insights# #Explanation# #Developer# #frontend#
+#icicle-insights# #Explanation# #Developer#
