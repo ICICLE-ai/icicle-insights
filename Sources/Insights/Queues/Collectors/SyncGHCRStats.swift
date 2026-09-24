@@ -12,7 +12,7 @@ struct GHCRResource: Codable {
 ///
 /// A scrape rather than an API call, because GitHub's Packages API reports no download count. The
 /// parsing lives in `GHCRPackagePage`; this job owns fetching, the fallback between owner kinds,
-/// and the write. Why scraping, and why it runs on the shared `metrics` queue, is ADR 009.
+/// and the write. Why scraping is explained in docs/explanation/how-collection-works.md.
 struct SyncGHCRStats: AsyncJob, BackoffRetrying {
   typealias Payload = GHCRResource
 

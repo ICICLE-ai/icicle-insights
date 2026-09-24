@@ -1,71 +1,44 @@
 # Add a resource
 
-Put a repository, model, or dataset under collection. For administrators.
-
-Its account must exist first — see [Register an account](register-an-account.md).
+How to start tracking a repository, model, dataset or container, for administrators signed in to
+the console. The account it belongs to must already exist; see
+[Track a new account](track-a-new-account.md).
 
 ## Steps
 
-1. Open **Administration → Catalog → Resources**.
-2. Select **Add resource**.
-3. Enter the resource name or path exactly as the platform spells it. Some platforms namespace
-   theirs, so use whatever appears in the resource's own URL.
-4. Choose the owning account.
-5. Choose the kind: agent, container, dataset, model, package, repository, or service.
-6. Set the cadence in days, or leave the default of 7.
-7. Save.
+1. Open **Resources** and click **Add resource**.
+2. Choose the **Account**. The list shows each account as *name · platform*.
+3. Type the **Name** as it appears in the resource's URL:
 
-The resource is collected immediately rather than waiting up to an hour for the next sweep, and its
-next collection is booked from now.
+   | Platform | URL | Name |
+   |---|---|---|
+   | GitHub | `github.com/icicle-ai/camera_trap` | `camera_trap` |
+   | Hugging Face | `huggingface.co/icicle-ai/yield-estimation` | `yield-estimation` |
+   | GHCR | `github.com/orgs/icicle-ai/packages/container/package/harvest-inference` | `harvest-inference` |
 
-A name that already exists for that account and kind is rejected as a conflict.
+   Names are stored lowercase.
+4. Choose the **Kind**: repository, model, dataset, container, package, service or agent. It does
+   not change automatically when you change the account.
+5. Set **Collect every (days)**. The hint under the field gives the limit: 7 days for GitHub, 30
+   for the others. Keep 7 unless you have a reason.
+6. Click **Add resource**.
 
-## Choosing a cadence
+## Check it worked
 
-Cadence is the spacing between successful collections, not a guarantee of when one happens.
+- The resource appears in the list with **Next collection** set.
+- It is collected right away. Within a few minutes its readings appear under **Metrics**, and on
+  its page on the public dashboard.
+- If collection fails, it shows under **Operations → Recent failures**. See
+  [Diagnose a collection failure](diagnose-a-collection-failure.md).
 
-| Platform | Maximum |
-|---|---|
-| GitHub | 7 days |
-| Hugging Face | 30 days |
-| GHCR, npm, PyPI | 30 days |
-| Patra | 30 days |
+## Change or remove it later
 
-The form enforces each cap. See [Collection schedule](../reference/collection-schedule.md) for why
-GitHub's is set where it is.
+- **Edit** changes the name, kind and cadence. To move a resource to another account, delete it and
+  add it again.
+- **Delete resource** stops collection and removes it from the dashboard. Its history stays in the
+  database.
 
-Seven days is the right default. Going faster costs API allowance without adding history, because
-daily values are only counted once they complete.
+npm and PyPI resources can be added to the catalog, but nothing collects them. That is deliberate;
+see [Metrics](../reference/metrics.md).
 
-## Choosing a kind
-
-Kind describes what the thing is. It does **not** decide which API collects it — that comes from
-the account's registry.
-
-Choose **service** only for a deployed service that will report its own metrics. It is the only
-kind that can be issued a service token.
-
-Choose **agent** for an ICICLE AI agent. It can be registered, but nothing collects it yet —
-Patra's API does not publish agents today.
-
-## Confirm it worked
-
-The Resources screen shows the resource with a **Next collection** date about one cadence away.
-
-A **Next collection** date of now or earlier means the immediate collection could not be queued.
-The next hourly sweep collects it. No action is needed.
-
-To see readings sooner, run a collection now — see
-[Run collection immediately](run-collection-immediately.md).
-
-## Notes
-
-- Changing the cadence does **not** make a resource due. It sets the spacing applied after the next
-  successful collection.
-- A `Not set` next-collection date means the resource is never swept. That is the correct state for
-  a platform with no collector yet.
-- npm and PyPI resources are registered and re-booked, but skipped by the dispatcher until a
-  collector exists for them.
-- Deleting a resource deletes its readings, releases, and watermarks.
-
-#icicle-insights# #How-To# #Administrator# #catalog#
+#icicle-insights# #How-To# #Administrator#

@@ -6,7 +6,7 @@ import SwiftSoup
 ///
 /// Scraped because there is nowhere else to read them: GitHub's Packages API lists a container's
 /// versions and metadata but reports no download count at all, so the page rendered for a person is
-/// the only published source. See ADR 009.
+/// the only published source. See docs/explanation/how-collection-works.md.
 ///
 /// A pure parse, kept apart from `SyncGHCRStats` so every selector can be tested against saved
 /// pages without a database, a queue, or the network. This is the one file that knows what the page

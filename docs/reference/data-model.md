@@ -1,186 +1,58 @@
 # Data model
 
-Tables, relationships, and enumerations. For developers.
+The PostgreSQL tables Insights keeps, their columns and their rules. For developers writing
+migrations or queries. Every table also has a UUID `id`.
 
-```mermaid
-erDiagram
-    ACCOUNT ||--o{ RESOURCE : owns
-    ACCOUNT ||--o| VAULT : references
-    RESOURCE ||--o{ METRIC : records
-    RESOURCE ||--o{ RELEASE : publishes
-    RESOURCE ||--o{ METRIC_WATERMARK : tracks
-    RESOURCE ||--o{ METRIC_DAILY_TOTAL : snapshots
-    RESOURCE ||--o{ SERVICE_TOKEN : authorizes
-    RESOURCE ||--o{ PATRA_CARD : names
-```
+## Catalog
 
-## Tables
+| Table | Columns | Rules |
+|---|---|---|
+| `accounts` | `name`, `platform`, `followers`, `created_at`, `updated_at`, `deleted_at` | Unique on `name` and `platform`. Soft delete |
+| `resources` | `name`, `type`, `account_id`, `next_collection_at`, `collection_interval_days`, `last_collected_at`, `stall_notified_at`, timestamps, `deleted_at` | Unique on `name`, `account_id` and `type`. Soft delete |
+| `releases` | `resource_id`, `version`, `released_at` | Dates are stored as the first of the month |
+| `patra_cards` | `resource_id`, `card_uuid`, `version`, `card_updated_at`, `source_url`, `hub_resource_id`, `repository_resource_id`, details, `created_at` | Unique on `card_uuid`. One row per Patra card or datasheet |
 
-| Table | Holds |
-|---|---|
-| `accounts` | Platform identities that own resources |
-| `resources` | The things being measured, and their collection cadence |
-| `metrics` | Individual readings, one row per sweep per metric |
-| `metric_watermarks` | Newest completed day already folded into an all-time total |
-| `metric_daily_totals` | Each all-time total's closing value per UTC day. History starts at deploy |
-| `releases` | Published versions |
-| `patra_cards` | One (name, version) card per Patra model or datasheet, with cross-registry links |
-| `vaults` | References to credentials stored outside PostgreSQL |
-| `service_tokens` | Webhook token identifiers and metadata |
-| `admins` | Granted administrator access |
-| `job_failures` | Durable record of failed collection jobs |
+Patra card details are `description`, `author`, `category`, `license`, `framework`, `model_type`,
+`input_type`, `accuracy`, `keywords`, `is_gated`, `size`, `format`, `publication_year` and
+`training_datasheet_uuid`. Several cards can point at one resource.
 
-## Key fields
+`hub_resource_id` and `repository_resource_id` link a card to the Hugging Face or GitHub resource it
+names. They build the cross-registry links.
 
-**`resources`**
+## Readings
 
-| Field | Meaning |
-|---|---|
-| `next_collection_at` | When this resource may next be dispatched. Null means never. Set to the creation instant on create |
-| `collection_interval_days` | Spacing booked after a successful dispatch. Default 7 |
-| `last_collected_at` | When a collection last *succeeded*. Null until the first one |
-| `stall_notified_at` | When the retention-window alert last fired. Cleared on the next success |
+| Table | Columns | Rules |
+|---|---|---|
+| `metrics` | `resource_id`, `reading`, `type`, `recorded_at` | One row per reading. Lifetime types hold one row per resource, updated in place |
+| `metric_watermarks` | `resource_id`, `type`, `counted_through`, timestamps | Unique on `resource_id` and `type`. The last day added to a lifetime total |
+| `metric_daily_totals` | `resource_id`, `type`, `day`, `reading`, timestamps | Unique on `resource_id`, `type` and `day`. Each day's closing lifetime total |
 
-**`metric_watermarks`** — one row per `(resource, metric type)`.
+## Access and credentials
 
-| Field | Meaning |
-|---|---|
-| `counted_through` | Newest completed UTC day already added to the all-time total |
+| Table | Columns | Rules |
+|---|---|---|
+| `vaults` | `account_id`, `name`, `expires_at`, timestamps | Unique on `name` and `account_id`. The name of a Tapis Vault secret, never its value |
+| `admins` | `username`, `added_by`, timestamps, `deleted_at` | Unique on `username`. The root administrator is not stored here |
+| `service_tokens` | `jti`, `resource_id`, `label`, `expires_at`, `revoked_at`, `created_at` | Unique on `jti`. Identifiers only, never the token |
 
-**`metric_daily_totals`** — one row per `(resource, all-time type, UTC day)`, unique on all three.
+## Operations
 
-| Field | Meaning |
-|---|---|
-| `type` | An `*AllTime` type, never its rolling counterpart |
-| `day` | The UTC calendar day, a PostgreSQL `date` |
-| `reading` | The total after that day's last write. Upserted in the same transaction as the total |
-
-A day with no write has no row; readers carry the previous day's value forward. There is no row
-from before the `MetricDailyTotals` migration, because the totals were overwritten in place and
-nothing recorded their past values. See [Metric history](../explanation/metric-history.md).
-
-`next_collection_at` and `counted_through` answer different questions: *when to fetch next* versus
-*what has already been counted*. Keeping them apart is what lets a late sweep resume exactly where
-the last one stopped.
-
-**`patra_cards`** — one row per Patra card, child of `resources`. A Patra card names a (name,
-version) pair, not a distinct model, so one resource commonly owns several.
-
-| Field | Meaning |
-|---|---|
-| `card_uuid` | Patra's own identifier. Unique — the only stable key; name alone is not |
-| `version` | The card's version string, as Patra reports it. Null for datasheets today: `/datasheets` sends none |
-| `card_updated_at` | The card's own `updated_at`, as Patra reports it |
-| `source_url` | The chosen cross-registry identifier for the artifact. Stored even when it resolves to nothing |
-| `hub_resource_id` | The Hugging Face resource `source_url` names, when it resolves |
-| `repository_resource_id` | The GitHub (or other code host) resource `source_url` names, when it resolves |
-| `training_datasheet_uuid` | Patra's model-to-datasheet link. Stored, unused by the API today |
-
-`source_url` is a model card's raw `ai_model.location` for a model. For a dataset it is the one
-datasheet identifier `SyncPatraCatalog` chose to trust.
-
-A datasheet lists several DataCite-style identifiers. Most name a *different* artifact that only
-cites it. Only an `alternate_identifier` of type `HuggingFace`, or a `related_identifier` whose
-`relation_type` is `IsVariantFormOf` or `IsIdenticalTo`, counts as the same artifact elsewhere. See
-`SyncPatraCatalog.resolveDatasheetProvenance` for the full rule.
-
-**Descriptive columns** on `patra_cards`, for display only. The source is the card's detail
-response unless marked *list*, meaning its `/datasheets` entry. "First" means the first entry
-with a usable value.
-
-| Column | Type | Model card source | Datasheet source |
-|---|---|---|---|
-| `description` | text | `short_description`, else `ai_model.description`, else `full_description` | First `descriptions[].description` |
-| `author` | text | `author`, else `ai_model.owner` | *list* `creator`, else first `creators[].creator_name` |
-| `category` | text | `categories` | *list* `category`, else first `subjects[].subject` |
-| `license` | text | `ai_model.license` | First `rights_list[].rights` |
-| `framework` | text | `ai_model.framework` | — |
-| `model_type` | text | `ai_model.model_type` | — |
-| `input_type` | text | `input_type` | — |
-| `accuracy` | double | `ai_model.test_accuracy`, unscaled, normally 0–1 | — |
-| `keywords` | text | `keywords`, the raw comma-separated string | — |
-| `is_gated` | bool | `is_gated` | — |
-| `size` | text | — | `size` |
-| `format` | text | — | `format` |
-| `publication_year` | int | — | `publication_year` |
-
-| Rule | Detail |
-|---|---|
-| Nullable | Every column. Patra leaves many of these null itself |
-| Refreshed | Rewritten by every catalog sweep, for existing cards as well as new ones |
-| Cleaned | Strings are trimmed. An empty string is stored as null |
-| Lenient | A value of an unexpected type is stored as null; the sweep does not fail |
-| Also accepted | `keywords` as an array of strings, joined with `, `. `test_accuracy` and `publication_year` as numeric strings |
-| Before the first sweep | Rows from before `PatraCardDetails` stay null until the next catalog sweep. There is no backfill |
-
-**`service_tokens`**
-
-| Field | Meaning |
-|---|---|
-| `jti` | Random token identifier. Resolved against a live row on every request |
-| `label` | Human name for the token |
-| `expires_at` | Set at minting from the chosen lifetime. Default 90 days, range 1–365 |
-| `revoked_at` | Set on revocation. The row is retained as an audit trail |
-
-**The row holds no credential.** Identifiers and metadata only.
+| Table | Columns | Rules |
+|---|---|---|
+| `job_failures` | `resource_id`, `account_id`, `job`, `subject`, `identifier`, `details`, `severity`, `failed_at` | One row per collection that used up its retries |
 
 ## Enumerations
 
-**Platform** — on `accounts`, and what collection routes on.
-
-```
-github  ghcr  huggingface  npm  pypi  patra
-```
-
-**Resource kind** — on `resources`. Describes what a thing is, not which API reports on it.
-
-```
-agent  container  dataset  model  package  repository  service
-```
-
-Only a resource of kind `service` can be issued a webhook token. `agent` can be registered by hand
-but nothing in the API publishes one yet — see [TODO](../../TODO.md).
-
-**Metric type** — on `metrics`.
-
-```
-authentications  clones  deployments  downloads  forks  likes  pulls  stars  subscribers  views
-authenticationsAllTime  clonesAllTime  downloadsAllTime  pullsAllTime  viewsAllTime
-```
-
-The `*AllTime` variants cannot be written directly through the API. They are maintained by the
-fold. See [Watermarks](../explanation/watermarks.md). `deployments` has no `*AllTime` twin: Patra's
-count is already a lifetime total, read whole on every sweep, so there is no window to fold.
+| Enum | Values |
+|---|---|
+| `platform` | `github`, `ghcr`, `huggingface`, `npm`, `pypi`, `patra` |
+| Resource `type` | `agent`, `container`, `dataset`, `model`, `package`, `repository`, `service` |
+| `metric_type` | See [Metrics](metrics.md) |
 
 ## Migrations
 
-Applied in order, all registered in `configure.swift`.
+Migrations live in `Sources/Insights/Migrations/` and run in the order `configure.swift` adds them.
+Two more are added only in development: `ICICLESnapshotJuly2026` and `PatraCatalogAugust2026`. They
+seed real accounts, resources and figures so a local dashboard has something to show.
 
-| Migration | Adds |
-|---|---|
-| `FirstMigration` | Accounts, resources, metrics, releases, vaults |
-| `RecurringCollection` | Collection due dates and watermarks |
-| `ServiceTokens` | Webhook token rows |
-| `Admins` | Granted administrator access |
-| `JobFailures` | Durable failure records |
-| `CollectionBackoff` | Collection history, and clamps GitHub cadences to the current cap |
-| `PatraPlatform` | The `patra`, `agent`, and `deployments` enum values, and `patra_cards` |
-| `MetricDailyTotals` | `metric_daily_totals`. No backfill |
-| `PatraCardDetails` | The descriptive columns on `patra_cards`. No backfill; the next catalog sweep fills them |
-| `ICICLESnapshotJuly2026` | Seed data. **Development only** |
-| `PatraCatalogAugust2026` | Seed data. **Development only** |
-
-Both seed migrations are registered only when `VAPOR_ENV=development`, so they target `dev` and
-can never reach `test` or a deployment.
-
-## Database by environment
-
-| Environment | Database |
-|---|---|
-| testing | `test` |
-| development | `DATABASE_NAME`, else `dev` |
-| production | `DATABASE_NAME`, else `vapor_database` |
-
-Tests always hit `test`, so a stray run cannot clobber development or production data.
-
-#icicle-insights# #Reference# #Developer# #data-model#
+#icicle-insights# #Reference# #Developer#

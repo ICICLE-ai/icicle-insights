@@ -1,164 +1,76 @@
-<div align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.svg">
-    <img src="assets/logo-light.svg" alt="ICICLE Insights" width="680">
-  </picture>
+# ICICLE Insights
 
-  <p><strong>Open-source impact, measured across platforms.</strong></p>
+ICICLE Insights measures how the ICICLE institute's open-source work is used. It collects stars, forks,
+traffic, downloads, pulls and deployments from the platforms the institute publishes on. It keeps the
+history and shows it on a public dashboard.
 
-  <p>
-    <img alt="Swift 6.3" src="https://img.shields.io/badge/Swift-6.3-F05138?logo=swift&logoColor=white">
-    <img alt="Vapor 4" src="https://img.shields.io/badge/Vapor-4-111111?logo=vapor&logoColor=white">
-    <img alt="SvelteKit" src="https://img.shields.io/badge/SvelteKit-Deno-FF3E00?logo=svelte&logoColor=white">
-    <img alt="PostgreSQL 18" src="https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white">
-    <img alt="GPL-3.0" src="https://img.shields.io/badge/License-GPL--3.0-blue">
-  </p>
+- **Dashboard:** <https://insights.pods.icicleai.tapis.io>
+- **Inside TapisUI:** <https://icicleai.tapis.io/#/insights>, under *ICICLE Services → Insights*
+- **API reference:** `/docs` on any deployment, generated from `/openapi.json`
 
-  <p>
-    <a href="docs/tutorials/administering-insights.md">Administer</a> ·
-    <a href="docs/tutorials/local-development.md">Develop</a> ·
-    <a href="docs/how-to/deploy-insights.md">Deploy</a> ·
-    <a href="docs/">Documentation</a>
-  </p>
-</div>
+## What it tracks
 
----
-
-Insights collects popularity and usage metrics for open-source accounts and the things they
-publish — repositories, models, datasets, packages, containers, and services — and turns them into
-a historical REST API and a public dashboard.
-
-Built for the [ICICLE](https://icicle.osu.edu/) research ecosystem. The data model is
-platform-neutral, so it suits any community that wants a clearer picture of its open-source reach.
-
-<div align="center">
-  <img src="assets/screenshots/dashboard-portfolio.png" alt="The public dashboard" width="900">
-</div>
-
-## What it does
-
-- **One model across platforms.** Accounts, repositories, models, datasets, packages, and
-  containers share a consistent metric shape.
-- **Totals you can trust.** Overlapping API windows are folded through daily watermarks, so nothing
-  is counted twice — even when a job is retried.
-- **Durable collection.** Valkey holds queued work while stateless workers scale independently of
-  the HTTP service and the scheduler.
-- **Public by default, guarded where it matters.** Reads need no credential; every write does.
-- **Credentials behind an interface.** Jobs resolve platform tokens through a small provider
-  contract rather than being coupled to one backend.
-
-## How it fits together
-
-```mermaid
-flowchart LR
-    U[Dashboard and API clients] --> APP[Vapor HTTP service]
-    APP --> DB[(PostgreSQL)]
-    S[Single scheduler] --> Q[(Valkey queues)]
-    Q --> W[One or more workers]
-    W --> GH[GitHub / Hugging Face]
-    W --> SP[SecretProvider]
-    W --> DB
-```
-
-| Component | Purpose | Scaling |
+| Platform | What is tracked | Collected |
 |---|---|---|
-| HTTP service | Dashboard, REST API, OpenAPI | Scale freely |
-| Queue worker | Claims and runs collection jobs | Scale freely |
-| Scheduler | Evaluates the clocks and dispatches | **Exactly one replica** |
-| PostgreSQL | Catalog, readings, due dates, watermarks | One managed database |
-| Valkey | Queue storage and rate-limit counters | One shared service |
+| GitHub | Repositories: stars, forks, watchers, 14-day views and clones | Yes |
+| Hugging Face | Models and datasets: 30-day downloads, likes, lifetime downloads | Yes |
+| Patra | Model cards and datasheets: deployments, card details | Yes |
+| GHCR | Container images: 30-day pulls, lifetime pulls | Yes |
+| npm | Packages | Listed only |
+| PyPI | Packages | Listed only |
 
-Two schedulers dispatch every due resource twice. That is the one hard scaling constraint.
+npm and PyPI are not collected on purpose. Their download counts cannot tell a person from a CI
+runner or a mirror refreshing its cache.
 
-## What is collected
+## What you can do with it
 
-| Platform | Metrics | Status |
-|---|---|---|
-| GitHub repositories | Stars, forks, subscribers, clones, views | Active |
-| GitHub accounts | Followers | Active |
-| Hugging Face | Likes, rolling downloads, lifetime downloads | Active |
-| GHCR | 30-day pulls, lifetime pulls, read from the public package page | Active |
-| npm, PyPI | — | Registered, not yet collected |
+- **Read the dashboard.** Pick a platform and a time range, then drill into any resource. Start with
+  [Tour the dashboard](docs/tutorials/tour-the-dashboard.md).
+- **Run the catalog.** Administrators sign in with a Tapis account to add accounts, resources,
+  credentials and releases. Start with [Administer Insights](docs/tutorials/administer-insights.md).
+- **Change the code.** A Swift server and a SvelteKit dashboard. Start with
+  [Run Insights locally](docs/tutorials/run-insights-locally.md).
 
-The scheduler scans hourly but each resource has its own cadence, seven days by default. See
-[Collection schedule](docs/reference/collection-schedule.md).
+## How it is built
 
-## Quick start
+| Part | Technology |
+|---|---|
+| API and collectors | Swift 6.3, Vapor 4, Fluent |
+| Storage | PostgreSQL 18 |
+| Job queue and rate limits | Valkey 9 (any Redis-protocol server) |
+| Dashboard | SvelteKit (Svelte 5), Tailwind 4, shadcn-svelte, built with Deno |
+| Sign-in and secrets | Tapis tokens and Tapis Vault |
+| Delivery | One container image, `ghcr.io/icicle-ai/insights` |
 
-```bash
-cp .env.example .env
-```
+The image runs as three processes: the API, a queue worker and a scheduler.
+[Architecture](docs/explanation/architecture.md) explains how they fit together.
 
-Set the Tapis values and `DATABASE_TLS=disable`, then:
-
-```bash
-just db
-```
-
-```bash
-just migrate
-```
+## Quick start for developers
 
 ```bash
-just run
+cp .env.example .env        # then fill in the Tapis values; see the tutorial
+just web-install
+just run                    # API on http://127.0.0.1:8080
+just web                    # dashboard on http://localhost:5174
 ```
 
-The full walkthrough, including the dashboard and the container stack, is in
-[Local development](docs/tutorials/local-development.md).
-
-Requires Swift 6.3+, Node 24+, [`just`](https://just.systems/), and — for the container stack —
-macOS 26 or later with Apple Container.
-
-## The admin console
-
-Administrators get an operations console at `/admin`: collection health, the catalog, vault
-credential metadata, service tokens, and access control.
-
-<div align="center">
-  <img src="assets/screenshots/admin-operations.png" alt="The operations console" width="900">
-</div>
-
-Start with [Administering Insights](docs/tutorials/administering-insights.md).
+This needs PostgreSQL and Valkey running locally. The full walkthrough is
+[Run Insights locally](docs/tutorials/run-insights-locally.md).
 
 ## Documentation
 
-Organised on [Diátaxis](https://diataxis.fr/), split by audience. The map is in
-**[docs/](docs/)**.
+Everything is under [docs/](docs/README.md), in four kinds:
 
-| | Administrator | Developer |
-|---|---|---|
-| **Tutorial** | [Administering Insights](docs/tutorials/administering-insights.md) | [Local development](docs/tutorials/local-development.md) |
-| **How-to** | [Deploy](docs/how-to/deploy-insights.md) · [Issue a token](docs/how-to/issue-a-service-token.md) · [Diagnose a failure](docs/how-to/diagnose-a-collection-failure.md) | [Add a collector](docs/how-to/add-a-collector.md) · [Dashboard toolchain](docs/how-to/set-up-the-dashboard-toolchain.md) · [Run the tests](docs/how-to/run-the-tests.md) |
-| **Reference** | [Admin console](docs/reference/admin-console.md) · [Configuration](docs/reference/configuration.md) · [CLI](docs/reference/cli.md) | [HTTP API](docs/reference/http-api.md) · [Data model](docs/reference/data-model.md) · [Invariants](docs/reference/invariants.md) |
-| **Explanation** | [Watermarks](docs/explanation/watermarks.md) · [Authentication](docs/explanation/authentication.md) | [Architecture](docs/explanation/architecture.md) · [Decisions](docs/explanation/decisions/) |
+- tutorials to learn by doing
+- how-to guides for one task
+- reference tables to look things up
+- explanations of why it works the way it does
 
-## Development
+## Acknowledgment
 
-```bash
-just
-```
-
-Lists every recipe, grouped: `swift`, `web`, `cli`, `setup`, `containers`, `collect`, `stack`.
-See [just recipes](docs/reference/just-recipes.md).
-
-```bash
-just test
-```
-
-211 tests across 15 suites, run serially against a dedicated `test` database.
-
-## Deploying
-
-Set the five required variables, run migrations, create the signing keyset, and check the boot log.
-The full sequence is in [Deploy Insights](docs/how-to/deploy-insights.md).
+National Science Foundation (NSF) funded AI institute for Intelligent Cyberinfrastructure with
+Computational Learning in the Environment (ICICLE) (OAC 2112606).
 
 ## License
 
-GNU General Public License v3.0. See [LICENSE](LICENSE).
-
-## Acknowledgments
-
-Developed as part of
-[ICICLE (Intelligent Cyberinfrastructure with Computational Learning in the Environment)](https://icicle.osu.edu/),
-an NSF-funded AI institute (OAC 2112606).
+See [LICENSE](LICENSE).

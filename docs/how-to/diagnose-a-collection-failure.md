@@ -1,149 +1,50 @@
 # Diagnose a collection failure
 
-Work out why metrics stopped arriving. For administrators and developers.
+How to work out why a resource stopped updating and get it collecting again. For administrators
+answering an alert or noticing a flat chart.
 
-Start at **Administration → Operations**. The four status tiles and the watchlist name most
-problems directly.
+## 1. Find the failure
 
-## Nothing is collecting at all
+1. Open the admin console at **Operations**.
+2. Check the **Scheduler** card. If it says *Stale — no recent heartbeat* or *Not seen yet*, nothing
+   is being queued. Restart the scheduler process and stop here.
+3. Check **Waiting on "metrics"**. A number that keeps growing means no worker is running. Restart
+   the `queues` process and stop here.
+4. Read **Recent failures**. Each row names the job, the account and resource, and an identifier.
 
-**Check the scheduler heartbeat** in the Administrator context panel.
+## 2. Match the identifier
 
-A stale timestamp means the scheduler is not running. It is the one process that must be running
-and must be alone. A stopped scheduler is silent: collection simply stops and nothing fails.
+| Identifier | Most likely cause | What to do |
+|---|---|---|
+| `missing_token` | No credential stored for the account | [Track a new account](track-a-new-account.md), step 2 |
+| `api_request_failed` 401 or 403 | Platform token expired or lacks access | [Replace a platform token](replace-a-platform-token.md) |
+| `api_request_failed` 404 | Resource renamed, deleted or made private | Fix its name, or delete the resource |
+| `api_request_failed` 5xx or 429 | The platform is having a bad day | Nothing; it re-books itself |
+| `tapis_request_failed` 401, on every account | `TAPIS_TOKEN` expired | [Renew the Tapis service token](renew-the-tapis-token.md) |
+| `tapis_secret_not_found` | The vault entry points at a secret that is gone | Replace the token for that account |
+| `page_layout_changed` | GitHub changed its package page | A developer updates `GHCRPackagePage` |
+| `decoding_failed` | The platform changed its API response | A developer updates the collector |
 
-```bash
-container logs -f scheduled
-```
+The full list is in [Collection failures](../reference/collection-failures.md).
 
-If the heartbeat is current, check the **Collection pipeline** tile. A rising waiting count with
-nothing running means the scheduler is enqueueing but no worker is draining.
+## 3. Confirm the fix
 
-```bash
-container logs -f queues
-```
+Failures re-book themselves within 1 to 12 hours, and credential failures within 1 hour. To try
+straight away, see [Collect now](collect-now.md).
 
-Restart the worker. The HTTP server and the scheduler do not execute jobs.
+Then check the resource's page on the public dashboard. **Last reading** in the tables, or the
+readings on the console's **Metrics** page, should show today.
 
-## Every account stopped at once
+## A resource that is never collected
 
-Almost always `TAPIS_TOKEN`. Every account's credential is read through it, so its expiry stops all
-collection while the platforms stay healthy.
+If **Resources** in the console shows **Next collection** as *Not scheduled*, the sweep will never
+pick it up. That is expected for npm and PyPI, which are not collected. For any other platform,
+editing the resource does not change it. Book it as described in [Collect now](collect-now.md),
+under *Resources that are not scheduled*.
 
-1. Find `tapis_token_expires_at` on the `Secret provider selected.` line of the boot log.
-2. If that time has passed, renew the token in Tapis.
-3. Update `TAPIS_TOKEN` on every process and restart them.
+## GitHub gaps past 14 days
 
-The next hourly sweep resumes collection. The `WarnExpiringTapisToken` alert gives 7, 3, and 1
-days' notice, then one critical alert once the token has lapsed.
+An alert saying the collection gap has passed the retention window means some GitHub traffic days
+are gone. They cannot be recovered. Fix the cause so no more are lost.
 
-## One account stopped collecting
-
-Almost always its credential.
-
-Check the **Vault credentials healthy** tile. An expired credential fails every resource under that
-account at once, while the platform APIs are perfectly healthy.
-
-Rotate the credential on the platform, then use **Rotate** on the Vaults screen. The next sweep
-picks it up. No backfill is needed.
-
-## The same alert repeats every six hours
-
-Working as intended.
-
-A credential failure re-books its resource about an hour out rather than letting it sit out a full
-cadence, so it fails again every hour until the credential is repaired. Slack hears about it once
-per six hours; the rest are suppressed. That is what makes a fixed token resume collection
-unattended without flooding the channel.
-
-One alert can stand for many resources. To see every resource affected, search the log for the
-alert's identifier, or read the persisted failures:
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" https://insights.example.org/api/admin/failures?limit=200
-```
-
-To silence it without fixing the credential, clear the resource's next-collection date. The sweep
-skips resources with no due date.
-
-## GitHub returns 403
-
-GitHub uses 403 for both an expired token and a secondary rate limit, and only the response body
-distinguishes them. The alert quotes the body for exactly this reason.
-
-If it is a rate limit, **do not add workers**. More workers consume the same allowance faster.
-Lengthen cadences or reduce concurrency.
-
-## Every GHCR package fails with `page_layout_changed`
-
-GitHub has changed its package page, so the parser no longer finds the download figures. Nothing is
-lost meanwhile: the next successful sweep reads GitHub's lifetime total again.
-
-1. Open the URL in the alert. Find where the page now shows "Total downloads" and the 30-day chart.
-2. Update the selectors in `Sources/Insights/Services/GHCR/GHCRPackagePage.swift`.
-3. Save the page to `Tests/Fixtures/GHCR/`, trimmed like the copies already there, and run
-   `just test`.
-4. Deploy. The failing resources re-book within twelve hours and then collect on their own.
-
-One GHCR package failing with status 404 is different. GitHub found no public page under either the
-organization or the user address. Check the resource's name, or whether the package is now private.
-See [ADR 009](../explanation/decisions/009-scraping-ghcr.md).
-
-## A resource never collects
-
-Check its **Next collection** date on the Catalog → Resources screen.
-
-| Shows | Means |
-|---|---|
-| `Not set` | Never booked. The sweep skips it. New resources are created due, so only older or hand-made rows show this |
-| A future date | Not due. Normal |
-| A past date | Due, but the sweep is not running or is failing |
-
-Changing the cadence does not make a resource due. It sets the spacing applied after the next
-successful collection. To collect now, see
-[Run collection immediately](run-collection-immediately.md).
-
-## Readings arrive but the all-time total does not move
-
-Usually correct.
-
-Rolling values are folded through a watermark, and only completed days newer than the watermark are
-added. If a response contains no new completed day, the total is already current. See
-[Watermarks](../explanation/watermarks.md).
-
-Also note that gauges — stars, forks, likes, followers — have no all-time total by design. The
-series is the record.
-
-## Failures are logged but never reach Slack
-
-Check `SLACK_WEBHOOK_URL` on the `queues` and `scheduled` processes. Jobs fail there, so that is
-where the notifier fires.
-
-Unset or empty selects the log-only notifier, which is the intended default for tests and local
-runs. The boot log says which was selected on the `Failure alerting configured.` line.
-
-If it is set, look for a delivery failure in the log. Alert delivery never fails a job, so a log
-line is its only trace.
-
-The webhook belongs in `.env`, which is gitignored. Anything secret placed in `.env.container` is
-secret in the repository.
-
-## Everything returns 403
-
-Not a collection problem. `TAPIS_BASE_URL` and `TAPIS_TENANT` are probably naming different tenants,
-which boots cleanly and then refuses every administrator. Compare both values in the boot log — see
-[Configuration](../reference/configuration.md).
-
-## Webhook posts stopped working
-
-Check the boot log for `No webhook token signing keyset found`. Until the keyset exists, webhook
-authentication recognises nobody while everything else works normally.
-
-Otherwise the token has expired or been revoked. `just token list` shows both.
-
-## Where the durable record lives
-
-Failed jobs are persisted, so the console's watchlist and failure list survive a restart and do not
-depend on Slack being configured.
-
-#icicle-insights# #How-To# #Administrator# #Developer# #troubleshooting#
+#icicle-insights# #How-To# #Administrator#

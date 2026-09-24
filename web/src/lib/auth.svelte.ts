@@ -7,7 +7,7 @@
  *
  * - The `X-Tapis-Token` cookie, which TapisUI sets for pages it serves on the same site.
  * - A `postMessage` from the parent frame when the dashboard is embedded (see
- *   docs/how-to/embed-the-dashboard.md). Only from an origin in `trustedParentOrigins`, and only
+ *   docs/how-to/embed-in-tapisui.md). Only from an origin in `trustedParentOrigins`, and only
  *   from `window.parent` itself — not from any other window that happens to share that origin.
  * - A token pasted by hand on the sign-in screen.
  *

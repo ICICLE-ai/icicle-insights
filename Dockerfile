@@ -26,7 +26,7 @@ COPY web/ ./
 
 # Parent origins allowed to hand an embedded dashboard a token. Baked into the bundle at build time,
 # because the page has to know before it has talked to anything. See
-# docs/how-to/embed-the-dashboard.md.
+# docs/how-to/embed-in-tapisui.md.
 ARG VITE_TRUSTED_PARENT_ORIGINS=https://icicleai.tapis.io
 ENV VITE_TRUSTED_PARENT_ORIGINS=$VITE_TRUSTED_PARENT_ORIGINS
 RUN deno task build

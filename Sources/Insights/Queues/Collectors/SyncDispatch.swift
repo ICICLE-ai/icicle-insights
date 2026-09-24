@@ -26,7 +26,7 @@ extension Queue {
     case .ghcr:
       // The `metrics` queue like every other collector, although this one scrapes HTML rather
       // than calling an API. A queue of its own would need its own worker process in every
-      // deployment, for a handful of page fetches a day. See ADR 009.
+      // deployment, for a handful of page fetches a day.
       try await dispatch(
         SyncGHCRStats.self, .init(id: id), maxRetryCount: syncJobMaxRetryCount)
     case .npm, .pypi:

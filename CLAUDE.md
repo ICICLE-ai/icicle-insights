@@ -1,144 +1,128 @@
-# ICICLE Insights — working notes
+# ICICLE Insights: working notes
 
-Swift 6.3 / Vapor 4 service collecting open-source impact metrics into PostgreSQL, with Valkey
-queues, a public REST API, and a SvelteKit dashboard in `web/` built with Deno.
+A Swift 6.3 and Vapor 4 service that collects usage metrics for ICICLE's open-source work into
+PostgreSQL. Jobs run on Valkey queues. A SvelteKit dashboard in `web/` is built with Deno and served
+by the same process.
 
-## Orientation
+## Where to look
 
 | Read | When |
 |---|---|
-| [docs/](docs/) | Documentation map, organised on Diátaxis |
-| [docs/explanation/architecture.md](docs/explanation/architecture.md) | System map, lifecycles, layout |
-| [docs/reference/invariants.md](docs/reference/invariants.md) | **Before changing behaviour** — rules that must stay true |
-| [docs/reference/http-api.md](docs/reference/http-api.md) | Routes and their guards |
-| [docs/explanation/authentication.md](docs/explanation/authentication.md) | Auth, admins, webhook tokens |
-| [docs/reference/test-suite.md](docs/reference/test-suite.md) | What the suite covers, why it might not run |
-| [docs/explanation/decisions/](docs/explanation/decisions/) | Why something is the way it is, before changing it |
-| [docs/how-to/set-up-the-dashboard-toolchain.md](docs/how-to/set-up-the-dashboard-toolchain.md) | Deno, the dashboard dev server, regenerating API types |
-| [TODO.md](TODO.md) | Current state and what is left |
+| [docs/README.md](docs/README.md) | The documentation map |
+| [docs/explanation/architecture.md](docs/explanation/architecture.md) | Processes, request path, source layout |
+| [docs/explanation/how-collection-works.md](docs/explanation/how-collection-works.md) | **Before touching a collector, the sweep or all-time totals** |
+| [docs/reference/http-api.md](docs/reference/http-api.md) | Routes and who may call them |
+| [docs/reference/configuration.md](docs/reference/configuration.md) | Every environment variable |
+| [docs/how-to/run-the-tests.md](docs/how-to/run-the-tests.md) | Running the suite safely |
+| [TODO.md](TODO.md) | Known problems and what is left |
 
 ## Commands
 
 ```bash
-just              # list every recipe, grouped
-just run          # dev server
-just migrate
+just              # every recipe, grouped
+just run          # API on :8080
 just test         # serial, against the `test` database
-just fmt          # run before committing
-just web          # dashboard dev server on :5174 (Deno)
-just stack        # full local container stack
+just fmt          # swift-format; run before committing
+just web          # dashboard dev server on :5174
+just web-check    # svelte-check
+just web-test     # vitest
+just stack        # full local stack on Apple Container
 ```
 
 ## Setup that bites
 
-- **`.env` must exist** or the whole suite fails in setup — Tapis configuration is parsed inside
-  `configure`. Copy `.env.example`.
-- **`DATABASE_TLS=disable`** locally, or every connection fails `sslUnsupported`.
-- **Use the staging Tapis tenant for local work** (`icicleai.staging.tapis.io`). It is a separate
-  vault, so `init-key` and the vault tests never touch production.
-- `TAPIS_BASE_URL` and `TAPIS_TENANT` **move together** — each tenant has its own host. Mixing them
-  boots cleanly and then refuses every admin with a bare 403.
-- Tapis tokens are short-lived. Unexplained vault failures usually mean expiry.
-- **`VAPOR_ENV` sets the environment for every process**, and nothing should pass `--env` on a
-  command line — that flag outranks the variable, so pinning it on one process is how a stack ends
-  up with processes disagreeing about their own environment. Deployments set `production`; the
-  local stacks set `development` in `.env.container` and `docker-compose.yml`.
-- **`just dns` is needed once per machine** before the first `just stack`, or containers cannot
-  resolve each other.
+- **`.env` must exist.** `configure` parses the Tapis settings, so without them every test fails in
+  setup. Copy `.env.example`.
+- **Set `DATABASE_TLS=disable` locally.** The default is `require`, and a local Postgres has no
+  certificate.
+- **Point local work at the staging tenant** (`https://icicleai.staging.tapis.io/v3`). Its vault is
+  separate from production's. With a real token in `.env`, some vault tests write real secrets.
+- **`TAPIS_BASE_URL` and `TAPIS_TENANT` must name the same tenant.** A mismatch boots cleanly, then
+  refuses every administrator with a bare 403.
+- **Tapis tokens are short-lived.** When every vault read fails at once, check `TAPIS_TOKEN` first.
+  The boot log prints its expiry.
+- **Set the environment with `VAPOR_ENV`, never `--env`.** A command-line flag outranks the variable,
+  so one process ends up disagreeing with the others. The same goes for `--hostname` and `--port`.
+- **Run `just dns` once per machine** before the first `just stack`, or containers cannot find each
+  other.
 
 ## Conventions
 
 - **`configure.swift` is the composition root.** It is the only place a concrete backend is chosen.
   Jobs and controllers depend on `SecretProvider` and `FailureNotifier`, never on `TapisClient`.
-- **Comments explain *why*.** The codebase's existing comments record rejected alternatives and
-  non-obvious failure modes; several encode bugs that cost real debugging. Do not strip them for
-  brevity. Add rationale, not restatement.
-- Doc-comment every type and non-trivial function. One summary line, then rationale.
-- `swift-format` is authoritative; `just fmt` before committing.
-- Errors that cross the API boundary conform to `AbortError` with a reason that excludes
-  credentials.
-- **`docker-compose.yml` and `justfiles/apple-container.just` describe the same stack**, service for
-  service, with matching names. Change one and change the other.
+- **Comments explain why.** Existing comments record rejected alternatives and failures that cost real
+  debugging. Keep them. Add rationale, not restatement.
+- Every type and non-trivial function gets a doc comment: one summary line, then the reasoning.
+- `swift-format` is authoritative. Run `just fmt` before committing.
+- Errors that cross the API boundary conform to `AbortError`. Their reasons never contain credentials.
+- `docker-compose.yml` and `justfiles/apple-container.just` describe the same stack with the same
+  service names. Change one, change the other.
+
+## Rules the code depends on
+
+- **The scheduler runs as exactly one replica.** Two schedulers dispatch every due resource twice.
+  Queue workers scale freely.
+- **Jobs must be safe to retry.** Delivery is at least once. Collectors fetch first, then write
+  everything in one transaction.
+- **Failures re-book; they do not skip.** The sweep advances `nextCollectionAt` when it dispatches, as
+  a lease. An exhausted failure must replace it with a capped backoff. Otherwise two failures push a
+  GitHub resource past its 14-day traffic window and those days are lost.
+- **A resource with no `nextCollectionAt` is never collected.** The sweep filters on `<= now`, which
+  never matches NULL. Anything that creates resources must set a due date. npm and PyPI rows are
+  left without one on purpose: their downloads cannot separate people from CI and caches, so they
+  are not collected.
+- **Watermarks stop double counting.** GitHub's traffic windows overlap between sweeps.
+  `MetricWatermark.countedThrough` records which days are already in the all-time total.
+- **Webhook signing keys live in their own `JWTKeyCollection`**, never in `app.jwt.keys`. JWTKit falls
+  back to the default signer for an unknown `kid`. Tapis tokens carry a `kid` this server never
+  registers, so a shared collection would check real admins against the wrong key.
+- **Authenticators never reject.** Each logs in an identity or returns quietly. Only `Require`
+  answers 401 or 403. That is what keeps public reads open.
+- **`Require` is synchronous** and cannot query. Admin status is looked up during authentication and
+  carried on `TapisUser.isAdmin`.
+- **Secrets never reach logs or the database.** `Secret` redacts itself. `service_tokens` rows hold
+  identifiers and metadata only.
+- **Do not rename `withInsightsApp`.** `VaporTesting` has a generic `withApp` that wins overload
+  resolution for single-expression closures and hands the test an empty app.
+
+## Only a real boot catches these
+
+The `.testing` environment skips the Tapis tenant key fetch and the vault keyset read. Changes on
+those paths pass `just test` and can still fail at startup. Check them against staging.
 
 ## Documentation
 
-**Ship docs with the change.** Do not leave a feature undocumented for later.
+**Ship docs with the change.** Reader-facing pages live under `docs/`, in one of four directories.
+Plans and design notes are working files and can live elsewhere.
 
-Organised on Diátaxis under `docs/`. Every **reader-facing** page lives in one of four
-directories, and none goes at the repository root — no stray `FEATURE.md` beside the code.
+| Directory | Holds | Shape | Length |
+|---|---|---|---|
+| `tutorials/` | A guided path from start to finish | Narrative with checkpoints | 80–120 lines |
+| `how-to/` | One task for someone who knows what they want | Numbered steps, verbs first | 30–60 lines |
+| `reference/` | Facts to look up | Tables | As long as the tables need |
+| `explanation/` | Why it is built this way | Prose with a subhead every ~10 lines | 60–100 lines |
 
-Working artifacts are not reader docs and this does not apply to them. Plans, specs and design
-notes may live wherever the workflow that produces them puts them.
-
-| Directory | Holds | Shape |
-|---|---|---|
-| `tutorials/` | a guided path start to finish | narrative, with checkpoints |
-| `how-to/` | one goal, for someone who knows what they want | numbered steps, verbs first |
-| `reference/` | facts to look up | tables, not prose |
-| `explanation/` | why it is built this way | prose, subheads every ~10 lines |
-
-Add the page to the index table in [docs/README.md](docs/README.md) in the same change.
-
-### The rules
-
-- **One mode per page.** A how-to states no rationale; it links to the explanation. Reference is
-  tables, not narrative. If a page starts doing two jobs, split it.
-- **Verify every claim against the code**, never against another doc. Read the controller, the
-  component, the migration. A rewrite once carried four wrong claims forward this way: a form
-  field that does not exist, CORS attributed to the wrong layer, a fixed expiry that is actually
-  configurable, and two environment variables that are defined nowhere in this repository.
-- **Do not document a UI flow you have not seen run.** Say so in `TODO.md` if you cannot.
-- Every page ends with a tag line: exactly one type tag (`#Tutorial#`, `#How-To#`, `#Reference#`,
-  `#Explanation#`) and at least one audience tag (`#Administrator#`, `#Developer#`).
-
-```
-#icicle-insights# #How-To# #Administrator# #Developer# #deployment#
-```
-
-- **Administrator** runs a deployment; **Developer** changes the code. Console and access tasks are
-  Administrator. Anything done from a terminal, or that touches the deployment, is both.
-- Open every page with one line saying what it is and who it is for.
-- Keep sentences under about 25 words, and avoid chains of em-dash clauses. The previous
-  documentation was replaced specifically because that style made it hard to follow.
+- **One kind per page.** A how-to links to the explanation instead of arguing. Reference is tables.
+- **Check every claim against the code or the running site**, never against another page.
+- **Describe the UI as it is.** Open the screen and read its labels before writing about it.
+- Open each page with one line saying what it is and who it is for.
+- Keep sentences under about 25 words. Avoid chains of dashes and clauses.
 - Code blocks are complete and copy-pasteable. At most one diagram per page.
-- Budgets: how-to 30–50 lines, explanation 60–100, tutorial 80–120. Reference is as long as its
-  tables need.
+- Add every new page to [docs/README.md](docs/README.md) in the same change.
+- End each page with a tag line: `#icicle-insights#`, one kind tag, then one or more audience tags.
 
-Screenshots live in `assets/screenshots/`, 1440×900 at 2× device scale, light theme. **Substitute
-real usernames for placeholders before capture** — this repository is public.
+```
+#icicle-insights# #How-To# #Administrator#
+```
 
-## Invariants worth stating here
+Kinds: `#Tutorial#`, `#How-To#`, `#Reference#`, `#Explanation#`. Audiences: `#Reader#` (anyone
+viewing the dashboard), `#Administrator#` (runs the catalog or the deployment), `#Developer#`
+(changes the code).
 
-- **The scheduler runs exactly one replica.** Queue workers scale freely; the scheduler does not,
-  or scheduled work dispatches twice.
-- **Jobs must be retry-safe.** Delivery is at-least-once.
-- **Failures re-book, they do not skip.** `CollectDueResources` advances `nextCollectionAt` at
-  dispatch, which is a lease. An exhausted failure must replace it with a capped backoff, or two
-  failures put a resource past its provider's retention window and the gap days are gone.
-- **Watermarks prevent double counting.** Rolling windows overlap between sweeps;
-  `MetricWatermark.countedThrough` records what has already been folded into an all-time total.
-  Changing fold logic without understanding this corrupts history silently.
-- **Webhook signing keys live in their own `JWTKeyCollection`**, never `app.jwt.keys`. JWTKit falls
-  back to the default signer for an unknown `kid`, and Tapis tokens carry one this server never
-  registers — sharing a collection would verify real admins against the HMAC key and reject them.
-- **Neither authenticator rejects anything.** Each logs in its identity or returns quietly; only
-  `Require` produces 401/403. That is what keeps public reads working.
-- **`Require`'s predicate is synchronous**, so it cannot query. Admin status resolves during
-  authentication and rides on `TapisUser.isAdmin`.
-- **Secrets never enter logs or the database.** `Secret` redacts description and reflection;
-  `service_tokens` rows hold identifiers and metadata only.
-- **`withInsightsApp` must not be renamed.** `VaporTesting`'s generic `withApp` wins overload
-  resolution for a single-expression closure and hands the test an empty app.
-
-## Things that only fail on a real boot
-
-`.testing` skips the Tapis tenant key fetch and the vault keyset read, so anything on those paths
-is invisible to the suite. Two real bugs hid there: the unwrapped tenant PEM, and the keyset
-bootstrap catch-22. Verify such changes against staging, not just `just test`.
+This repository is public. Use real usernames only where they already appear on the live site.
 
 ## Scope
 
-This is built for ICICLE specifically. `SecretProvider` and `FailureNotifier` are seams because
-each had a real second implementation. Do not add abstraction for hypothetical deployments — but
-keep Tapis specifics inside `Services/Tapis/` and the two authenticators, so a future adapter is an
-addition rather than an untangling.
+This is built for ICICLE. `SecretProvider` and `FailureNotifier` are interfaces because each had a
+real second implementation. Do not add abstraction for hypothetical deployments. Keep Tapis details
+inside `Services/Tapis/` and the two authenticators.

@@ -104,7 +104,7 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
     }
 
     // Deliberately no `resource.recordSuccessfulCollection(on:)` call, even though
-    // `add-a-collector.md` asks for the opposite. That method anchors one resource's own
+    // docs/how-to/add-a-collector.md asks for the opposite. That method anchors one resource's own
     // collection cadence and backoff; this sweep is account-level and writes no metrics, so
     // calling it per touched resource would book a collection the dispatcher then skips —
     // advancing a due date for a sweep that never happened.

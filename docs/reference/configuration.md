@@ -1,131 +1,91 @@
 # Configuration
 
-Every environment variable Insights reads. For administrators and developers.
+Every environment variable Insights reads, for administrators running a deployment and developers
+running it locally. `.env.example` is a commented starting point.
 
-All values are read at boot by `configure.swift`. A change needs a restart.
+All three processes read the same variables. Set them the same way everywhere.
 
 ## Required
 
-Boot fails if any of these is missing.
+A missing value stops the process at startup.
 
-| Variable | Value |
+| Variable | Meaning |
 |---|---|
-| `TAPIS_BASE_URL` | Tenant base URL, including the `/v3` suffix |
-| `TAPIS_TENANT` | Tenant ID. Must name the same tenant as the URL above |
-| `TAPIS_USER` | Service username. Scopes the vault path |
-| `TAPIS_TOKEN` | Service access token. Secret; short-lived. Its `exp` claim is logged at boot and warned about ahead of time |
-| `ROOT_ADMIN_USERNAME` | A real `tapis/username` in that tenant |
+| `TAPIS_BASE_URL` | The tenant's Tapis API, ending in `/v3`. Production `https://icicleai.tapis.io/v3`; staging `https://icicleai.staging.tapis.io/v3` |
+| `TAPIS_TENANT` | The tenant id, `icicleai`. Must match the host in `TAPIS_BASE_URL` |
+| `TAPIS_TOKEN` | The service user's Tapis token, for Tapis Vault. Short-lived; see [Renew the Tapis service token](../how-to/renew-the-tapis-token.md) |
+| `TAPIS_USER` | The service user. Vault secrets live under this user's path |
+| `ROOT_ADMIN_USERNAME` | The Tapis username that is always an administrator |
 
-`TAPIS_BASE_URL` and `TAPIS_TENANT` move together. Each tenant has its own host.
-
-| Environment | `TAPIS_TENANT` | `TAPIS_BASE_URL` |
-|---|---|---|
-| Production | `icicleai` | `https://icicleai.tapis.io/v3` |
-| Staging | `icicleai` | `https://icicleai.staging.tapis.io/v3` |
-
-A mismatched pair boots cleanly and then refuses every administrator with a bare 403.
-The boot log prints both together so the mismatch is visible on startup.
+A mismatched `TAPIS_BASE_URL` and `TAPIS_TENANT` starts cleanly, then refuses every administrator
+with 403. A wrong `TAPIS_USER` shows up as *secret not found*.
 
 ## Runtime
 
-| Variable | Default | Notes |
+| Variable | Default | Meaning |
 |---|---|---|
-| `VAPOR_ENV` | `development` | Set `production` in a deployment. Read by every process |
-| `LOG_LEVEL` | `debug` | `trace`, `debug`, `info`, `notice`, `warning`, `error`, `critical` |
-| `SECRET_PROVIDER` | `tapis` | Any other value fails at boot |
+| `VAPOR_ENV` | `development`; the image sets `production` | Environment. Also picks the default database name and whether seed data is added |
+| `LOG_LEVEL` | `info`; `notice` in production | `trace`, `debug`, `info`, `notice`, `warning`, `error` or `critical` |
+| `SERVER_HOSTNAME` | `0.0.0.0` | Interface the API listens on |
+| `SERVER_PORT` | `8080` | Port the API listens on |
+| `SECRET_PROVIDER` | `tapis` | Where credentials are stored. `tapis` is the only value |
 
-Never pass `--env` on a command line. It outranks `VAPOR_ENV`, which is how a stack ends up with
-processes disagreeing about their own environment.
-
-`VAPOR_ENV` also selects the database name and gates the development seed migration. See
-[Data model](data-model.md).
-
-## HTTP server
-
-Read by `serve` only.
-
-| Variable | Default | Notes |
-|---|---|---|
-| `CORS_ORIGINS` | unset | Comma-separated. Unset installs no CORS middleware at all |
-| `FRAME_ANCESTORS` | unset | Comma-separated origins allowed to iframe the dashboard. Unset denies framing |
-| `RATE_LIMIT_PER_MINUTE` | `300` | Per client address, across `/api`. The address is the rightmost `X-Forwarded-For` entry, else the socket peer |
-| `WEBHOOK_RATE_LIMIT_PER_MINUTE` | `60` | Per token, on the metric-reporting route |
-
-HSTS is sent when `VAPOR_ENV=production`, and not otherwise.
+Never pass `--env`, `--hostname` or `--port` on the command line. A flag overrides the variable for
+one process only, and the processes then disagree.
 
 ## PostgreSQL
 
-| Variable | Default | Notes |
+| Variable | Default | Meaning |
 |---|---|---|
-| `DATABASE_HOST` | `localhost` | |
-| `DATABASE_PORT` | `5432` | |
-| `DATABASE_NAME` | see below | |
-| `DATABASE_USERNAME` | `vapor_username` | |
-| `DATABASE_PASSWORD` | `vapor_password` | Replace in a deployment |
-| `DATABASE_TLS` | TLS required | Set `disable` only for the local stock container, which serves no TLS |
-
-`DATABASE_NAME` defaults by environment: `test` under testing, `dev` under development,
-`vapor_database` otherwise. Under TLS the certificate is encrypted but not verified, matching
-libpq's `sslmode=require`.
+| `DATABASE_HOST` | `localhost` | Host |
+| `DATABASE_PORT` | `5432` | Port |
+| `DATABASE_NAME` | `dev` in development, `vapor_database` in production | Database. Tests always use `test` |
+| `DATABASE_USERNAME` | `vapor_username` | User |
+| `DATABASE_PASSWORD` | `vapor_password` | Password |
+| `DATABASE_TLS` | TLS required | Set `disable` for a local database without TLS. The certificate is not verified |
 
 ## Valkey
 
-Used for both queue storage and rate-limit counters.
-
-| Variable | Default | Notes |
+| Variable | Default | Meaning |
 |---|---|---|
-| `REDIS_HOST` | `localhost` | |
-| `REDIS_PORT` | `6379` | |
-| `REDIS_PASSWORD` | empty | Empty means no authentication. Set it and start Valkey with `--requirepass` to match |
+| `REDIS_HOST` | `localhost` | Host of Valkey or any Redis-protocol server |
+| `REDIS_PORT` | `6379` | Port |
+| `REDIS_PASSWORD` | none | Password. Empty means no authentication |
 
-## Credentials and alerting
+## HTTP
 
-| Variable | Default | Notes |
+| Variable | Default | Meaning |
 |---|---|---|
-| `TOKEN_SIGNING_SECRET` | `insights-token-signing-key` | Name of the vault secret holding the webhook keyset |
-| `SLACK_WEBHOOK_URL` | unset | Collection failure alerts. Unset logs only |
-| `SLACK_WEBHOOK_URL_WARNINGS` | unset | Optional second channel for lower-severity failures |
+| `CORS_ORIGINS` | unset, no CORS | Comma-separated browser origins allowed to call the API from another site |
+| `FRAME_ANCESTORS` | unset, framing denied | Comma-separated origins allowed to frame the dashboard, such as `https://icicleai.tapis.io` |
+| `RATE_LIMIT_PER_MINUTE` | `300` | Requests per minute per client address on `/api` |
+| `WEBHOOK_RATE_LIMIT_PER_MINUTE` | `60` | Requests per minute per service token on the service metrics route |
 
-Set the Slack variables on the `queues` and `scheduled` processes. Jobs fail there, so that is
-where the notifier fires.
+## Tokens and alerts
 
-Exhausted-job alerts are sent once per identifier and severity per six hours. Repeats are logged and
-recorded, not posted. The window is fixed in code.
-
-## Fixed in code
-
-Pool sizes and timeouts. Set in `configure.swift`, not read from the environment.
-
-| Setting | Value | Applies to |
+| Variable | Default | Meaning |
 |---|---|---|
-| PostgreSQL connections per event loop | 4 | Every process. One event loop per CPU core |
-| PostgreSQL idle pruning | every 60s, past 120s idle | Every process |
-| PostgreSQL pool wait | 10s, the driver default | Every process |
-| Valkey active connections per event loop | 8, none kept warm | Rate-limit counters. Queue storage keeps the driver defaults |
-| Valkey connection attempt | 5s | Rate-limit counters |
-| Outbound HTTP connect timeout | 10s | Platform APIs, Tapis, Slack |
-| Outbound HTTP read timeout | 30s | Platform APIs, Tapis, Slack |
+| `TOKEN_SIGNING_SECRET` | `insights-token-signing-key` | Name of the Vault secret holding the service-token signing keys |
+| `SLACK_WEBHOOK_URL` | unset, log only | Slack incoming webhook for alerts |
+| `SLACK_WEBHOOK_URL_WARNINGS` | `SLACK_WEBHOOK_URL` | Separate webhook for warnings, keeping the main channel for credential failures |
 
-Size PostgreSQL's `max_connections` for the worst case: 4 × cores, per process, per replica.
+Alerts are sent by the worker and the scheduler. Setting the webhooks on the API has no effect.
 
-## Verifying a boot
+## Build time
 
-Every process should print the same environment. A correct start logs these at `notice`:
+| Variable | Where | Default | Meaning |
+|---|---|---|---|
+| `VITE_TRUSTED_PARENT_ORIGINS` | Docker build argument | `https://icicleai.tapis.io` | Parent frames allowed to hand the dashboard a token |
+| `INSIGHTS_API` | `just web` | `http://127.0.0.1:8080` | Where the dashboard dev server forwards `/api` |
 
-```
-HTTP middleware configured.        bind=… cors_origins=… frame_ancestors=… hsts=true
-Secret provider selected.          provider=tapis tapis_base_url=… tapis_tenant=… tapis_token_expires_at=…
-Root admin resolved.               username=…
-Tapis tenant public key loaded; admin tokens verify locally.
-Webhook token signing keys loaded. keys=N active_kid=…
-Failure alerting configured.       channel=slack
-Insights configured.               environment=production database=…
-```
+## Local stack only
 
-A missing line is a misconfiguration. See [Deploy Insights](../how-to/deploy-insights.md).
+Read by `justfiles/apple-container.just`.
 
-`tapis_token_expires_at=unknown` means `TAPIS_TOKEN` is not a JWT with an `exp` claim, and no
-warning will precede its expiry. A past date also logs `TAPIS_TOKEN has already expired` at
-`critical`.
+| Variable | Default | Meaning |
+|---|---|---|
+| `APP_PORT` | `80` | Port inside the app container |
+| `APP_HOST_PORT` | `8080` | Port on `127.0.0.1` |
+| `CONTAINER_BUILD_DNS`, `CONTAINER_BUILD_DNS_ALT` | `75.75.75.75`, `75.75.76.76` | Resolvers used while building the image |
 
-#icicle-insights# #Reference# #Administrator# #Developer# #configuration#
+#icicle-insights# #Reference# #Administrator# #Developer#
