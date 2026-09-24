@@ -13,7 +13,9 @@ db.sqlite
 default.profraw
 
 .memsearch
-data/
+# Anchored: a bare `data/` also matched web/src/lib/data/ and kept the dashboard's data layer out
+# of the repository.
+/data/
 
 # Dashboard build output goes to Public/ and is never committed; Docker produces it in a
 # dedicated Deno stage so a host build never becomes part of the image accidentally. web/ has
