@@ -62,6 +62,7 @@ Facts. Look things up; do not read start to finish.
 | [Collection schedule](reference/collection-schedule.md) | What is collected, when, from where | Both |
 | [Data model](reference/data-model.md) | Tables, fields, enumerations | Dev |
 | [just recipes](reference/just-recipes.md) | Every recipe in both justfiles | Dev |
+| [CI pipeline](reference/ci-pipeline.md) | Workflow jobs, caches, Dockerfile targets | Dev |
 | [Invariants](reference/invariants.md) | Rules a change must not break | Dev |
 | [Test suite](reference/test-suite.md) | What the 195 tests cover | Dev |
 | [Glossary](reference/glossary.md) | Project vocabulary | Both |
