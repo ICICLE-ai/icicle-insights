@@ -1,12 +1,32 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+# Weekly update pull requests for the server's Swift packages, the CI actions and the Dockerfile's
+# base images, grouped so each ecosystem opens one pull request a week rather than one per package.
+#
+# The dashboard in web/ is left out on purpose. Its lock file is deno.lock, which Dependabot does
+# not update, so a package.json bump alone would fail `deno install --frozen` in CI and in the
+# Docker build. Update it by hand with `deno outdated` and `deno update`.
 
 version: 2
 updates:
-  - package-ecosystem: "" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: "swift"
+    directory: "/"
     schedule:
       interval: "weekly"
-      
+    groups:
+      swift:
+        patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      images:
+        patterns: ["*"]

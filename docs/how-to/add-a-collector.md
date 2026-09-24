@@ -28,7 +28,8 @@ deliberately left uncollected; see [Metrics](../reference/metrics.md).
    - `resource.recordSuccessfulCollection(on: db)` last
 6. **Register the job** in `configure.swift` with `app.queues.add(SyncExampleStats())`.
 7. **Route to it** in `SyncDispatch.swift`. A platform that is not listed yet also needs a
-   `Platform` case, added last, and a migration that extends the `platform` enum.
+   `Platform` case, a migration that extends the `platform` enum, and a colour slot in
+   `PLATFORMS` in `web/src/lib/format.ts`.
 8. **Check the limits** in `Platform` (`Models/Account.swift`): `maxCollectionIntervalDays` and
    `retentionWindowDays`. A platform that drops daily data needs a cadence well inside its window.
 9. **Use a stored token only if the data is private.** GHCR and Patra read public pages without

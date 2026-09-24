@@ -37,13 +37,13 @@
 	const data = query(async () => {
 		const resourceID = id;
 		const current = scope(resourceID);
-		const [src, catalog] = await Promise.all([source(), loadCatalog()]);
+		const catalog = await loadCatalog();
 		const resource = catalog.resourceByID.get(resourceID);
 		if (!resource) return { missing: true as const };
-		const summary = await src.summary(current);
+		const summary = await source.summary(current);
 		const trending = summary.tiles.filter((tile) => tile.kind !== 'lifetime');
 		const series = await Promise.all(
-			trending.map((tile) => src.series(current, tile.type, 'none', bucketFor(current)))
+			trending.map((tile) => source.series(current, tile.type, 'none', bucketFor(current)))
 		);
 		return { missing: false as const, catalog, resource, summary, trending, series };
 	});
