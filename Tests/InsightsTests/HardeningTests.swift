@@ -2,6 +2,7 @@ import Fluent
 import Foundation
 import JWT
 import JWTKit
+import NIOCore
 import Redis
 import Testing
 import Vapor
@@ -223,6 +224,97 @@ struct HardeningTests {
           },
           afterResponse: { res async throws in #expect(res.status == .created) },
         )
+      }
+    }
+  }
+
+  /// A socket address standing in for the ingress, which is what the limiter sees as the peer.
+  private func ingress() throws -> SocketAddress {
+    try SocketAddress(ipAddress: "10.0.0.2", port: 443)
+  }
+
+  /// The client wrote the left entry; the ingress appended the right one. Vapor's `peerAddress`
+  /// failed to parse the pair as one address and fell back to the ingress, so every visitor
+  /// shared one bucket.
+  @Test
+  func `A spoofed forwarded list keys on the entry the ingress appended`() throws {
+    let headers: HTTPHeaders = ["X-Forwarded-For": "6.6.6.6, 203.0.113.7"]
+    #expect(
+      RateLimiter.clientAddress(headers: headers, remoteAddress: try ingress()) == "203.0.113.7")
+  }
+
+  /// A header repeated across lines is one list, so the rightmost entry of the last line wins.
+  @Test
+  func `Repeated forwarded lines are read as one list`() throws {
+    var headers = HTTPHeaders()
+    headers.add(name: .xForwardedFor, value: "6.6.6.6")
+    headers.add(name: .xForwardedFor, value: "7.7.7.7, 203.0.113.7")
+    #expect(
+      RateLimiter.clientAddress(headers: headers, remoteAddress: try ingress()) == "203.0.113.7")
+  }
+
+  @Test
+  func `A single forwarded entry is the client`() throws {
+    let v4: HTTPHeaders = ["X-Forwarded-For": " 203.0.113.7 "]
+    #expect(RateLimiter.clientAddress(headers: v4, remoteAddress: try ingress()) == "203.0.113.7")
+
+    let v6: HTTPHeaders = ["X-Forwarded-For": "2001:db8::1"]
+    #expect(RateLimiter.clientAddress(headers: v6, remoteAddress: try ingress()) == "2001:db8::1")
+  }
+
+  @Test
+  func `No forwarded header keys on the socket`() throws {
+    #expect(RateLimiter.clientAddress(headers: [:], remoteAddress: try ingress()) == "10.0.0.2")
+    #expect(RateLimiter.clientAddress(headers: [:], remoteAddress: nil) == nil)
+  }
+
+  /// Falls back to the socket, never to an entry further left: those are the client's own words.
+  @Test
+  func `A malformed rightmost entry keys on the socket`() throws {
+    for value in ["6.6.6.6, not-an-address", "6.6.6.6,", "203.0.113.7:8080", "", " , "] {
+      let headers: HTTPHeaders = ["X-Forwarded-For": value]
+      #expect(
+        RateLimiter.clientAddress(headers: headers, remoteAddress: try ingress()) == "10.0.0.2")
+    }
+  }
+
+  /// A `Forwarded` header is trusted by Vapor ahead of everything else, and nothing in front of
+  /// this API writes one, so it can only have come from the client.
+  @Test
+  func `A client-sent Forwarded header is ignored`() throws {
+    let headers: HTTPHeaders = [
+      "Forwarded": "for=6.6.6.6", "X-Forwarded-For": "203.0.113.7",
+    ]
+    #expect(
+      RateLimiter.clientAddress(headers: headers, remoteAddress: try ingress()) == "203.0.113.7")
+  }
+
+  /// End to end through the middleware: two visitors spoofing different left entries behind the
+  /// same real address share its budget, and a different real address has its own.
+  @Test
+  func `The per-address limit follows the appended address, not the spoofed one`() async throws {
+    setenv("RATE_LIMIT_PER_MINUTE", "1", 1)
+    defer { unsetenv("RATE_LIMIT_PER_MINUTE") }
+
+    try await withInsightsApp { app in
+      // Random documentation-range addresses, and their counters cleared first: the window lives
+      // in the shared Valkey for a minute, and a rerun must not inherit the last run's count.
+      let suffix = String(UInt16.random(in: 1...UInt16.max), radix: 16)
+      let real = "2001:db8::\(suffix)"
+      let other = "2001:db8:1::\(suffix)"
+      for address in [real, other] {
+        _ = try await app.redis.delete(RedisKey("ratelimit:ip:\(address)")).get()
+      }
+
+      let cases: [(String, HTTPStatus)] = [
+        ("6.6.6.6, \(real)", .ok),
+        ("7.7.7.7, \(real)", .tooManyRequests),
+        ("6.6.6.6, \(other)", .ok),
+      ]
+      for (forwarded, expected) in cases {
+        try await app.testing().test(
+          .GET, "api/accounts", headers: ["X-Forwarded-For": forwarded],
+          afterResponse: { res async throws in #expect(res.status == expected) })
       }
     }
   }
@@ -754,6 +846,16 @@ struct HardeningTests {
   }
 
   @Test
+  func `SvelteKit immutable assets are recognized by their directory`() {
+    #expect(StaticAssetCacheMiddleware.isHashedAssetPath("/_app/immutable/entry/start.CxZ3Rk1a.js"))
+    #expect(StaticAssetCacheMiddleware.isHashedAssetPath("/_app/immutable/chunks/BxY12aQz.js"))
+    #expect(StaticAssetCacheMiddleware.isHashedAssetPath("/_app/immutable/assets/0.CIXBSStk.css"))
+    // `version.json` sits beside the immutable directory and changes every deploy.
+    #expect(!StaticAssetCacheMiddleware.isHashedAssetPath("/_app/version.json"))
+    #expect(!StaticAssetCacheMiddleware.isHashedAssetPath("/logo-mark.svg"))
+  }
+
+  @Test
   func `SPA deep links stream index without caching it`() async throws {
     let directory = FileManager.default.temporaryDirectory
       .appending(path: "insights-spa-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -815,6 +917,42 @@ struct HardeningTests {
         )
       }
     )
+  }
+
+  // MARK: - Pools and timeouts
+
+  /// AsyncHTTPClient's default has a connect timeout and no read timeout, so a platform that
+  /// accepts the connection and then stalls hangs a sync job forever. `BackoffRetrying` cannot
+  /// rescue that: retries fire on failure, and a hang never fails.
+  @Test
+  func `Outbound HTTP calls give up on a stalled read`() async throws {
+    try await withInsightsApp { app in
+      #expect(app.http.client.configuration.timeout.read == .seconds(30))
+      #expect(app.http.client.configuration.timeout.connect == .seconds(10))
+    }
+  }
+
+  /// Both defaults were too small for a service that touches the database and the rate-limit
+  /// counter on nearly every request.
+  @Test
+  func `The database and rate-limit pools are sized above the library defaults`() async throws {
+    try await withInsightsApp { app in
+      // FluentPostgresDriver keeps its configuration type internal, so the value is read by
+      // reflection. A renamed field fails this loudly as a nil, not silently as a pass.
+      let postgres = try #require(app.databases.configuration())
+      let perEventLoop =
+        Mirror(reflecting: postgres).children
+        .first { $0.label == "maxConnectionsPerEventLoop" }?.value as? Int
+      #expect(perEventLoop == 4)
+
+      let redis = try #require(app.redis.configuration)
+      guard case .maximumActiveConnections(let active) = redis.pool.maximumConnectionCount else {
+        Issue.record("expected a maximum-active-connections pool")
+        return
+      }
+      #expect(active == 8)
+      #expect(redis.pool.minimumConnectionCount == 0)
+    }
   }
 
   // MARK: - Health probes

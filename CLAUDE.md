@@ -1,7 +1,7 @@
 # ICICLE Insights — working notes
 
 Swift 6.3 / Vapor 4 service collecting open-source impact metrics into PostgreSQL, with Valkey
-queues, a public REST API, and an Angular 22 dashboard.
+queues, a public REST API, and a SvelteKit dashboard in `web/` built with Deno.
 
 ## Orientation
 
@@ -14,7 +14,7 @@ queues, a public REST API, and an Angular 22 dashboard.
 | [docs/explanation/authentication.md](docs/explanation/authentication.md) | Auth, admins, webhook tokens |
 | [docs/reference/test-suite.md](docs/reference/test-suite.md) | What the suite covers, why it might not run |
 | [docs/explanation/decisions/](docs/explanation/decisions/) | Why something is the way it is, before changing it |
-| [docs/how-to/set-up-the-dashboard-toolchain.md](docs/how-to/set-up-the-dashboard-toolchain.md) | Angular MCP server and the vendor `llms-full.txt` files |
+| [docs/how-to/set-up-the-dashboard-toolchain.md](docs/how-to/set-up-the-dashboard-toolchain.md) | Deno, the dashboard dev server, regenerating API types |
 | [TODO.md](TODO.md) | Current state and what is left |
 
 ## Commands
@@ -25,7 +25,7 @@ just run          # dev server
 just migrate
 just test         # serial, against the `test` database
 just fmt          # run before committing
-just web          # Angular dev server on :4200
+just web          # dashboard dev server on :5174 (Deno)
 just stack        # full local container stack
 ```
 

@@ -31,6 +31,10 @@ func withInsightsApp(
   let app = try await Application.make(.testing)
   do {
     try await configure(app)
+    // Alert deduplication lives in Valkey for six hours, and Valkey is shared with every other
+    // test and with local development. Without a namespace per test, the first test to report a
+    // `missing_token` would silence that alert in every later one, for the rest of the afternoon.
+    app.alertDedupeKeyPrefix = "insights:test:\(UUID().uuidString):alerts"
     try await installTestCredentials(on: app)
     try await setUp(app)
     // Match the production lifecycle before a test reaches Redis-backed middleware or jobs.
@@ -198,26 +202,12 @@ var hasLiveTapisCredentials: Bool {
 }
 
 /// Reads `exp` out of a JWT payload, or nil when the value is not a JWT carrying one.
+///
+/// Delegates to the reader the boot log and `WarnExpiringTapisToken` use, which began as a copy
+/// of this function. One decoder means the suite skips on exactly the tokens production would
+/// call expired.
 private func tapisTokenExpiry(_ token: String?) -> Date? {
-  let segments = (token ?? "").split(separator: ".")
-  guard segments.count == 3 else { return nil }
-
-  // base64url differs from base64 in two characters and omits the padding Data requires.
-  var encoded =
-    String(segments[1])
-    .replacingOccurrences(of: "-", with: "+")
-    .replacingOccurrences(of: "_", with: "/")
-  encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
-
-  guard
-    let data = Data(base64Encoded: encoded),
-    let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-    let exp = claims["exp"] as? TimeInterval
-  else {
-    return nil
-  }
-
-  return Date(timeIntervalSince1970: exp)
+  TapisConfig.expiry(ofJWT: token ?? "")
 }
 
 /// The HMAC secret webhook tokens are signed with in tests. Fixed rather than generated so a

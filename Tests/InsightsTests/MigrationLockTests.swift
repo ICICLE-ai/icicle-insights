@@ -1,4 +1,5 @@
 import Fluent
+import FluentPostgresDriver
 import NIOPosix
 import Testing
 import Vapor
@@ -20,6 +21,11 @@ struct MigrationLockTests {
   /// A default multi-threaded group hides the bug: `autoMigrate` usually lands on a different event
   /// loop with a spare connection, which is why this reached production. The single thread is what
   /// makes this test capable of failing.
+  ///
+  /// So is a pool of one. `configure` now sizes the pool at four connections per event loop, which
+  /// would give a pooled lock three spares and let this pass even with the bug reintroduced. The
+  /// test re-registers the database at the old default, so it still models the one-connection
+  /// shape the deadlock needs.
   @Test("applies migrations on a single-event-loop process")
   func migratesOnASingleEventLoop() async throws {
     let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
@@ -27,6 +33,14 @@ struct MigrationLockTests {
 
     do {
       try await configure(app)
+      app.databases.use(
+        .postgres(
+          configuration: try #require(app.migrationLockConfiguration),
+          maxConnectionsPerEventLoop: 1,
+        ),
+        as: .psql,
+        isDefault: true,
+      )
       try await app.asyncBoot()
       try await app.migrateUnderAdvisoryLock()
 

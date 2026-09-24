@@ -2,7 +2,7 @@
 
 What Insights collects, when, and from where. For administrators and developers.
 
-## The four clocks
+## The five clocks
 
 Registered in `configure.swift` and evaluated by the single `queues --scheduled` process.
 
@@ -12,6 +12,7 @@ Registered in `configure.swift` and evaluated by the single `queues --scheduled`
 | `CollectAccountStats` | Monthly, 1st at 03:00 | Enqueues a follower sync for every GitHub account | `collect-accounts` |
 | `CollectPatraCatalog` | Daily at 04:00 | Enqueues a catalog sync for every Patra account | `collect-patra-catalog` |
 | `WarnExpiringServiceTokens` | Daily at 07:00 | Alerts on webhook tokens nearing expiry. Writes nothing | none |
+| `WarnExpiringTapisToken` | Daily at 07:00 | Alerts 7, 3, and 1 days before `TAPIS_TOKEN` expires, and once after. Writes nothing | none |
 
 Times use the scheduler process's own time zone. Set `TZ` explicitly if 03:00 must mean a
 particular local hour.

@@ -15,6 +15,10 @@ One image, three processes, two backing services. The image is built from the re
 
 Plus PostgreSQL 18 and Valkey 9. Neither should be reachable from outside the cluster.
 
+Put exactly one proxy in front of the API, and have it **append** the client address to
+`X-Forwarded-For`. The per-address rate limit reads the rightmost entry. A second appending hop
+makes every visitor share that hop's address.
+
 All three processes are required. Without the scheduler nothing is enqueued on a timer. Without the
 worker, jobs accumulate in Valkey and no metric is ever written — silently, with a healthy API.
 

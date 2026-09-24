@@ -27,8 +27,21 @@ struct SyncPatraDeployments: AsyncJob, BackoffRetrying {
 
   /// Pages every card's deployments, sums them, and writes one `.deployments` reading.
   func dequeue(_ context: QueueContext, _ payload: PatraResource) async throws {
-    guard let resource = try await Resource.find(payload.id, on: context.application.db) else {
+    // Loads the account only to ask whether it is still live: this job never needs its name,
+    // but it should skip an orphan the same way the other collectors do. `withDeleted: true` for
+    // the reason `CollectDueResources` gives.
+    guard
+      let resource = try await Resource.query(on: context.application.db)
+        .filter(\.$id == payload.id)
+        .with(\.$account, withDeleted: true)
+        .first()
+    else {
       context.entryVanished(id: payload.id, job: Self.name)
+      return
+    }
+
+    guard !resource.accountIsDeleted else {
+      context.orphanSkipped(resource, job: Self.name)
       return
     }
 
@@ -59,16 +72,22 @@ struct SyncPatraDeployments: AsyncJob, BackoffRetrying {
       total += deployments.count
     }
 
-    // Written even when `total` is 0 — the endpoint answered, and zero deployments is what it
-    // said. `.deployments.allTime` is nil (see `MetricType`), so this reading is never folded;
-    // Patra's count is read whole on every sweep and there is no rolling window to accumulate.
-    try await Metric(
-      resourceID: payload.id, reading: Double(total), type: .deployments
-    ).create(on: context.application.db)
+    // The reading and the success in one transaction, for the reason `SyncGitHubRepoStats`
+    // gives: if recording the success failed after the reading landed, the retry wrote a second
+    // `.deployments` row for the same sweep.
+    let reading = Double(total)
+    try await context.application.db.transaction { db in
+      // Written even when `total` is 0 — the endpoint answered, and zero deployments is what it
+      // said. `.deployments.allTime` is nil (see `MetricType`), so this reading is never folded;
+      // Patra's count is read whole on every sweep and there is no rolling window to accumulate.
+      try await Metric(
+        resourceID: payload.id, reading: reading, type: .deployments
+      ).create(on: db)
 
-    // Anchors the backoff and the next due date on this success, last — the contract every
-    // per-resource collector follows. `SyncPatraCatalog` is the one exception: it is
-    // account-level and writes no metrics, so it has no per-resource cadence to anchor.
-    try await resource.recordSuccessfulCollection(on: context.application.db)
+      // Anchors the backoff and the next due date on this success, last — the contract every
+      // per-resource collector follows. `SyncPatraCatalog` is the one exception: it is
+      // account-level and writes no metrics, so it has no per-resource cadence to anchor.
+      try await resource.recordSuccessfulCollection(on: db)
+    }
   }
 }

@@ -89,6 +89,34 @@ func requireCalendarDate(year: Int, month: Int, day: Int = 1, _ field: String) t
   return date
 }
 
+/// Parses a strict `YYYY-MM-DD` calendar date as that day's midnight UTC.
+/// - Returns: The day at midnight UTC.
+/// - Throws: `Abort(.badRequest)` for any other shape, or a date that does not exist.
+func requireDay(_ value: String, _ field: String) throws -> Date {
+  guard let day = UTCDay.parse(value) else {
+    throw Abort(.badRequest, reason: "'\(field)' must be a date in the form YYYY-MM-DD.")
+  }
+  return day
+}
+
+/// Validates an inclusive range of UTC days: `from` not after `to`, and at most `maxDays` apart.
+///
+/// Bounded because every day in the range is a row the database generates and a point the
+/// response carries, per metric type or per resource, so an unbounded span is an unbounded query.
+/// - Throws: `Abort(.badRequest)` naming whichever condition failed.
+func requireDayRange(from: Date, to: Date, maxDays: Int) throws {
+  guard from <= to else {
+    throw Abort(.badRequest, reason: "'from' must be on or before 'to'.")
+  }
+  let span = UTCDay.calendar.dateComponents([.day], from: from, to: to).day ?? 0
+  guard span <= maxDays else {
+    throw Abort(
+      .badRequest,
+      reason: "'from' and 'to' may be at most \(maxDays) days apart; these are \(span).",
+    )
+  }
+}
+
 /// Validates that a date is later than the current instant.
 /// - Returns: The unchanged future date.
 /// - Throws: `Abort(.badRequest)` when the date is now or in the past.

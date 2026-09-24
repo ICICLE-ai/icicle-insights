@@ -17,11 +17,36 @@ across 110 resources under 5 accounts.
 | Authentication, admins, webhook tokens | Shipped |
 | Hardening: headers, CORS, rate limits, key rotation | Shipped |
 | Failure classification and alerting | Shipped |
-| Angular dashboard and admin console | Shipped |
+| SvelteKit dashboard and admin console | Built; admin console not yet walked signed in |
 | Request ID middleware | Shipped |
 | Documentation | Rewritten on Diátaxis |
 
 ## Open
+
+### Walk the new admin console signed in, then fix the docs that describe it
+
+The SvelteKit console replaced the Angular one. Its screens were checked signed out (the sign-in
+gate, a rejected token) and every admin endpoint's response shape was checked against the code, but
+nobody has yet signed in and walked it. Until someone does:
+
+- walk every section against [Admin console](docs/reference/admin-console.md), which was written
+  from the new components;
+- rewrite [Administering Insights](docs/tutorials/administering-insights.md), which still walks the
+  Angular tabs and carries a notice saying so;
+- retake `assets/screenshots/`, which still show the Angular UI (the README embeds two). Capture
+  from staging or production, not a dev database, so the figures are real;
+- run an accessibility check (axe) in both themes; the Angular app's AXE-clean status did not carry
+  over automatically.
+
+Vault create, replace and delete, and signing-key rotation, write to Tapis. Try them against the
+staging tenant, never a local stack pointed at production.
+
+### Confirm the embed token handover
+
+`VITE_TRUSTED_PARENT_ORIGINS` defaults to `https://icicleai.tapis.io`. The Angular app never set its
+equivalent, so no embedded dashboard has ever received a token this way. Confirm from TapisUI that
+the ADMIN state appears after the parent posts a token.
+
 
 ### Finish the documentation pass
 
@@ -94,7 +119,8 @@ protocol. Nothing to do until that is settled.
 No resource of kind `service` is registered anywhere, so the Service tokens screen has only ever
 shown its empty state: *"No service resources are registered."* That means the console half of
 [Issue a service token](docs/how-to/issue-a-service-token.md) was written from
-`Dashboard/src/app/features/admin/service-token-management.ts`, not from a flow anyone has run.
+the Angular console's source, not from a flow anyone has run. The SvelteKit console's form
+(`web/src/routes/admin/service-tokens/+page.svelte`) keeps the same three fields.
 
 The form fields named there — Resource, Deployment label, Lifetime in days — are correct as source,
 and `ServiceTokenIssuer.swift:61` does enforce `resource.type == .service` server-side. What is
@@ -128,6 +154,24 @@ See [Add a collector](docs/how-to/add-a-collector.md).
 `/api/metrics` caps at 1000 rows, newest first. At roughly 103 rows per weekly sweep that is about
 ten weeks of trailing history. Per-type fetches or downsampling is the follow-up when it gets tight.
 
+The `/api/insights` routes remove the need: they total in SQL with no row cap. What is left is
+moving the dashboard onto them and off per-type raw reads. See
+[Metric history](docs/explanation/metric-history.md).
+
+### Verify the collection-risk fixes against a real deployment
+
+`fix/backend-risks` was tested only against the suite, with a placeholder `TAPIS_TOKEN` and no
+Slack webhook. Four behaviours need a live check:
+
+- **The rate limiter behind the ingress.** It keys on the rightmost `X-Forwarded-For` entry, which
+  is correct only if exactly one proxy appends. Confirm the ingress appends rather than replaces,
+  and that nothing else sits in front of it.
+- **The `TAPIS_TOKEN` expiry line.** Boot with a real token and check `tapis_token_expires_at` on
+  `Secret provider selected.` reads the expected date.
+- **Alert deduplication with Slack.** One critical alert per six hours, however many resources fail.
+- **The account Delete guard in the console.** The API's 409 wording was matched to the
+  component's `deleteTitle`, not checked against the running screen.
+
 ### Fetch-on-create
 
 `ResourceController.create` already dispatches a sync and books the next collection. The path is
@@ -135,8 +179,9 @@ live; nothing outstanding unless creation-time collection needs to become option
 
 ## Deliberately not doing
 
-**Full Content-Security-Policy.** Needs the Angular bundle's asset origins settled, and a wrong
-policy breaks the application rather than degrading it. The headers that depend on nothing already
+**Full Content-Security-Policy.** The bundle is same-origin, but SvelteKit starts the app from an
+inline script, so `script-src` needs its hash (`kit.csp` can emit it). A wrong policy breaks the
+application rather than degrading it. The headers that depend on nothing already
 ship. The API reference at `/docs` still loads from a CDN; vendor it or allow that origin explicitly
 first.
 
@@ -148,9 +193,9 @@ set. There is nothing to route a `kid` against. Revisit only if Tapis starts pub
 updating the deployment's secret. A leaked token that could renew itself would never expire, which
 removes the only thing expiry buys.
 
-**Angular SSR.** Needs Node at runtime, so a second pod or Node in the runtime image. Worth
-reconsidering now the dashboard is public rather than authenticated — the original rationale no
-longer holds, even if the conclusion may.
+**Server-side rendering.** SvelteKit could render pages on a server, but that needs Deno or Node at
+runtime, so a second process or a bigger image. The dashboard ships as static files instead; every
+screen is data, and nothing needs search indexing.
 
 **Response compression.** The ingress may already handle it. Nobody has checked; this is an open
 question rather than a decision.

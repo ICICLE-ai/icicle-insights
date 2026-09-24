@@ -1,16 +1,35 @@
+# Two ways to produce the same runtime image:
+#
+#   default (`runtime`, the last stage)  builds the frontend and the server from source. This is
+#                                        what `just build` and `docker compose` use.
+#   `--target prebuilt`                  packages a server and frontend that were already built,
+#                                        from `.ci-staging/`. CI uses it so the release build runs
+#                                        once, in its own cached job, rather than again in here.
+#
+# Both finish on `runtime-base`, so the user, entrypoint and environment cannot drift apart.
+
 # ================================
 # Frontend build image
 # ================================
-FROM node:24-bookworm-slim AS frontend-build
+# Debian rather than Alpine: Vite's bundler and Tailwind load native bindings, and the glibc
+# builds are the ones every platform in deno.lock is known to have.
+FROM denoland/deno:debian-2.9.7 AS frontend-build
 
 WORKDIR /web
 
-# Dependency metadata first so source edits do not invalidate npm's install layer.
-COPY Dashboard/package.json Dashboard/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# Dependency metadata first so source edits do not invalidate the install layer. `--frozen`
+# fails the build if deno.lock would change, rather than resolving something new at image time.
+COPY web/package.json web/deno.lock ./
+RUN deno install --frozen
 
-COPY Dashboard/ ./
-RUN npm run build -- --output-path=/web-dist
+COPY web/ ./
+
+# Parent origins allowed to hand an embedded dashboard a token. Baked into the bundle at build time,
+# because the page has to know before it has talked to anything. See
+# docs/how-to/embed-the-dashboard.md.
+ARG VITE_TRUSTED_PARENT_ORIGINS=https://icicleai.tapis.io
+ENV VITE_TRUSTED_PARENT_ORIGINS=$VITE_TRUSTED_PARENT_ORIGINS
+RUN deno task build
 
 # ================================
 # Server build image
@@ -34,14 +53,12 @@ COPY ./Package.* ./
 RUN swift package resolve \
         $([ -f ./Package.resolved ] && echo "--force-resolved-versions" || true)
 
-# Copy entire repo into container
-COPY . .
-
-# Replace the retired Leaf assets with the Angular production output. The application builder
-# emits browser artifacts in a nested directory; Vapor continues to serve the stable /Public
-# path, so the runtime stage and deployment topology do not change.
-RUN rm -rf /build/Public && mkdir /build/Public
-COPY --from=frontend-build /web-dist/browser/ /build/Public/
+# Only what SwiftPM reads, not `COPY . .`. Anything else copied here becomes part of the compile
+# step's cache key, so a dashboard or documentation edit would re-run the Swift build. Tests is
+# included because SwiftPM errors when a declared target's directory is missing, even building
+# only the Insights product.
+COPY Sources ./Sources
+COPY Tests ./Tests
 
 RUN mkdir /staging
 
@@ -57,22 +74,22 @@ RUN --mount=type=cache,target=/build/.build \
     # Copy resources bundled by SPM to staging area
     find -L "$(swift build -c release --show-bin-path)" -regex '.*\.resources$' -exec cp -Ra {} /staging \;
 
-
 # Switch to the staging area
 WORKDIR /staging
 
 # Copy static swift backtracer binary to staging area
 RUN cp "/usr/libexec/swift/linux/swift-backtrace-static" ./
 
-# Copy any resources from the public directory and views directory if the directories exist
-# Ensure that by default, neither the directory nor any of its contents are writable.
-RUN [ -d /build/Public ] && { mv /build/Public ./Public && chmod -R a-w ./Public; } || true
-RUN [ -d /build/Resources ] && { mv /build/Resources ./Resources && chmod -R a-w ./Resources; } || true
+# The dashboard's static build, added after the compile rather than before it so a frontend
+# change does not invalidate the Swift build layer. Vapor serves it from the stable /Public path.
+# Read-only, so a compromised process cannot rewrite what it serves.
+COPY --from=frontend-build /web/build/ ./Public/
+RUN chmod -R a-w ./Public
 
 # ================================
-# Run image
+# Run image, shared by both targets
 # ================================
-FROM ubuntu:noble
+FROM ubuntu:noble AS runtime-base
 
 # Make sure all system packages are up to date, and install only essential packages.
 RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
@@ -93,9 +110,6 @@ RUN useradd --user-group --create-home --system --skel /dev/null --home-dir /app
 
 # Switch to the new home directory
 WORKDIR /app
-
-# Copy built executable and any staged resources from builder
-COPY --from=build --chown=vapor:vapor /staging /app
 
 # Wraps the command: migrates first when this container is the one serving. See the script.
 COPY --chown=vapor:vapor --chmod=755 docker-entrypoint.sh /app/docker-entrypoint.sh
@@ -127,3 +141,24 @@ EXPOSE 8080
 # with.
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["serve"]
+
+# ================================
+# CI: package an already-built server and frontend
+# ================================
+# `.ci-staging/` holds exactly what the `build` stage's /staging holds: the binary, the backtracer,
+# any SwiftPM resource bundles, and Public/. The workflow builds it in a Swift container matching
+# `build` above and carries it here as a tarball, because an artifact upload drops the executable
+# bit.
+#
+# Public/ is made read-only here rather than trusted from the context: the context transfer
+# resets directory modes, so a `chmod` in the workflow left the directory itself writable.
+FROM runtime-base AS prebuilt
+COPY --chown=vapor:vapor .ci-staging/ /app/
+RUN chmod -R a-w /app/Public
+
+# ================================
+# Default: build everything from source
+# ================================
+# Last, so a build without `--target` produces this one.
+FROM runtime-base AS runtime
+COPY --from=build --chown=vapor:vapor /staging /app

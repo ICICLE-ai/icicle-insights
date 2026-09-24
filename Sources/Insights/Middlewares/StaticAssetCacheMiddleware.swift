@@ -2,9 +2,9 @@ import Vapor
 
 /// Applies cache policy by artifact identity after the response has been produced.
 ///
-/// Angular content-hashes production JavaScript and CSS names, so those files are safe to cache
-/// for a year: a content change creates a new URL. The entry point must be revalidated on every
-/// navigation because it is the mutable map from a deployment to those immutable filenames.
+/// Both dashboard builds content-hash their production JavaScript and CSS, so those files are safe
+/// to cache for a year: a content change creates a new URL. The entry point must be revalidated on
+/// every navigation because it is the mutable map from a deployment to those immutable filenames.
 struct StaticAssetCacheMiddleware: AsyncMiddleware {
   func respond(to request: Request, chainingTo next: any AsyncResponder) async throws -> Response {
     let response = try await next.respond(to: request)
@@ -24,6 +24,14 @@ struct StaticAssetCacheMiddleware: AsyncMiddleware {
   }
 
   static func isHashedAssetPath(_ path: String) -> Bool {
+    // SvelteKit puts every content-hashed file under this prefix and nothing else there, so the
+    // directory is the guarantee. Its names separate the hash with a dot (`start.CxZ3Rk1a.js`) or
+    // are nothing but the hash (`BxY12a.js`), neither of which the Angular-shaped check below
+    // recognizes, and without this every chunk would be revalidated on every visit.
+    if path.hasPrefix("/_app/immutable/") {
+      return true
+    }
+
     let filename = path.split(separator: "/").last.map(String.init) ?? ""
     guard
       let extensionSeparator = filename.lastIndex(of: "."),

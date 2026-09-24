@@ -43,7 +43,7 @@ One goal each. Assume you know what you want.
 | [Run collection immediately](how-to/run-collection-immediately.md) | Collect now instead of waiting | Both |
 | [Diagnose a collection failure](how-to/diagnose-a-collection-failure.md) | Work out why metrics stopped | Both |
 | [Embed the dashboard](how-to/embed-the-dashboard.md) | Put the dashboard in an iframe | Both |
-| [Set up the dashboard toolchain](how-to/set-up-the-dashboard-toolchain.md) | Angular, the MCP server, and the `llms-full.txt` files | Dev |
+| [Set up the dashboard toolchain](how-to/set-up-the-dashboard-toolchain.md) | Deno, the dev server, and generated API types | Dev |
 | [Add a collector](how-to/add-a-collector.md) | Collect from a new platform | Dev |
 | [Add a queue or worker](how-to/add-a-queue-or-worker.md) | Introduce a new named queue | Dev |
 | [Add a secret provider](how-to/add-a-secret-provider.md) | Store credentials somewhere else | Dev |
@@ -62,8 +62,9 @@ Facts. Look things up; do not read start to finish.
 | [Collection schedule](reference/collection-schedule.md) | What is collected, when, from where | Both |
 | [Data model](reference/data-model.md) | Tables, fields, enumerations | Dev |
 | [just recipes](reference/just-recipes.md) | Every recipe in both justfiles | Dev |
+| [CI pipeline](reference/ci-pipeline.md) | Workflow jobs, caches, Dockerfile targets | Dev |
 | [Invariants](reference/invariants.md) | Rules a change must not break | Dev |
-| [Test suite](reference/test-suite.md) | What the 195 tests cover | Dev |
+| [Test suite](reference/test-suite.md) | What the 312 tests cover | Dev |
 | [Glossary](reference/glossary.md) | Project vocabulary | Both |
 
 ## Explanation
@@ -75,10 +76,11 @@ Why the system is shaped the way it is.
 | [Architecture](explanation/architecture.md) | The parts and how they fit |
 | [Metric collection](explanation/metric-collection.md) | Gauges, rolling windows, retention |
 | [Watermarks](explanation/watermarks.md) | Why totals are not double counted |
+| [Metric history](explanation/metric-history.md) | Daily totals, carried forward, and why lifetime history starts at deploy |
 | [Authentication](explanation/authentication.md) | Two credential paths, one guard |
 | [Queues and scheduling](explanation/queues-and-scheduling.md) | One scheduler, many workers |
 | [Secret providers](explanation/secret-providers.md) | Why credentials sit behind an interface |
-| [The dashboard](explanation/the-dashboard.md) | How the Angular application is served |
+| [The dashboard](explanation/the-dashboard.md) | How the SvelteKit app is built, served and fed |
 | [Decisions](explanation/decisions/) | Eight architecture decision records |
 
 #icicle-insights# #Reference# #Administrator# #Developer# #documentation-index#

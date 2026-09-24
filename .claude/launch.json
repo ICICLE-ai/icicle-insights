@@ -9,10 +9,9 @@
     },
     {
       "name": "insights-web",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "Dashboard", "start"],
-      "port": 4200,
-      "url": "http://localhost:4200"
+      "runtimeExecutable": "deno",
+      "runtimeArgs": ["task", "--cwd", "web", "dev"],
+      "port": 5174
     }
   ]
 }

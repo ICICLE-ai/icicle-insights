@@ -14,9 +14,11 @@ not a patch.
 | Jobs tolerate retries | Delivery is at-least-once; a retry corrupts or duplicates |
 | Scheduled jobs only enqueue | A slow platform call delays the next tick |
 | Sync jobs back off between attempts | An immediate requeue hammers a struggling API |
+| An exhausted-job alert is sent at most once per identifier and severity per six hours, failing open | An expired token posts about a hundred critical alerts an hour, and the muted channel hides the next real one |
 | `FailureNotifier.notify` never throws | The worker clears a job only after `error()` returns, so a failing alert channel strands the job |
 | Every exhausted resource failure re-books its resource | The sweep's dispatch-time due date stands, so one failure costs a full cadence and gaps compound past the retention window |
 | The failure backoff ceiling stays well inside `retentionWindowDays - maxCollectionIntervalDays` | The retry policy itself becomes the cause of a lost day |
+| Collectors load a resource's account `withDeleted: true` and skip one that is deleted | A plain eager load throws `missingParent`, and the sweep loads every due resource in one query, so one orphan stops all collection |
 
 Named workers may scale freely. Valkey claims each available payload atomically, so two workers
 cannot take the same one.
@@ -26,16 +28,20 @@ cannot take the same one.
 | Rule | Breaking it causes |
 |---|---|
 | Fetch every provider response before writing a sweep | A partial snapshot: gauges stranded without the traffic rows sharing their timestamp |
+| A sweep's writes share one transaction: readings, folds, and `recordSuccessfulCollection` | A late failure leaves the readings, and the retry writes them again |
 | Fold rolling values through their watermark | Overlapping windows counted repeatedly |
 | Fold only completed UTC days newer than the watermark | Today banked while still partial, then skipped once complete |
 | Advance watermarks only through completed days | The same |
-| Lock `(resource, metric type)` before a read-modify-write fold | Two workers corrupt one all-time value |
+| Lock `(resource, metric type)` before any read-then-write of an all-time total: fold, adjust, or set | Two workers corrupt one all-time value, or both create one |
+| Every write of an all-time total upserts that day's `metric_daily_totals` row in the same transaction | Lifetime history misses a day, or records a total that rolled back |
 | Cadence stays at most half the platform's retention window | No headroom for a missed collection: one delayed sweep ages days out |
 | A gap past the retention window raises `collection_window_exceeded`, once per outage | Data loss stays silent |
 
-`Metric.foldDailyIntoAllTime` takes a transaction-scoped `pg_advisory_xact_lock`. FluentKit has no
-row locking in this version. The hash uses PostgreSQL's `hashtext`, not Swift's `hashValue`, which
-is seeded per process.
+`Metric.foldDailyIntoAllTime`, `adjustAllTime`, and `setAllTime` take a transaction-scoped
+`pg_advisory_xact_lock`. FluentKit has no row locking in this version. Called inside a collector's
+transaction, their own `db.transaction` joins it: FluentPostgresDriver issues no SAVEPOINT or inner
+COMMIT, so the lock is held to the collector's commit. The hash uses PostgreSQL's `hashtext`, not
+Swift's `hashValue`, which is seeded per process.
 
 ## Credentials
 
@@ -75,6 +81,8 @@ aborts the boot.
 | DTOs are validated and normalised before becoming models | Invalid rows |
 | Database TLS defaults secure | Plaintext connections by omission |
 | Response-header middleware registers `at: .beginning` | Headers are applied on the way out, so anything later never sees an error response, and a 4xx without CORS headers is unreadable to the browser that caused it |
+| An account is deleted only once it owns no active resource and no vault | An orphaned resource: never collected, and a hazard to every eager load of its account |
+| The per-address limit keys on the rightmost `X-Forwarded-For` entry, never `Forwarded` or a left entry | A client picks its own key, or every visitor behind the ingress shares one bucket |
 | Rate limiting fails open | A limiter that takes the API down with its counter store causes more harm than the abuse it prevents |
 
 ## Testing

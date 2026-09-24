@@ -26,6 +26,10 @@ func routes(_ app: Application) throws {
   try api.register(collection: ServiceTokenController())
   try api.register(collection: AdminController())
   try api.register(collection: AdminInsightController())
+  // Public summaries totalled in SQL. Inside `api` like every other read, so the per-address
+  // limit covers them: each request is heavier than a plain list, which is a reason to keep the
+  // limiter in front, not to exempt them.
+  try api.register(collection: InsightsController())
 
   // Outside `api`, so orchestrator probes are neither rate limited nor made to look like API
   // traffic in the logs.
@@ -34,6 +38,6 @@ func routes(_ app: Application) throws {
   try registerOpenAPI(app)
 
   // Last by authorship and lowest-specificity by route shape. Concrete API, docs, and probe
-  // routes win; unknown API/file paths remain real 404s rather than returning Angular HTML.
+  // routes win; unknown API/file paths remain real 404s rather than returning the dashboard's HTML.
   try app.register(collection: SPAController())
 }

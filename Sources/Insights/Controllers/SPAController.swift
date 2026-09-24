@@ -2,7 +2,7 @@ import Foundation
 import Vapor
 import VaporToOpenAPI
 
-/// Serves the Angular entry point for the root and client-side routes.
+/// Serves the dashboard's entry point for the root and client-side routes.
 ///
 /// Concrete API, documentation, and probe routes continue to win over the catchall in Vapor's
 /// trie. The explicit prefix check is still important for *unknown* API paths: returning the SPA
@@ -56,7 +56,7 @@ struct SPAController: RouteCollection {
     let path = request.application.directory.publicDirectory + "index.html"
     guard FileManager.default.fileExists(atPath: path) else {
       request.logger.critical(
-        "Angular entry point is missing from Public.",
+        "Dashboard entry point is missing from Public.",
         metadata: ["path": .string(path)]
       )
       throw Abort(

@@ -15,6 +15,24 @@ permissions:
   contents: write
   packages: write
 
+# A newer push to the same pull request makes the older run pointless, so it is cancelled rather
+# than left holding runners. Pushes to `main`, `dev` and tags always finish: cancelling one midway
+# could leave `latest` pointing at an image whose release never published.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Shape of the run. `test`, `build` and `web` start together; `image` waits for all three.
+#
+#   test   debug build + suite      ─┐
+#   build  release binary           ─┼─> image (packages the binary, no compile) ─> release (tags)
+#   web    dashboard check + build  ─┘
+#
+# The release binary used to be compiled inside the Docker build, after `test` had already
+# compiled everything once in debug. Two cold compiles, one after the other, was twenty minutes.
+# Now each compile runs once, in parallel, and restores `.build` from the previous run so only
+# this repository's own module recompiles — Vapor, NIO and the rest come back from the cache.
+
 jobs:
   test:
     runs-on: ubuntu-24.04
@@ -62,20 +80,158 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The Swift image has no zstd, and without it the cache archive falls back to gzip, which
+      # is several times slower to pack and unpack at this size.
+      - name: Install cache compressor
+        run: apt-get -q update && apt-get -q install -y zstd
+
+      # Keyed on the sources so an unchanged tree reuses its exact entry, and falling back through
+      # the prefixes so any change still starts from the nearest previous build rather than cold.
+      # A new Package.resolved drops to the last prefix, and SwiftPM rebuilds only what moved.
+      - name: Restore build cache
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build
+          key: swift-debug-${{ runner.os }}-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Sources/**', 'Tests/**') }}
+          restore-keys: |
+            swift-debug-${{ runner.os }}-${{ hashFiles('Package.resolved') }}-
+            swift-debug-${{ runner.os }}-
+
       - name: Build
         run: swift build --build-tests
+
+      # Saved between building and testing, not by `actions/cache`'s post step: that one only
+      # runs when the whole job succeeds, so a single failing test would throw away a good build
+      # and the fix's run would start cold.
+      - name: Save build cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
       # Serial because every suite shares the one `test` database and runs its own
       # migrate/revert, so overlapping suites revert the schema out from under each other.
       - name: Test
         run: swift test --no-parallel
 
-  docker:
+  build:
     runs-on: ubuntu-24.04
-    needs: [test]
+    # The same image the Dockerfile's `build` stage uses, so this binary is the one a source build
+    # would produce, and it links against the same Ubuntu the runtime image is based on.
+    container: swift:6.3-noble
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: apt-get -q update && apt-get -q install -y libjemalloc-dev zstd
+
+      # A separate cache from `test`: release and debug share no build products, and one entry
+      # holding both would be restored whole by each job.
+      - name: Restore build cache
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build
+          key: swift-release-${{ runner.os }}-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Sources/**') }}
+          restore-keys: |
+            swift-release-${{ runner.os }}-${{ hashFiles('Package.resolved') }}-
+            swift-release-${{ runner.os }}-
+
+      # Flags match the Dockerfile's `build` stage exactly. N.B.: the static version of jemalloc is
+      # incompatible with the static Swift runtime.
+      - name: Build
+        run: |
+          swift build -c release \
+            --product Insights \
+            --static-swift-stdlib \
+            -Xlinker -ljemalloc
+
+      - name: Save build cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
+      # The same layout as the Dockerfile's /staging. Tarred because an artifact upload drops the
+      # executable bit, and the image would then ship a binary it cannot run.
+      - name: Stage
+        run: |
+          bin="$(swift build -c release --show-bin-path)"
+          mkdir staging
+          cp "$bin/Insights" staging/
+          find -L "$bin" -regex '.*\.resources$' -exec cp -Ra {} staging/ \;
+          cp /usr/libexec/swift/linux/swift-backtrace-static staging/
+          tar -cf server.tar -C staging .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server
+          path: server.tar
+          retention-days: 7
+
+  web:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same Deno the Dockerfile's `frontend-build` stage uses. `cache` keeps Deno's download
+      # cache between runs, keyed on deno.lock.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.7
+          cache: true
+
+      # `--frozen` fails on a lockfile that would change, rather than resolving something new in CI.
+      - run: deno install --frozen
+
+      # Type-check and unit-test before building: the Angular job only ever built, so a broken
+      # test there never failed a run.
+      - run: deno task check
+      - run: deno task test
+      - run: deno task build
+
+      # adapter-static writes the finished site to build/; Vapor serves it from Public/ as-is.
+      - name: Package
+        run: tar -cf ../web.tar -C build .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: web.tar
+          retention-days: 7
+
+  image:
+    runs-on: ubuntu-24.04
+    # `test` gates the image even though the image does not use its output: nothing is published
+    # from a tree whose suite failed.
+    needs: [test, build, web]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # No name, so both of this run's artifacts land side by side in one directory.
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # The Dockerfile's `prebuilt` stage makes Public/ read-only; permissions set here do not
+      # survive the build context transfer.
+      - name: Assemble staging
+        run: |
+          mkdir -p .ci-staging/Public
+          tar -xf artifacts/server.tar -C .ci-staging
+          tar -xf artifacts/web.tar -C .ci-staging/Public
+          test -x .ci-staging/Insights
+          test -f .ci-staging/Public/index.html
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -88,10 +244,12 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
+      # `prebuilt` copies the staged files onto the shared runtime base; nothing compiles here.
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
+          target: prebuilt
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/icicle-ai/insights:latest
@@ -101,29 +259,23 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [docker]
+    needs: [image]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
-      packages: read
 
     steps:
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - uses: actions/download-artifact@v4
         with:
-          registry: ghcr.io
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
+          name: server
 
-      # The image builds a binary named `Insights` — SwiftPM names it after the product, and it is
-      # what the entrypoint script execs. Copying `/app/icicle-insights` failed every tagged
-      # release. Renamed on the way out so the published asset keeps its existing name.
-      - name: Extract binary from image
+      # The binary is named `Insights` — SwiftPM names it after the product, and it is what the
+      # entrypoint script execs. Copying `/app/icicle-insights` out of the image failed every
+      # tagged release. Renamed on the way out so the published asset keeps its existing name.
+      - name: Extract binary
         run: |
-          docker pull ghcr.io/icicle-ai/insights:${{ github.sha }}
-          id=$(docker create ghcr.io/icicle-ai/insights:${{ github.sha }})
-          docker cp $id:/app/Insights ./icicle-insights
-          docker rm $id
+          tar -xf server.tar ./Insights
+          mv Insights icicle-insights
           test -s ./icicle-insights
 
       - name: Create tarball

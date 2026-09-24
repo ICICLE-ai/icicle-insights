@@ -24,10 +24,12 @@ around itself, so any overlap has one suite reverting the schema out from under 
 
 | Recipe | Runs |
 |---|---|
-| `just web-install` | `npm ci` in `Dashboard/` |
-| `just web` | `ng serve` on http://localhost:4200, proxying `/api` to port 8080 |
+| `just web-install` | `deno install --frozen` in `web/` |
+| `just web` | Vite on http://localhost:5174, proxying `/api` to port 8080 |
+| `just web-check` | `svelte-check` type checking |
 | `just web-test` | Vitest |
-| `just web-build` | Production bundle |
+| `just web-build` | Static site into `web/build/` |
+| `just web-types` | Regenerates `web/src/lib/api/schema.d.ts` from the running API |
 
 ## cli
 
@@ -76,8 +78,8 @@ One recipe per `docker-compose.yml` service, with matching names and commands.
 | `just scheduled` | `scheduled` | `queues --scheduled` |
 
 `just build` assembles a minimal build context by hand rather than handing the repository to the
-builder. The Dockerfile does `COPY . .`, and `Dashboard/node_modules` is the wrong platform's
-binaries and hundreds of megabytes; that cost lands before the builder ever reads `.dockerignore`.
+builder. The frontend stage copies `web/`, and `web/node_modules` is the wrong platform's binaries
+and hundreds of megabytes; that cost lands before the builder ever reads `.dockerignore`.
 
 The `app` container runs as root because the image's `vapor` user cannot bind below 1024 and the
 container serves port 80. Drop the override if you move `APP_PORT` above 1024.

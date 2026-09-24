@@ -180,4 +180,72 @@ struct AccountControllerTests {
       )
     }
   }
+
+  /// The API half of the guard the admin console already applies. A soft-deleted account left its
+  /// resources active and due, and the sweep's eager load then threw `missingParent` for the whole
+  /// due set, so one delete stopped collection for every account.
+  @Test
+  func `Delete is refused while the account still has active resources`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let accountID = try account.requireID()
+      _ = try await makeResource(on: app.db, accountID: accountID, name: "first")
+      _ = try await makeResource(on: app.db, accountID: accountID, name: "second")
+
+      try await app.testing().test(
+        .DELETE,
+        "api/accounts/\(accountID)",
+        headers: app.adminAuth,
+        afterResponse: { res async throws in
+          #expect(res.status == .conflict)
+          // Same instruction the console's disabled button gives, so the two never disagree.
+          #expect(res.body.string.contains("Delete this account's resources first."))
+          #expect(res.body.string.contains("2 active resources"))
+          #expect(try await Account.find(accountID, on: app.db) != nil)
+        },
+      )
+    }
+  }
+
+  @Test
+  func `Delete is refused while the account still has a Vault credential`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let accountID = try account.requireID()
+      _ = try await makeVault(on: app.db, accountID: accountID)
+
+      try await app.testing().test(
+        .DELETE,
+        "api/accounts/\(accountID)",
+        headers: app.adminAuth,
+        afterResponse: { res async throws in
+          #expect(res.status == .conflict)
+          #expect(res.body.string.contains("Delete this account's Vault credential first."))
+          #expect(try await Account.find(accountID, on: app.db) != nil)
+        },
+      )
+    }
+  }
+
+  /// A deleted resource no longer blocks its account. That is the console's own flow: delete the
+  /// resources, then the account.
+  @Test
+  func `Delete succeeds once the account's resources are deleted`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db)
+      let accountID = try account.requireID()
+      let resource = try await makeResource(on: app.db, accountID: accountID)
+      try await resource.delete(on: app.db)
+
+      try await app.testing().test(
+        .DELETE,
+        "api/accounts/\(accountID)",
+        headers: app.adminAuth,
+        afterResponse: { res async throws in
+          #expect(res.status == .noContent)
+          #expect(try await Account.find(accountID, on: app.db) == nil)
+        },
+      )
+    }
+  }
 }

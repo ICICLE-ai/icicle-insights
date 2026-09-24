@@ -13,7 +13,7 @@ Boot fails if any of these is missing.
 | `TAPIS_BASE_URL` | Tenant base URL, including the `/v3` suffix |
 | `TAPIS_TENANT` | Tenant ID. Must name the same tenant as the URL above |
 | `TAPIS_USER` | Service username. Scopes the vault path |
-| `TAPIS_TOKEN` | Service access token. Secret; short-lived |
+| `TAPIS_TOKEN` | Service access token. Secret; short-lived. Its `exp` claim is logged at boot and warned about ahead of time |
 | `ROOT_ADMIN_USERNAME` | A real `tapis/username` in that tenant |
 
 `TAPIS_BASE_URL` and `TAPIS_TENANT` move together. Each tenant has its own host.
@@ -48,7 +48,7 @@ Read by `serve` only.
 |---|---|---|
 | `CORS_ORIGINS` | unset | Comma-separated. Unset installs no CORS middleware at all |
 | `FRAME_ANCESTORS` | unset | Comma-separated origins allowed to iframe the dashboard. Unset denies framing |
-| `RATE_LIMIT_PER_MINUTE` | `300` | Per client address, across `/api` |
+| `RATE_LIMIT_PER_MINUTE` | `300` | Per client address, across `/api`. The address is the rightmost `X-Forwarded-For` entry, else the socket peer |
 | `WEBHOOK_RATE_LIMIT_PER_MINUTE` | `60` | Per token, on the metric-reporting route |
 
 HSTS is sent when `VAPOR_ENV=production`, and not otherwise.
@@ -89,13 +89,32 @@ Used for both queue storage and rate-limit counters.
 Set the Slack variables on the `queues` and `scheduled` processes. Jobs fail there, so that is
 where the notifier fires.
 
+Exhausted-job alerts are sent once per identifier and severity per six hours. Repeats are logged and
+recorded, not posted. The window is fixed in code.
+
+## Fixed in code
+
+Pool sizes and timeouts. Set in `configure.swift`, not read from the environment.
+
+| Setting | Value | Applies to |
+|---|---|---|
+| PostgreSQL connections per event loop | 4 | Every process. One event loop per CPU core |
+| PostgreSQL idle pruning | every 60s, past 120s idle | Every process |
+| PostgreSQL pool wait | 10s, the driver default | Every process |
+| Valkey active connections per event loop | 8, none kept warm | Rate-limit counters. Queue storage keeps the driver defaults |
+| Valkey connection attempt | 5s | Rate-limit counters |
+| Outbound HTTP connect timeout | 10s | Platform APIs, Tapis, Slack |
+| Outbound HTTP read timeout | 30s | Platform APIs, Tapis, Slack |
+
+Size PostgreSQL's `max_connections` for the worst case: 4 × cores, per process, per replica.
+
 ## Verifying a boot
 
 Every process should print the same environment. A correct start logs these at `notice`:
 
 ```
 HTTP middleware configured.        bind=… cors_origins=… frame_ancestors=… hsts=true
-Secret provider selected.          provider=tapis tapis_base_url=… tapis_tenant=…
+Secret provider selected.          provider=tapis tapis_base_url=… tapis_tenant=… tapis_token_expires_at=…
 Root admin resolved.               username=…
 Tapis tenant public key loaded; admin tokens verify locally.
 Webhook token signing keys loaded. keys=N active_kid=…
@@ -104,5 +123,9 @@ Insights configured.               environment=production database=…
 ```
 
 A missing line is a misconfiguration. See [Deploy Insights](../how-to/deploy-insights.md).
+
+`tapis_token_expires_at=unknown` means `TAPIS_TOKEN` is not a JWT with an `exp` claim, and no
+warning will precede its expiry. A past date also logs `TAPIS_TOKEN has already expired` at
+`critical`.
 
 #icicle-insights# #Reference# #Administrator# #Developer# #configuration#
