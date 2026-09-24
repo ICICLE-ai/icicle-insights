@@ -48,7 +48,7 @@ Read by `serve` only.
 |---|---|---|
 | `CORS_ORIGINS` | unset | Comma-separated. Unset installs no CORS middleware at all |
 | `FRAME_ANCESTORS` | unset | Comma-separated origins allowed to iframe the dashboard. Unset denies framing |
-| `RATE_LIMIT_PER_MINUTE` | `300` | Per client address, across `/api` |
+| `RATE_LIMIT_PER_MINUTE` | `300` | Per client address, across `/api`. The address is the rightmost `X-Forwarded-For` entry, else the socket peer |
 | `WEBHOOK_RATE_LIMIT_PER_MINUTE` | `60` | Per token, on the metric-reporting route |
 
 HSTS is sent when `VAPOR_ENV=production`, and not otherwise.

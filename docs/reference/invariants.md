@@ -80,6 +80,7 @@ aborts the boot.
 | Database TLS defaults secure | Plaintext connections by omission |
 | Response-header middleware registers `at: .beginning` | Headers are applied on the way out, so anything later never sees an error response, and a 4xx without CORS headers is unreadable to the browser that caused it |
 | An account is deleted only once it owns no active resource and no vault | An orphaned resource: never collected, and a hazard to every eager load of its account |
+| The per-address limit keys on the rightmost `X-Forwarded-For` entry, never `Forwarded` or a left entry | A client picks its own key, or every visitor behind the ingress shares one bucket |
 | Rate limiting fails open | A limiter that takes the API down with its counter store causes more harm than the abuse it prevents |
 
 ## Testing
