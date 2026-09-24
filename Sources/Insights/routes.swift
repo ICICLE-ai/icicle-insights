@@ -38,6 +38,6 @@ func routes(_ app: Application) throws {
   try registerOpenAPI(app)
 
   // Last by authorship and lowest-specificity by route shape. Concrete API, docs, and probe
-  // routes win; unknown API/file paths remain real 404s rather than returning Angular HTML.
+  // routes win; unknown API/file paths remain real 404s rather than returning the dashboard's HTML.
   try app.register(collection: SPAController())
 }

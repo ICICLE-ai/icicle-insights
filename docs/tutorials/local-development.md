@@ -102,7 +102,7 @@ just web-install
 just web
 ```
 
-Open http://localhost:4200.
+Open http://localhost:5174.
 
 The dev server proxies `/api` to port 8080, so browser requests are same-origin and no CORS
 configuration is needed. Hot reload works.
@@ -197,7 +197,7 @@ and the vault keyset read. Two real bugs hid there. Verify changes on those path
 |---|---|
 | Understand the shape of the system | [Architecture](../explanation/architecture.md) |
 | Know what you must not break | [Invariants](../reference/invariants.md) |
-| Set up the Angular tooling | [Set up the dashboard toolchain](../how-to/set-up-the-dashboard-toolchain.md) |
+| Set up the dashboard tooling | [Set up the dashboard toolchain](../how-to/set-up-the-dashboard-toolchain.md) |
 | Add a platform collector | [Add a collector](../how-to/add-a-collector.md) |
 | Look up a recipe | [just recipes](../reference/just-recipes.md) |
 

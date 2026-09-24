@@ -22,7 +22,7 @@ finish.
 |---|---|---|---|
 | `test` | `swift:6.3-noble` with Postgres and Valkey services | `swift build --build-tests`, then `swift test --no-parallel` | — |
 | `build` | `swift:6.3-noble` | Release build of `Insights` with static stdlib and jemalloc | `server` artifact: `server.tar` |
-| `web` | Node 24 | `npm ci` and `npm run build` in `Dashboard/` | `web` artifact: `web.tar` |
+| `web` | Deno 2.9 | `deno install --frozen`, then `check`, `test` and `build` in `web/` | `web` artifact: `web.tar` |
 | `image` | Docker Buildx | Assembles `.ci-staging/`, builds `--target prebuilt`, pushes to GHCR | `ghcr.io/icicle-ai/insights:{latest,<sha>}` |
 | `release` | Ubuntu | Extracts `Insights` from `server.tar`, renames it `icicle-insights`, tars it | GitHub release asset |
 
@@ -35,7 +35,7 @@ whose suite failed.
 |---|---|---|---|
 | `swift-debug-*` | `test` | `.build` | OS, `Package.resolved` hash, `Sources/**` and `Tests/**` hash |
 | `swift-release-*` | `build` | `.build` | OS, `Package.resolved` hash, `Sources/**` hash |
-| npm | `web` | npm's download cache | `Dashboard/package-lock.json` hash |
+| Deno | `web` | Deno's download cache | `web/deno.lock` hash, via `setup-deno` |
 | Docker layers | `image` | BuildKit `type=gha` | Managed by Buildx |
 
 Each Swift cache falls back to the newest entry with the same `Package.resolved`, then to any entry

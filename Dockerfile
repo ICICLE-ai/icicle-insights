@@ -11,16 +11,25 @@
 # ================================
 # Frontend build image
 # ================================
-FROM node:24-bookworm-slim AS frontend-build
+# Debian rather than Alpine: Vite's bundler and Tailwind load native bindings, and the glibc
+# builds are the ones every platform in deno.lock is known to have.
+FROM denoland/deno:debian-2.9.7 AS frontend-build
 
 WORKDIR /web
 
-# Dependency metadata first so source edits do not invalidate npm's install layer.
-COPY Dashboard/package.json Dashboard/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# Dependency metadata first so source edits do not invalidate the install layer. `--frozen`
+# fails the build if deno.lock would change, rather than resolving something new at image time.
+COPY web/package.json web/deno.lock ./
+RUN deno install --frozen
 
-COPY Dashboard/ ./
-RUN npm run build -- --output-path=/web-dist
+COPY web/ ./
+
+# Parent origins allowed to hand an embedded dashboard a token. Baked into the bundle at build time,
+# because the page has to know before it has talked to anything. See
+# docs/how-to/embed-the-dashboard.md.
+ARG VITE_TRUSTED_PARENT_ORIGINS=https://icicleai.tapis.io
+ENV VITE_TRUSTED_PARENT_ORIGINS=$VITE_TRUSTED_PARENT_ORIGINS
+RUN deno task build
 
 # ================================
 # Server build image
@@ -71,11 +80,10 @@ WORKDIR /staging
 # Copy static swift backtracer binary to staging area
 RUN cp "/usr/libexec/swift/linux/swift-backtrace-static" ./
 
-# The Angular production output, added after the compile rather than before it so a frontend
-# change does not invalidate the Swift build layer. The application builder emits browser
-# artifacts in a nested directory; Vapor serves the stable /Public path. Read-only, so a
-# compromised process cannot rewrite what it serves.
-COPY --from=frontend-build /web-dist/browser/ ./Public/
+# The dashboard's static build, added after the compile rather than before it so a frontend
+# change does not invalidate the Swift build layer. Vapor serves it from the stable /Public path.
+# Read-only, so a compromised process cannot rewrite what it serves.
+COPY --from=frontend-build /web/build/ ./Public/
 RUN chmod -R a-w ./Public
 
 # ================================

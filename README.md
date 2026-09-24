@@ -10,7 +10,7 @@
   <p>
     <img alt="Swift 6.3" src="https://img.shields.io/badge/Swift-6.3-F05138?logo=swift&logoColor=white">
     <img alt="Vapor 4" src="https://img.shields.io/badge/Vapor-4-111111?logo=vapor&logoColor=white">
-    <img alt="Angular 22" src="https://img.shields.io/badge/Angular-22-DD0031?logo=angular&logoColor=white">
+    <img alt="SvelteKit" src="https://img.shields.io/badge/SvelteKit-Deno-FF3E00?logo=svelte&logoColor=white">
     <img alt="PostgreSQL 18" src="https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white">
     <img alt="GPL-3.0" src="https://img.shields.io/badge/License-GPL--3.0-blue">
   </p>
