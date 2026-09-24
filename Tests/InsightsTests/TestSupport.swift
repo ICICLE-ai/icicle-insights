@@ -31,6 +31,10 @@ func withInsightsApp(
   let app = try await Application.make(.testing)
   do {
     try await configure(app)
+    // Alert deduplication lives in Valkey for six hours, and Valkey is shared with every other
+    // test and with local development. Without a namespace per test, the first test to report a
+    // `missing_token` would silence that alert in every later one, for the rest of the afternoon.
+    app.alertDedupeKeyPrefix = "insights:test:\(UUID().uuidString):alerts"
     try await installTestCredentials(on: app)
     try await setUp(app)
     // Match the production lifecycle before a test reaches Redis-backed middleware or jobs.

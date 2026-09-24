@@ -86,6 +86,13 @@ only way to tell them apart. That is why the error carries the body and the aler
 Alert delivery is never load-bearing. The notifier cannot throw: the worker clears a job only after
 the failure handler returns, so a failing alert channel would strand the job and stop the worker.
 
+Alerts are deduplicated; the record is not. An expired `TAPIS_TOKEN` fails every resource at once,
+and each re-books hourly, which used to mean about a hundred critical messages an hour. Now one
+alert per identifier and severity goes out per six hours, claimed with an atomic `SET NX EX` in
+Valkey so every worker shares it. Every failure is still logged and written to `job_failures`. If
+Valkey cannot answer, the alert is sent anyway, because a lost alert is worse than a repeat. The
+retention-window alert is exempt: it is already once per outage for each resource.
+
 ## Provider quirks worth knowing
 
 - **Hugging Face `expand[]` is an allowlist.** Asking for the lifetime downloads figure returns

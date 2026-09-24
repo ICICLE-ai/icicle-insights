@@ -89,6 +89,9 @@ Used for both queue storage and rate-limit counters.
 Set the Slack variables on the `queues` and `scheduled` processes. Jobs fail there, so that is
 where the notifier fires.
 
+Exhausted-job alerts are sent once per identifier and severity per six hours. Repeats are logged and
+recorded, not posted. The window is fixed in code.
+
 ## Fixed in code
 
 Pool sizes and timeouts. Set in `configure.swift`, not read from the environment.

@@ -14,6 +14,7 @@ not a patch.
 | Jobs tolerate retries | Delivery is at-least-once; a retry corrupts or duplicates |
 | Scheduled jobs only enqueue | A slow platform call delays the next tick |
 | Sync jobs back off between attempts | An immediate requeue hammers a struggling API |
+| An exhausted-job alert is sent at most once per identifier and severity per six hours, failing open | An expired token posts about a hundred critical alerts an hour, and the muted channel hides the next real one |
 | `FailureNotifier.notify` never throws | The worker clears a job only after `error()` returns, so a failing alert channel strands the job |
 | Every exhausted resource failure re-books its resource | The sweep's dispatch-time due date stands, so one failure costs a full cadence and gaps compound past the retention window |
 | The failure backoff ceiling stays well inside `retentionWindowDays - maxCollectionIntervalDays` | The retry policy itself becomes the cause of a lost day |

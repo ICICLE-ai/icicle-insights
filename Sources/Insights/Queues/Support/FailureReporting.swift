@@ -172,15 +172,43 @@ extension QueueContext {
     logger.critical(.init(stringLiteral: error.failureDescription), metadata: metadata)
   }
 
-  /// Sends the failure to the configured alert channel.
+  /// Sends the failure to the configured alert channel, at most once per identifier and severity
+  /// per ``AlertDeduplication/window``.
+  ///
+  /// Only the alert is deduplicated. The log line and the `job_failures` row are written for
+  /// every failure by the callers, so the console still lists each resource that failed; Slack
+  /// just hears about the pattern once. The retention-window breach does not come through here:
+  /// it is already once per outage per resource through `stallNotifiedAt`, and it names data
+  /// lost from one specific resource, which a shared key would hide.
   private func alert(_ error: any Error, job: String, subject: String) async {
+    let severity: AlertSeverity = error.isCredentialFailure ? .critical : .warning
+    let identifier = error.alertIdentifier
+
+    guard await claimAlert(identifier: identifier, severity: severity) else {
+      logger.notice(
+        "Alert suppressed: an identical one was sent within the deduplication window.",
+        metadata: [
+          "job": .string(job),
+          "subject": .string(subject),
+          "identifier": .string(identifier),
+          "window_hours": .stringConvertible(Int(AlertDeduplication.window / 3600)),
+        ]
+      )
+      return
+    }
+
+    // Said in the alert itself, because whoever reads it will otherwise assume the one resource
+    // it names is the only one affected, when an expired token has failed all of them.
+    let hours = Int(AlertDeduplication.window / 3600)
     await application.notifier.notify(
       FailureAlert(
-        severity: error.isCredentialFailure ? .critical : .warning,
+        severity: severity,
         job: job,
         subject: subject,
-        identifier: error.alertIdentifier,
-        details: error.alertDetails,
+        identifier: identifier,
+        details: error.alertDetails
+          + "\nFurther '\(identifier)' alerts are held back for \(hours) hours, however many "
+          + "resources fail. Every failure is still logged and recorded in job_failures.",
       ))
   }
 

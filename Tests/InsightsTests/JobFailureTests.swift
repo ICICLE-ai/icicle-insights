@@ -3,6 +3,7 @@ import FluentSQL
 import Foundation
 import Logging
 import Queues
+import Redis
 import Testing
 import Vapor
 import XCTQueues
@@ -363,6 +364,132 @@ struct JobFailureTests {
       )
 
       #expect(notifier.recorded.first?.severity == .warning)
+    }
+  }
+
+  // MARK: - Alert deduplication
+
+  /// The storm this exists for: an expired `TAPIS_TOKEN` fails every resource at once, each
+  /// re-books an hour out, and every one of them used to post its own critical alert.
+  @Test
+  func `One failure across many resources alerts once but records and re-books each`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let notifier = stubNotifier(on: app)
+      let first = try await makeDueRepo(on: app)
+      var resources = [first]
+      for name in ["second", "third"] {
+        resources.append(
+          try await makeResource(
+            on: app.db, accountID: first.$account.id, name: name, type: .repository,
+            nextCollectionAt: past(1)))
+      }
+
+      for resource in resources {
+        try await SyncGitHubRepoStats().error(
+          queueContext(for: app),
+          TapisClientError.requestFailed(status: .unauthorized),
+          .init(id: try resource.requireID()),
+        )
+      }
+
+      #expect(notifier.recorded.count == 1)
+      let alert = try #require(notifier.recorded.first)
+      #expect(alert.severity == .critical)
+      #expect(alert.details.contains("held back for 6 hours"))
+
+      // Only Slack is spared. Every failure is still on record, and every resource re-booked.
+      #expect(try await JobFailure.query(on: app.db).count() == 3)
+      for resource in resources {
+        let rebooked = try #require(
+          try await Resource.find(resource.id, on: app.db)?.nextCollectionAt)
+        #expect(abs(rebooked.timeIntervalSinceNow - 3600) < 60)
+      }
+
+      // One claim, shared by every worker, expiring with the window.
+      let key = RedisKey("\(app.alertDedupeKeyPrefix):critical:tapis_request_failed")
+      let ttl = try await app.redis.ttl(key).get()
+      #expect(ttl.timeAmount.map { abs($0.nanoseconds / 1_000_000_000 - 21_600) < 60 } == true)
+    }
+  }
+
+  /// The key is the identifier *and* the severity: a different failure, or the same identifier
+  /// at a different severity, is news and still gets through.
+  @Test
+  func `Different identifiers and severities each alert`() async throws {
+    try await withInsightsApp { app in
+      let notifier = stubNotifier(on: app)
+      let resource = try await makeDueRepo(on: app)
+      let id = try resource.requireID()
+
+      let errors: [any Error] = [
+        TapisClientError.requestFailed(status: .unauthorized),
+        TapisClientError.requestFailed(status: .badGateway),
+        JobError.decodingFailed(url: "https://api.github.com", underlying: Underlying()),
+        TapisClientError.requestFailed(status: .unauthorized),
+      ]
+      for error in errors {
+        try await SyncGitHubRepoStats().error(queueContext(for: app), error, .init(id: id))
+      }
+
+      let seen = notifier.recorded.map { "\($0.identifier)/\($0.severity)" }
+      #expect(
+        seen == [
+          "tapis_request_failed/critical", "tapis_request_failed/warning",
+          "decoding_failed/warning",
+        ])
+    }
+  }
+
+  /// Fails open: an alert suppressed by mistake hides an outage, a duplicate only adds noise.
+  @Test
+  func `An unreachable dedupe store still sends every alert`() async throws {
+    try await withInsightsApp(setUp: { app in
+      // Nothing listens here, as in the rate limiter's fail-open test.
+      app.redis.configuration = try RedisConfiguration(hostname: "127.0.0.1", port: 6399)
+    }) { app in
+      let notifier = stubNotifier(on: app)
+      let resource = try await makeDueRepo(on: app)
+
+      for _ in 0..<2 {
+        try await SyncGitHubRepoStats().error(
+          queueContext(for: app),
+          JobError.missingToken(id: resource.$account.id),
+          .init(id: try resource.requireID()),
+        )
+      }
+
+      #expect(notifier.recorded.count == 2)
+    }
+  }
+
+  /// The breach alert is left exactly as it was: once per outage *per resource*, through
+  /// `stallNotifiedAt`. It says one resource's history is permanently short, which a shared key
+  /// would hide for every resource after the first.
+  @Test
+  func `Retention-window breaches are not deduplicated across resources`() async throws {
+    try await withInsightsApp { app in
+      let notifier = stubNotifier(on: app)
+      let first = try await makeDueRepo(on: app)
+      let second = try await makeResource(
+        on: app.db, accountID: first.$account.id, name: "second", type: .repository)
+      for resource in [first, second] {
+        resource.lastCollectedAt = past(20)
+        try await resource.save(on: app.db)
+      }
+
+      for resource in [first, second] {
+        try await SyncGitHubRepoStats().error(
+          queueContext(for: app),
+          JobError.apiRequestFailed(url: "https://api.github.com", statusCode: 503, message: nil),
+          .init(id: try resource.requireID()),
+        )
+      }
+
+      let breaches = notifier.recorded.filter { $0.identifier == "collection_window_exceeded" }
+      #expect(Set(breaches.map(\.subject)) == ["icicle-ai/insights", "icicle-ai/second"])
+      #expect(notifier.recorded.filter { $0.identifier == "api_request_failed" }.count == 1)
     }
   }
 
