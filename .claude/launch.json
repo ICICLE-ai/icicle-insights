@@ -9,6 +9,12 @@
     },
     {
       "name": "insights-web",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": ["task", "--cwd", "web", "dev"],
+      "port": 5174
+    },
+    {
+      "name": "insights-web-angular",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "Dashboard", "start"],
       "port": 4200,

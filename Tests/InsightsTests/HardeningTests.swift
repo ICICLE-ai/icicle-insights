@@ -754,6 +754,16 @@ struct HardeningTests {
   }
 
   @Test
+  func `SvelteKit immutable assets are recognized by their directory`() {
+    #expect(StaticAssetCacheMiddleware.isHashedAssetPath("/_app/immutable/entry/start.CxZ3Rk1a.js"))
+    #expect(StaticAssetCacheMiddleware.isHashedAssetPath("/_app/immutable/chunks/BxY12aQz.js"))
+    #expect(StaticAssetCacheMiddleware.isHashedAssetPath("/_app/immutable/assets/0.CIXBSStk.css"))
+    // `version.json` sits beside the immutable directory and changes every deploy.
+    #expect(!StaticAssetCacheMiddleware.isHashedAssetPath("/_app/version.json"))
+    #expect(!StaticAssetCacheMiddleware.isHashedAssetPath("/logo-mark.svg"))
+  }
+
+  @Test
   func `SPA deep links stream index without caching it`() async throws {
     let directory = FileManager.default.temporaryDirectory
       .appending(path: "insights-spa-\(UUID().uuidString)", directoryHint: .isDirectory)
