@@ -74,6 +74,21 @@ distinguishes them. The alert quotes the body for exactly this reason.
 If it is a rate limit, **do not add workers**. More workers consume the same allowance faster.
 Lengthen cadences or reduce concurrency.
 
+## Every GHCR package fails with `page_layout_changed`
+
+GitHub has changed its package page, so the parser no longer finds the download figures. Nothing is
+lost meanwhile: the next successful sweep reads GitHub's lifetime total again.
+
+1. Open the URL in the alert. Find where the page now shows "Total downloads" and the 30-day chart.
+2. Update the selectors in `Sources/Insights/Services/GHCR/GHCRPackagePage.swift`.
+3. Save the page to `Tests/Fixtures/GHCR/`, trimmed like the copies already there, and run
+   `just test`.
+4. Deploy. The failing resources re-book within twelve hours and then collect on their own.
+
+One GHCR package failing with status 404 is different. GitHub found no public page under either the
+organization or the user address. Check the resource's name, or whether the package is now private.
+See [ADR 009](../explanation/decisions/009-scraping-ghcr.md).
+
 ## A resource never collects
 
 Check its **Next collection** date on the Catalog → Resources screen.

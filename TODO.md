@@ -12,7 +12,8 @@ across 110 resources under 5 accounts.
 |---|---|
 | Collection: GitHub repositories and accounts | Shipped |
 | Collection: Hugging Face | Shipped |
-| Collection: GHCR, npm, PyPI | Registered in the catalog, no collector |
+| Collection: GHCR (package page scrape) | Shipped on `feat/ghcr-collector`, not yet merged or deployed |
+| Collection: npm, PyPI | Registered in the catalog, no collector |
 | Collection: Patra (catalog, deployments, provenance) | Shipped on `patra`, not yet merged or deployed |
 | Authentication, admins, webhook tokens | Shipped |
 | Hardening: headers, CORS, rate limits, key rotation | Shipped |
@@ -142,13 +143,29 @@ When the protocol lands:
 Treat the current console steps as provisional until then. The CLI half is verified and can be
 relied on.
 
-### Collectors for GHCR, npm, and PyPI
+### Verify GHCR against production after deploy
 
-All three can be registered and are re-booked normally, but the dispatcher logs and skips them.
+`SyncGHCRStats` was tested against two saved package pages and a stubbed client. The suite never
+fetches a live page, so check the first real sweeps:
 
-- A GHCR prototype exists that scrapes HTML. It needs a decision about whether that workload belongs
-  on the `metrics` queue or its own, given its very different failure profile and latency.
-- npm and PyPI both publish download APIs and should be straightforward.
+- **When it runs.** Existing GHCR resources are collected as their due dates come round, within
+  one cadence each (seven days by default). `collect-resources --force` collects them at once, but
+  it dispatches every resource on every platform and shifts all of their cadences forward, not just
+  GHCR's.
+- **The figures.** For a few containers, `pulls` should equal the sum of the page's 30-day chart and
+  `pullsAllTime` its "Total downloads". A `pullsAllTime` built from readings recorded by hand is
+  replaced on the first sweep.
+- **The redirect.** `insights` is linked to a repository, so its organization address answers 302.
+  Confirm it collects like the others.
+- **The worker log.** Look for `page_layout_changed` or a 429 from github.com. A forced run fetches
+  every package page in one burst, which the daily trickle never does.
+- **The dashboard.** The "Pulls · 30 days" tile and its "Each reading covers a trailing 30 days"
+  line have not been seen with real data.
+
+### Collectors for npm and PyPI
+
+Both can be registered and are re-booked normally, but the dispatcher logs and skips them. Both
+publish download APIs and should be straightforward.
 
 See [Add a collector](docs/how-to/add-a-collector.md).
 

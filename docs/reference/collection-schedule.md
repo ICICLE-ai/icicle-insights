@@ -30,14 +30,18 @@ due. A resource with the default 7-day cadence is collected once a week, not hou
 | GitHub repository | Stars, forks, subscribers, clones, views | `SyncGitHubRepoStats` | 7 days | 14 days |
 | GitHub account | Followers | `SyncGitHubOrgStats` | monthly, fixed | — |
 | Hugging Face | Likes, 30-day downloads, lifetime downloads | `SyncHuggingFaceHubStats` | 30 days | none |
-| GHCR | not collected | — | 30 days | none |
+| GHCR | 30-day pulls (`pulls`), lifetime pulls (`pullsAllTime`), from the public package page | `SyncGHCRStats` | 30 days | none |
 | npm | not collected | — | 30 days | none |
 | PyPI | not collected | — | 30 days | none |
 | Patra model | Deployment count, summed across the resource's cards | `SyncPatraDeployments` | 30 days | none |
 | Patra dataset | nothing — Patra has no deployments endpoint for a dataset | `SyncPatraDeployments` | 30 days | none |
 
-GHCR, npm, and PyPI resources can be registered, but the dispatcher logs and skips them. They are
-still re-booked, so they will collect as soon as a job exists.
+npm and PyPI resources can be registered, but the dispatcher logs and skips them. They are still
+re-booked, so they will collect as soon as a job exists.
+
+GHCR has no download API, so `SyncGHCRStats` reads the package page GitHub publishes, anonymously.
+A GHCR account needs no credential. A page GitHub has redesigned fails with `page_layout_changed`.
+See [ADR 009](../explanation/decisions/009-scraping-ghcr.md).
 
 A Patra dataset is still collected on schedule even though it has no reading to write. The sweep
 gets a definitive answer — there is nothing to count — and records that success like any other, so
@@ -56,10 +60,10 @@ half its window. A failed collection re-books on a capped backoff rather than co
 interval, so a miss costs at most twelve hours, never the whole cadence.
 `ResourceController.create` and `update` enforce the cap.
 
-A retention window of "none" means the platform cannot lose data this way — Hugging Face reports
-its lifetime total outright, so a late sweep costs series density and nothing permanent. Only
-GitHub's `clones` and `views` accumulate day by day and age out, and neither endpoint offers
-backfill.
+A retention window of "none" means the platform cannot lose data this way — Hugging Face and
+GHCR report their lifetime totals outright, so a late sweep costs series density and nothing
+permanent. Only GitHub's `clones` and `views` accumulate day by day and age out, and neither
+endpoint offers backfill.
 
 ## How a metric is stored
 
@@ -67,7 +71,8 @@ backfill.
 |---|---|---|
 | Gauge | stars, forks, subscribers, likes, followers, deployments | None. The series is the record |
 | Rolling window | GitHub clones and views | Folded through a watermark |
-| Provider lifetime figure | Hugging Face lifetime downloads | Replaces the stored total outright |
+| Window beside a provider total | Hugging Face 30-day downloads, GHCR 30-day pulls | None. The provider's own total is stored instead |
+| Provider lifetime figure | Hugging Face lifetime downloads, GHCR lifetime pulls | Replaces the stored total outright |
 
 A gauge keeps no all-time row because it can fall as well as rise. Rolling windows overlap between
 sweeps, so they are folded day by day. See [Watermarks](../explanation/watermarks.md).

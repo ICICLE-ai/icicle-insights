@@ -64,7 +64,7 @@ To see readings sooner, run a collection now — see
   successful collection.
 - A `Not set` next-collection date means the resource is never swept. That is the correct state for
   a platform with no collector yet.
-- GHCR, npm, and PyPI resources are registered and re-booked, but skipped by the dispatcher until a
+- npm and PyPI resources are registered and re-booked, but skipped by the dispatcher until a
   collector exists for them.
 - Deleting a resource deletes its readings, releases, and watermarks.
 

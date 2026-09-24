@@ -9,10 +9,11 @@ success, and the backoff measures from it. Measuring from the last attempt would
 escalation on every tick.
 
 The dispatch-time advance stays. Read as a lease it is correct. Moving scheduling authority into
-the job would strand the platforms that have no collector. `ghcr`, `npm` and `pypi` are skipped
-without ever being dispatched, so they would never report an outcome to settle on. The defect was
-never the lease. It was that nothing shortened the lease when the outcome turned out badly. Gaps
-then compounded while the retention window stayed fixed.
+the job would strand the platforms that have no collector. `npm` and `pypi` are skipped without
+ever being dispatched, as `ghcr` was until [ADR 009](009-scraping-ghcr.md), so they would never
+report an outcome to settle on. The defect was never the lease. It was that nothing shortened the
+lease when the outcome turned out badly. Gaps then compounded while the retention window stayed
+fixed.
 
 The ceiling is load-bearing. Twelve hours sits far inside `retentionWindowDays -
 maxCollectionIntervalDays`. That margin is why GitHub's accepted cadence dropped to 7. At 14 the
