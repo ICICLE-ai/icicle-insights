@@ -76,8 +76,9 @@ One recipe per `docker-compose.yml` service, with matching names and commands.
 | `just scheduled` | `scheduled` | `queues --scheduled` |
 
 `just build` assembles a minimal build context by hand rather than handing the repository to the
-builder. The Dockerfile does `COPY . .`, and `Dashboard/node_modules` is the wrong platform's
-binaries and hundreds of megabytes; that cost lands before the builder ever reads `.dockerignore`.
+builder. The frontend stage copies `Dashboard/`, and `Dashboard/node_modules` is the wrong
+platform's binaries and hundreds of megabytes; that cost lands before the builder ever reads
+`.dockerignore`.
 
 The `app` container runs as root because the image's `vapor` user cannot bind below 1024 and the
 container serves port 80. Drop the override if you move `APP_PORT` above 1024.

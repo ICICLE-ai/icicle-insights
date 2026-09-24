@@ -36,3 +36,6 @@ Dashboard/sas.json
 
 # Container-side SwiftPM scratch path; a separate target platform from the host .build
 .build-container/
+
+# Server and dashboard staged by CI for the Dockerfile's `prebuilt` target. Never committed.
+.ci-staging/

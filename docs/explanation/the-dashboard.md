@@ -7,7 +7,8 @@ How the Angular application is built, served, and authenticated. For developers.
 Vapor serves everything: the API under `/api`, and the built frontend as static files.
 
 A Node build stage in the `Dockerfile` compiles Angular and emits the bundle into Vapor's public
-directory. The runtime image contains no Node at all.
+directory. The runtime image contains no Node at all. CI builds the same bundle in its own `web`
+job instead; see [CI pipeline](../reference/ci-pipeline.md).
 
 **No server-side rendering.** SSR would put Node in the runtime image or add a second pod. This is
 a dashboard, not a page that needs search indexing.
