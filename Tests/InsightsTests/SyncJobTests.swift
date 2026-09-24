@@ -1582,6 +1582,171 @@ struct SyncJobTests {
     }
   }
 
+  // MARK: - SyncPatraCatalog / descriptive fields
+
+  /// A card seen for the first time is created and described in the same sweep, from the fixtures
+  /// shaped like Patra's real BioCLIP 2 detail and CAN Benchmark datasheet.
+  @Test
+  func `A new card's descriptive fields are stored on first sight`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      stubPatraCatalog(
+        on: app,
+        modelCards: "[\(modelCardJSON(uuid: "bioclip-1", name: "BioCLIP 2 (via pybioclip)"))]",
+        datasheets: "[\(canBenchmarkDatasheetJSON)]",
+        details: ["bioclip-1": bioclipModelCardDetailJSON],
+        datasheetDetails: ["2a7b541d-d3d4-4969-8639-576830ad3d95": canBenchmarkDatasheetDetailJSON])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let model = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "bioclip-1").first())
+      #expect(
+        model.cardDescription
+          == "Biology foundation model for taxonomic classification and trait prediction.")
+      #expect(model.author == "John Bradley / Imageomics Institute")
+      #expect(model.category == "classification")
+      #expect(model.license == "MIT License")
+      #expect(model.framework == "PyTorch / OpenCLIP")
+      #expect(model.modelType == "multimodal biological foundation model")
+      #expect(model.inputType == "images")
+      #expect(model.accuracy == 0.88)
+      #expect(model.keywords == "biology, taxonomy, wildlife, organism detection, zero-shot")
+      #expect(model.isGated == false)
+      #expect(model.size == nil)
+      #expect(model.publicationYear == nil)
+      // Provenance still lands in the same save.
+      #expect(model.sourceURL == "https://huggingface.co/imageomics/bioclip-2")
+
+      let sheet = try #require(
+        try await PatraCard.query(on: app.db)
+          .filter(\.$cardUUID == "2a7b541d-d3d4-4969-8639-576830ad3d95").first())
+      #expect(sheet.cardDescription == "The CAN Benchmark is a curated ICICLE benchmark.")
+      #expect(sheet.author == "ICICLE AI Institute")
+      #expect(sheet.category == "Camera trap")
+      #expect(sheet.license == "MIT License")
+      #expect(sheet.size == "~1.56 GB (1,000-10,000 images)")
+      #expect(sheet.format == "ImageFolder (images, distributed as CDB_D06.zip)")
+      #expect(sheet.publicationYear == 2025)
+      #expect(sheet.framework == nil)
+      #expect(sheet.accuracy == nil)
+      #expect(sheet.isGated == nil)
+    }
+  }
+
+  /// The reason the early return in `register` could not stay create-only: Patra edits a card's
+  /// description under an unchanged uuid. A second sweep must overwrite what the first stored,
+  /// including clearing a value Patra has since removed, without creating anything new.
+  @Test
+  func `A later sweep refreshes a known card's descriptive fields`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      let accountID = try account.requireID()
+      let listing = "[\(modelCardJSON(uuid: "bioclip-1", name: "BioCLIP 2 (via pybioclip)"))]"
+      let sheetUUID = "2a7b541d-d3d4-4969-8639-576830ad3d95"
+      stubPatraCatalog(
+        on: app, modelCards: listing, datasheets: "[\(canBenchmarkDatasheetJSON)]",
+        details: ["bioclip-1": bioclipModelCardDetailJSON],
+        datasheetDetails: [sheetUUID: canBenchmarkDatasheetDetailJSON])
+      let job = SyncPatraCatalog()
+      try await job.dequeue(queueContext(for: app), .init(id: accountID))
+
+      let edited =
+        bioclipModelCardDetailJSON
+        .replacingOccurrences(
+          of: "Biology foundation model for taxonomic classification and trait prediction.",
+          with: "BioCLIP 2, now with trait prediction."
+        )
+        .replacingOccurrences(of: #""license": "MIT License""#, with: #""license": null"#)
+        .replacingOccurrences(of: #""test_accuracy": 0.88"#, with: #""test_accuracy": 0.91"#)
+      let editedSheet =
+        canBenchmarkDatasheetJSON
+        .replacingOccurrences(of: #""category": "Camera trap""#, with: #""category": "Wildlife""#)
+      #expect(edited != bioclipModelCardDetailJSON)
+      #expect(editedSheet != canBenchmarkDatasheetJSON)
+      stubPatraCatalog(
+        on: app, modelCards: listing, datasheets: "[\(editedSheet)]",
+        details: ["bioclip-1": edited],
+        datasheetDetails: [sheetUUID: canBenchmarkDatasheetDetailJSON])
+      try await job.dequeue(queueContext(for: app), .init(id: accountID))
+
+      #expect(try await PatraCard.query(on: app.db).count() == 2)
+      #expect(try await Resource.query(on: app.db).count() == 2)
+
+      let model = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "bioclip-1").first())
+      #expect(model.cardDescription == "BioCLIP 2, now with trait prediction.")
+      #expect(model.license == nil)
+      #expect(model.accuracy == 0.91)
+      // Untouched upstream, so untouched here.
+      #expect(model.author == "John Bradley / Imageomics Institute")
+
+      let sheet = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == sheetUUID).first())
+      #expect(sheet.category == "Wildlife")
+    }
+  }
+
+  /// A private card is still skipped outright, descriptive fields or not: no row, and no detail
+  /// request an anonymous caller has no business making.
+  @Test
+  func `A private card is neither described nor fetched`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      let privateSheet = canBenchmarkDatasheetJSON.replacingOccurrences(
+        of: #""is_private": false"#, with: #""is_private": true"#)
+      let requests = stubPatraCatalog(
+        on: app,
+        modelCards: "[\(modelCardJSON(uuid: "secret-1", name: "Secret", isPrivate: true))]",
+        datasheets: "[\(privateSheet)]",
+        details: ["secret-1": bioclipModelCardDetailJSON],
+        datasheetDetails: ["2a7b541d-d3d4-4969-8639-576830ad3d95": canBenchmarkDatasheetDetailJSON])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      #expect(try await Resource.query(on: app.db).count() == 0)
+      #expect(try await PatraCard.query(on: app.db).count() == 0)
+      let paths = requests.withLockedValue { $0.map(\.url.path) }
+      #expect(paths.sorted() == ["/datasheets", "/modelcards"])
+    }
+  }
+
+  /// End to end, the leniency's whole point: a detail response whose descriptive fields have
+  /// drifted type still registers its card, keeps the fields that did not drift, and resolves
+  /// provenance. A strict decode would have failed the entire sweep.
+  @Test
+  func `A descriptive field of the wrong type does not fail the sweep`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makePatraAccount(on: app)
+      let drifted =
+        bioclipModelCardDetailJSON
+        .replacingOccurrences(
+          of: #""keywords": "biology, taxonomy, wildlife, organism detection, zero-shot""#,
+          with: #""keywords": 42"#
+        )
+        .replacingOccurrences(of: #""test_accuracy": 0.88"#, with: #""test_accuracy": "high""#)
+        .replacingOccurrences(of: #""is_gated": false"#, with: #""is_gated": "sometimes""#)
+      #expect(drifted != bioclipModelCardDetailJSON)
+      stubPatraCatalog(
+        on: app,
+        modelCards: "[\(modelCardJSON(uuid: "bioclip-1", name: "BioCLIP 2 (via pybioclip)"))]",
+        details: ["bioclip-1": drifted])
+
+      try await SyncPatraCatalog().dequeue(
+        queueContext(for: app), .init(id: try account.requireID()))
+
+      let card = try #require(
+        try await PatraCard.query(on: app.db).filter(\.$cardUUID == "bioclip-1").first())
+      #expect(card.keywords == nil)
+      #expect(card.accuracy == nil)
+      #expect(card.isGated == nil)
+      #expect(card.framework == "PyTorch / OpenCLIP")
+      #expect(card.sourceURL == "https://huggingface.co/imageomics/bioclip-2")
+    }
+  }
+
   // MARK: - SyncPatraDeployments
 
   /// A Patra model resource carrying one `PatraCard` per uuid given, matching what

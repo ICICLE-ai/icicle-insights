@@ -94,6 +94,15 @@ Valkey so every worker shares it. Every failure is still logged and written to `
 Valkey cannot answer, the alert is sent anyway, because a lost alert is worse than a repeat. The
 retention-window alert is exempt: it is already once per outage for each resource.
 
+## Patra's card text
+
+The Patra catalog sweep also keeps what each card says about its artifact. Every card gets a
+description, author, category, and license; a model adds accuracy and keywords, a datasheet size
+and format. The full list is in [Data model](../reference/data-model.md). The sweep rewrites them
+for known cards as well as new ones, because Patra edits a card's text under the same identifier.
+They only feed display, so a value of an unexpected type is stored as null rather than failing the
+sweep.
+
 ## Provider quirks worth knowing
 
 - **Hugging Face `expand[]` is an allowlist.** Asking for the lifetime downloads figure returns

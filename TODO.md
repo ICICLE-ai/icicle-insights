@@ -82,6 +82,9 @@ unverified against a live system:
 - **The dashboard.** The Patra platform hue and the Provenance tab's two-line node labels, in both
   the light and dark theme. `provenance-graph.spec.ts` covers the layout mechanism, but nobody has
   loaded the running page against seeded or live data.
+- **The card text.** After the first catalog sweep that follows the `PatraCardDetails` migration,
+  every Patra resource in `GET /api/resources` should carry a `card`. The field mapping was checked
+  against fixtures copied from the live API, not against a live sweep writing to a real database.
 
 Model card provenance is expected to render empty either way: Patra's real `location` values
 resolve for most of its live model cards, but none name an account this deployment tracks (its

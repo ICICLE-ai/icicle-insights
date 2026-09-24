@@ -526,6 +526,141 @@ struct ResourceControllerTests {
     }
   }
 
+  /// A Patra model with two cards, the newer carrying a full description, next to a GitHub
+  /// repository with none. Read as raw JSON rather than through `Resource.Public`, because the
+  /// shape on the wire is the contract the dashboard's Models page is built against.
+  @Test
+  func `Index returns the newest Patra card for a Patra resource and none for a GitHub one`()
+    async throws
+  {
+    try await withInsightsApp { app in
+      let github = try await makeAccount(on: app.db, name: "icicle-ai", platform: .github)
+      let repository = try await makeResource(
+        on: app.db, accountID: try github.requireID(), name: "insights", type: .repository)
+
+      let patra = try await makeAccount(on: app.db, name: "icicleai", platform: .patra)
+      let model = try await makeResource(
+        on: app.db, accountID: try patra.requireID(), name: "bioclip 2 (via pybioclip)",
+        type: .model)
+      let modelID = try model.requireID()
+
+      let older = PatraCard(
+        resourceID: modelID, cardUUID: "bioclip-old", version: "v1.0",
+        cardUpdatedAt: Date(timeIntervalSince1970: 1_700_000_000))
+      older.cardDescription = "An earlier card."
+      try await older.create(on: app.db)
+
+      let newer = PatraCard(
+        resourceID: modelID, cardUUID: "bioclip-new", version: "v2.0",
+        cardUpdatedAt: Date(timeIntervalSince1970: 1_779_000_000),
+        sourceURL: "https://huggingface.co/imageomics/bioclip-2")
+      newer.cardDescription = "Biology foundation model."
+      newer.author = "John Bradley / Imageomics Institute"
+      newer.category = "classification"
+      newer.license = "MIT License"
+      newer.framework = "PyTorch / OpenCLIP"
+      newer.modelType = "multimodal biological foundation model"
+      newer.inputType = "images"
+      newer.accuracy = 0.88
+      newer.keywords = "biology, taxonomy, zero-shot"
+      newer.isGated = false
+      try await newer.create(on: app.db)
+
+      try await app.testing().test(
+        .GET, "api/resources",
+        afterResponse: { res async throws in
+          #expect(res.status == .ok)
+          let rows = try #require(
+            try JSONSerialization.jsonObject(with: Data(res.body.string.utf8))
+              as? [[String: Any]])
+          let modelRow = try #require(rows.first { $0["id"] as? String == modelID.uuidString })
+          let card = try #require(modelRow["card"] as? [String: Any])
+
+          #expect(card["kind"] as? String == "model")
+          #expect(card["uuid"] as? String == "bioclip-new")
+          #expect(card["version"] as? String == "v2.0")
+          #expect(card["updatedAt"] as? String == "2026-05-17T06:40:00Z")
+          #expect(card["description"] as? String == "Biology foundation model.")
+          #expect(card["author"] as? String == "John Bradley / Imageomics Institute")
+          #expect(card["modelType"] as? String == "multimodal biological foundation model")
+          #expect(card["accuracy"] as? Double == 0.88)
+          #expect(card["keywords"] as? [String] == ["biology", "taxonomy", "zero-shot"])
+          #expect(card["gated"] as? Bool == false)
+          #expect(card["sourceURL"] as? String == "https://huggingface.co/imageomics/bioclip-2")
+          // Datasheet-only fields: present, and null.
+          #expect(card["size"] is NSNull)
+          #expect(card["format"] is NSNull)
+          #expect(card["publicationYear"] is NSNull)
+
+          let repositoryRow = try #require(
+            rows.first { $0["id"] as? String == repository.id?.uuidString })
+          #expect(repositoryRow["card"] == nil || repositoryRow["card"] is NSNull)
+        })
+    }
+  }
+
+  @Test
+  func `Show returns a datasheet's card with kind datasheet`() async throws {
+    try await withInsightsApp { app in
+      let patra = try await makeAccount(on: app.db, name: "icicleai", platform: .patra)
+      let dataset = try await makeResource(
+        on: app.db, accountID: try patra.requireID(),
+        name: "continually adapt or not (can) benchmark", type: .dataset)
+      let sheet = PatraCard(
+        resourceID: try dataset.requireID(), cardUUID: "2a7b541d-d3d4-4969-8639-576830ad3d95",
+        cardUpdatedAt: Date(timeIntervalSince1970: 1_780_000_000))
+      sheet.cardDescription = "The CAN Benchmark is a curated ICICLE benchmark."
+      sheet.author = "ICICLE AI Institute"
+      sheet.category = "Camera trap"
+      sheet.size = "~1.56 GB (1,000-10,000 images)"
+      sheet.publicationYear = 2025
+      try await sheet.create(on: app.db)
+
+      try await app.testing().test(
+        .GET, "api/resources/\(dataset.requireID())",
+        afterResponse: { res async throws in
+          #expect(res.status == .ok)
+          let card = try #require(try res.content.decode(Resource.Public.self).card)
+          #expect(card.kind == .datasheet)
+          #expect(card.uuid == "2a7b541d-d3d4-4969-8639-576830ad3d95")
+          #expect(card.author == "ICICLE AI Institute")
+          #expect(card.size == "~1.56 GB (1,000-10,000 images)")
+          #expect(card.publicationYear == 2025)
+          #expect(card.framework == nil)
+          #expect(card.keywords == nil)
+        })
+    }
+  }
+
+  /// The generated document is what a client generates its types from, so `card` has to appear
+  /// there with its two required keys and its `kind` values listed, not as a bare string.
+  @Test
+  func `The OpenAPI document describes the resource's card`() async throws {
+    try await withInsightsApp { app in
+      try await app.testing().test(
+        .GET, "openapi.json",
+        afterResponse: { res async throws in
+          #expect(res.status == .ok)
+          let document = try #require(
+            try JSONSerialization.jsonObject(with: Data(res.body.string.utf8)) as? [String: Any])
+          let schemas = try #require(
+            (document["components"] as? [String: Any])?["schemas"] as? [String: Any])
+
+          let resource = try #require(schemas["ResourcePublic"] as? [String: Any])
+          let resourceProperties = try #require(resource["properties"] as? [String: Any])
+          #expect(resourceProperties["card"] != nil)
+
+          let card = try #require(schemas["PatraCardPublic"] as? [String: Any])
+          #expect(Set(card["required"] as? [String] ?? []) == ["kind", "uuid"])
+          let cardProperties = try #require(card["properties"] as? [String: Any])
+          #expect(cardProperties.count == 18)
+
+          let kind = try #require(schemas["PatraCardKind"] as? [String: Any])
+          #expect(kind["enum"] as? [String] == ["model", "datasheet"])
+        })
+    }
+  }
+
   @Test
   func `The Hub keeps its longer cadence, having no window to lose`() {
     // The Hub reports downloadsAllTime outright, so a missed sweep costs series density and never

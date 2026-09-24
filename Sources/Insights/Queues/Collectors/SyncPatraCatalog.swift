@@ -69,11 +69,26 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
       datasheetDetails[sheet.uuid] = try await PatraAPI.datasheetDetail(context, uuid: sheet.uuid)
     }
 
+    // Each card's description is applied here and saved by the provenance resolution that
+    // follows it, for a card `register` just created and for one it already knew alike. That is
+    // what keeps a description current: Patra edits `short_description` and the rest in place,
+    // under the same uuid, so a card seen once and never rewritten would show its first sweep's
+    // text forever. Applied before resolution rather than after so the two land in that one
+    // `save`, one `UPDATE` per card, instead of a second write per card per sweep.
+    //
+    // A card `register` skipped (a new private card, or a new card under a soft-deleted resource)
+    // returns nil and is described nowhere, the same as it is resolved nowhere. So is a known
+    // card that has since turned private: the detail loop above never fetched it, so it keeps
+    // what it last said in public rather than being refreshed from a request an anonymous caller
+    // should not make. A known card whose resource was *later* soft-deleted still returns its row
+    // and is refreshed like any other: updating a row that exists resurrects nothing, and it is
+    // exactly what provenance resolution has always done for such a card.
     for card in modelCards {
       let patraCard = try await register(
         cardUUID: card.uuid, name: card.name, version: card.version, updatedAt: card.updatedAt,
         isPrivate: card.isPrivate, type: .model, accountID: accountID, context: context)
       if let patraCard, let detail = details[card.uuid] {
+        PatraCardDescription(modelCard: detail).apply(to: patraCard)
         try await resolveProvenance(detail, for: patraCard, on: context.application.db)
       }
     }
@@ -83,6 +98,7 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
         updatedAt: sheet.updatedAt, isPrivate: sheet.isPrivate, type: .dataset,
         accountID: accountID, context: context)
       if let patraCard, let detail = datasheetDetails[sheet.uuid] {
+        PatraCardDescription(datasheet: sheet, detail: detail).apply(to: patraCard)
         try await resolveDatasheetProvenance(detail, for: patraCard, on: context.application.db)
       }
     }
@@ -102,8 +118,9 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
   ///
   /// Returns the card that now exists under `cardUUID`, or nil when this entry was skipped
   /// (private, or its resource is soft-deleted) and so has no row for a caller to act on further.
-  /// `dequeue` uses the return value to attach this sweep's provenance resolution to the right
-  /// row, whether that row was just created here or already existed from an earlier sweep.
+  /// `dequeue` uses the return value to attach this sweep's description and provenance resolution
+  /// to the right row, whether that row was just created here or already existed from an earlier
+  /// sweep.
   @discardableResult
   private func register(
     cardUUID: String,
@@ -150,6 +167,10 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
           ]
         )
       }
+      // Early, but not the end of this card's sweep: returning the row is what lets `dequeue`
+      // refresh its descriptive fields and provenance from this sweep's detail response. Only
+      // creation is skipped. The description in particular must not be create-only the way the
+      // name is, because Patra edits descriptions under an unchanged uuid.
       return existing
     }
 
@@ -217,15 +238,21 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
 
   /// Resolves `detail`'s cross-registry location onto `card` and saves it.
   ///
-  /// **This is the one place `SyncPatraCatalog` updates an existing row.** Everything in
-  /// `register` above is create-only by design — a card renamed upstream is logged, not applied,
-  /// because a resource can already group cards from other authors and there is no single
-  /// correct name to reconcile toward. Provenance is different: it only ever fills a null link
-  /// or corrects one to a resource that has since moved, and it never touches `name`, `version`,
-  /// or a metric, so overwriting it on every sweep is safe in a way overwriting the name would
-  /// not be. That is also why it has to run every sweep rather than only at creation — a card
-  /// collected before its Hugging Face counterpart is registered must resolve to nil on this
-  /// pass and link itself on a later one, once that counterpart exists.
+  /// **This save is the one place `SyncPatraCatalog` updates an existing model card row.**
+  /// Everything in `register` above is create-only by design — a card renamed upstream is logged,
+  /// not applied, because a resource can already group cards from other authors and there is no
+  /// single correct name to reconcile toward. Provenance is different: it only ever fills a null
+  /// link or corrects one to a resource that has since moved, and it never touches `name`,
+  /// `version`, or a metric, so overwriting it on every sweep is safe in a way overwriting the
+  /// name would not be. That is also why it has to run every sweep rather than only at creation —
+  /// a card collected before its Hugging Face counterpart is registered must resolve to nil on
+  /// this pass and link itself on a later one, once that counterpart exists.
+  ///
+  /// The same save also writes the descriptive fields `dequeue` applied to `card` just before
+  /// calling this, which are safe to overwrite for the same reason: they belong to this one card,
+  /// not to the resource its name groups it under, and Patra is their only source. An early
+  /// return added here before the save would silently stop descriptions refreshing; the
+  /// description-refresh test in `SyncJobTests` is what catches that.
   private func resolveProvenance(
     _ detail: PatraModelCardDetail, for card: PatraCard, on db: any Database
   ) async throws {
@@ -249,7 +276,9 @@ struct SyncPatraCatalog: AsyncJob, BackoffRetrying {
   /// datasheet counterpart to `resolveProvenance` above. Same exception to `register`'s
   /// create-only rule (this is the only other place the job updates an existing row), same
   /// every-sweep re-run for the same reason: a datasheet collected before its Hugging Face
-  /// counterpart is registered must resolve to nil now and link itself on a later sweep.
+  /// counterpart is registered must resolve to nil now and link itself on a later sweep. Its save
+  /// writes the descriptive fields `dequeue` applied just before, exactly as `resolveProvenance`'s
+  /// does.
   ///
   /// Where a model card's detail response carries exactly one candidate location
   /// (`ai_model.location`), a datasheet's carries a whole DataCite-style list of identifiers, and

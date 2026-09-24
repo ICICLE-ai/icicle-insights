@@ -2,7 +2,7 @@
 
 What the suite covers. For developers.
 
-**312 tests across 22 suites**, all in `Tests/InsightsTests/`. Parameterised tests count once.
+**338 tests across 24 suites**, all in `Tests/InsightsTests/`. Parameterised tests count once.
 
 ```bash
 just test
@@ -15,14 +15,15 @@ and their absence fails every test, not one.
 
 | Suite | Tests | Covers |
 |---|---|---|
+| `SyncJobTests` | 53 | Each platform's sweep against stubbed APIs, every error branch, orphans, retry safety, and Patra card text |
 | `HardeningTests` | 49 | Headers, CORS, rate limits and client addresses, request IDs, key rotation, admins, pool sizes, absent keyset |
-| `SyncJobTests` | 49 | Each platform's sweep against stubbed APIs, every error branch, orphans, and retry safety |
 | `JobFailureTests` | 31 | Failure classification, retries, backoff, re-booking, alert deduplication |
 | `MetricControllerTests` | 24 | Metric CRUD, filters, validation, admin guard |
+| `ResourceControllerTests` | 24 | Resource CRUD, cadence caps, admin guard, first dispatch, deleted links, the Patra `card` |
 | `AuthenticationTests` | 22 | Both credential paths and where they cross |
-| `ResourceControllerTests` | 21 | Resource CRUD, cadence caps, admin guard, first dispatch, deleted links |
 | `VaultControllerTests` | 15 | Name normalisation, validation, upstream status mapping, rollback |
 | `MetricAllTimeTests` | 13 | Double-count prevention, the watermark fold, its locks, daily snapshots |
+| `PatraCardDescriptionTests` | 13 | Reading Patra's card text: fallback order, lenient types, trimming |
 | `AccountControllerTests` | 12 | Account CRUD, validation, and the delete guard |
 | `InsightsControllerTests` | 12 | The three summary routes: carry-forward, filters, no row cap, lifetime history, parameters |
 | `ReleaseControllerTests` | 10 | Release CRUD and validation |
@@ -30,6 +31,7 @@ and their absence fails every test, not one.
 | `QueueSweepTests` | 9 | Which job a platform dispatches, how due dates advance, orphans |
 | `TapisTokenExpiryTests` | 9 | Reading `TAPIS_TOKEN`'s expiry and the daily warning |
 | `ServiceTokenExpiryTests` | 8 | The daily expiry warning and its thresholds |
+| `PatraCardProjectionTests` | 6 | Which card stands for a resource, `kind`, keywords, and the JSON shape |
 | `PatraAPITests` | 4 | Paging and error handling against a stubbed Patra |
 | `AdminInsightControllerTests` | 4 | The admin-only operational projections |
 | `TrafficDecodingTests` | 4 | The `clones`/`views` array-key split |
@@ -40,7 +42,8 @@ and their absence fails every test, not one.
 
 ## Why it is serial
 
-Every suite is `.serialized`, and `just test` adds `--no-parallel` on top.
+Every database suite with more than one test is `.serialized`, and `just test` adds
+`--no-parallel` on top.
 
 Suites share the one `test` database and each migrates and reverts around itself. Any overlap has
 one suite reverting the schema out from under another.
@@ -49,7 +52,8 @@ Several `HardeningTests` cases also set process environment variables that `conf
 boot. Process environment is global; running those concurrently would make them read each other's
 settings.
 
-`TrafficDecodingTests` is the only suite that needs no database — it is pure decoding.
+`TrafficDecodingTests`, `PatraAPITimestampsTests`, `PatraCardDescriptionTests`, and
+`PatraCardProjectionTests` need no database. They are pure decoding and projection.
 
 ## Harness
 
