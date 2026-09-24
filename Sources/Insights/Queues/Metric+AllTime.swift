@@ -99,6 +99,12 @@ extension Metric {
 
   /// Replaces the all-time total outright, for platforms that report the lifetime figure
   /// themselves. Nothing is accumulated, so re-running a sweep is harmless.
+  ///
+  /// Still a read-then-write, so it takes the same lock as the fold. Without it, two Hub syncs
+  /// of one resource could both find no total and both insert one, and every later sweep then
+  /// updated whichever duplicate `first()` happened to return. The transaction is what gives
+  /// the transaction-scoped lock something to be held for: `SyncHuggingFaceHubStats` calls this
+  /// inside its own, which this joins (see `adjustAllTime`), and a direct caller gets one here.
   static func setAllTime(
     on db: any Database,
     resourceID: Resource.IDValue,
@@ -107,18 +113,23 @@ extension Metric {
   ) async throws {
     guard let allTimeType = type.allTime else { return }
 
-    guard
-      let total = try await Metric.query(on: db)
-        .filter(\.$resource.$id == resourceID)
-        .filter(\.$type == allTimeType)
-        .first()
-    else {
-      try await Metric(resourceID: resourceID, reading: reading, type: allTimeType).create(on: db)
-      return
-    }
+    try await db.transaction { db in
+      try await lockAllTime(on: db, resourceID: resourceID, type: type)
 
-    total.reading = reading
-    try await total.save(on: db)
+      guard
+        let total = try await Metric.query(on: db)
+          .filter(\.$resource.$id == resourceID)
+          .filter(\.$type == allTimeType)
+          .first()
+      else {
+        try await Metric(resourceID: resourceID, reading: reading, type: allTimeType).create(
+          on: db)
+        return
+      }
+
+      total.reading = reading
+      try await total.save(on: db)
+    }
   }
 
   /// Folds a rolling window's per-day readings into the all-time total, counting each day

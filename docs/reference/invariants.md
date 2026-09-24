@@ -32,15 +32,15 @@ cannot take the same one.
 | Fold rolling values through their watermark | Overlapping windows counted repeatedly |
 | Fold only completed UTC days newer than the watermark | Today banked while still partial, then skipped once complete |
 | Advance watermarks only through completed days | The same |
-| Lock `(resource, metric type)` before a read-modify-write fold | Two workers corrupt one all-time value |
+| Lock `(resource, metric type)` before any read-then-write of an all-time total: fold, adjust, or set | Two workers corrupt one all-time value, or both create one |
 | Cadence stays at most half the platform's retention window | No headroom for a missed collection: one delayed sweep ages days out |
 | A gap past the retention window raises `collection_window_exceeded`, once per outage | Data loss stays silent |
 
-`Metric.foldDailyIntoAllTime` takes a transaction-scoped `pg_advisory_xact_lock`. FluentKit has no
-row locking in this version. Called inside a collector's transaction, the fold's own
-`db.transaction` joins it: FluentPostgresDriver issues no SAVEPOINT or inner COMMIT, so the lock is
-held to the collector's commit. The hash uses PostgreSQL's `hashtext`, not Swift's `hashValue`, which
-is seeded per process.
+`Metric.foldDailyIntoAllTime`, `adjustAllTime`, and `setAllTime` take a transaction-scoped
+`pg_advisory_xact_lock`. FluentKit has no row locking in this version. Called inside a collector's
+transaction, their own `db.transaction` joins it: FluentPostgresDriver issues no SAVEPOINT or inner
+COMMIT, so the lock is held to the collector's commit. The hash uses PostgreSQL's `hashtext`, not
+Swift's `hashValue`, which is seeded per process.
 
 ## Credentials
 

@@ -240,6 +240,39 @@ struct MetricAllTimeTests {
     }
   }
 
+  /// Two Hub syncs of one resource used to race `setAllTime`'s read-then-insert: both found no
+  /// total and both created one. Many concurrent writers on separate pooled connections, over a
+  /// few fresh resources, make the window wide enough to hit reliably without the lock.
+  @Test
+  func `Concurrent all-time sets leave exactly one total`() async throws {
+    try await withInsightsApp { app in
+      let account = try await makeAccount(on: app.db, name: "icicle", platform: .huggingface)
+      let accountID = try account.requireID()
+
+      for round in 0..<5 {
+        let resource = try await makeResource(
+          on: app.db, accountID: accountID, name: "model-\(round)")
+        let id = try resource.requireID()
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+          for reading in 1...16 {
+            group.addTask {
+              try await Metric.setAllTime(
+                on: app.db, resourceID: id, type: .downloads, reading: Double(reading))
+            }
+          }
+          try await group.waitForAll()
+        }
+
+        let totals = try await Metric.query(on: app.db)
+          .filter(\.$resource.$id == id)
+          .filter(\.$type == .downloadsAllTime)
+          .count()
+        #expect(totals == 1, "round \(round) left \(totals) all-time rows")
+      }
+    }
+  }
+
   /// The case from the defect report. `CollectDueResources` advances the due date when it
   /// dispatches, so before the fix a non-credential failure left that advance standing and cost a
   /// full interval: day 7 booked day 14, day 14 booked day 21, and the response on day 21 no
