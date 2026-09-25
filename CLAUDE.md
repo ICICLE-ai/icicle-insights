@@ -82,6 +82,9 @@ just stack        # full local stack on Apple Container
   carried on `TapisUser.isAdmin`.
 - **Secrets never reach logs or the database.** `Secret` redacts itself. `service_tokens` rows hold
   identifiers and metadata only.
+- **`pg_dump` must be at least the database's major version.** The image installs
+  `postgresql-client-18` from PostgreSQL's apt repository. Raise `PG_CLIENT_MAJOR` in the
+  `Dockerfile` before, or with, a PostgreSQL upgrade, or every nightly backup fails.
 - **Do not rename `withInsightsApp`.** `VaporTesting` has a generic `withApp` that wins overload
   resolution for single-expression closures and hands the test an empty app.
 

@@ -71,6 +71,29 @@ one process only, and the processes then disagree.
 
 Alerts are sent by the worker and the scheduler. Setting the webhooks on the API has no effect.
 
+## Database backups
+
+Backups are off until `BACKUP_S3_BUCKET` is set. Then the four marked *required* must be set too,
+or the process stops at startup. An empty value counts as unset.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BACKUP_S3_BUCKET` | unset, backups off | Bucket to upload to |
+| `BACKUP_S3_ENDPOINT` | required | The store's API as `http(s)://host[:port]`, with no path. AWS: `https://s3.us-east-2.amazonaws.com` |
+| `BACKUP_S3_REGION` | required | Region named in the request signature, such as `us-east-2`. Self-hosted stores usually default to `us-east-1` |
+| `BACKUP_S3_ACCESS_KEY_ID` | required | Access key. Needs only `s3:PutObject` under the prefix |
+| `BACKUP_S3_SECRET_ACCESS_KEY` | required | Its secret. Never logged |
+| `BACKUP_S3_PREFIX` | `insights/` | Start of every object key. A leading `/` is dropped and a trailing `/` added |
+| `BACKUP_S3_PATH_STYLE` | `true` | `true` sends `endpoint/bucket/key`; `false` sends `bucket.endpoint/key`. Self-hosted stores usually need `true` |
+| `BACKUP_S3_SSE` | `true` | Sends `x-amz-server-side-encryption: AES256`. Set `false` for a store that refuses the header |
+
+`true` and `false` also accept `1`, `0`, `yes` and `no`. Any other value stops the process at
+startup.
+
+Set these on the worker and the scheduler. The scheduler decides whether to queue a backup, and the
+worker takes it. The API checks them at startup but never runs a backup. Keys look like
+`insights/vapor_database/2026/09/vapor_database-20260924T020000Z.dump`.
+
 ## Build time
 
 | Variable | Where | Default | Meaning |

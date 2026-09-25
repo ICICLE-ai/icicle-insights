@@ -48,6 +48,8 @@ and no failures are recorded.
 
 ## Verify after the next deploy
 
+- **Turn on database backups.** Until a bucket is chosen and the `BACKUP_S3_*` values are set, the
+  only backup is a manual dump. See `docs/how-to/set-up-database-backups.md`.
 - `/admin` → **Operations → Scheduler** is **Healthy**.
 - **Resources** in the console shows no *Not scheduled* GHCR rows. npm and PyPI rows stay that way.
 - The GHCR view on the dashboard has a **Pulls · 30 days** tile.

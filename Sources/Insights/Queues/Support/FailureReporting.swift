@@ -237,11 +237,13 @@ extension QueueContext {
   /// Persists one row of operational history from values rather than an error.
   ///
   /// The retention-window breach is a condition, not a thrown error — there is no `Error` to
-  /// classify — but it belongs in the same history the admin console reads.
+  /// classify — but it belongs in the same history the admin console reads. Internal rather than
+  /// private for the backup job, whose failures belong in that history too but are classified by
+  /// `BackupError` rather than by the collection rules in this file.
   ///
   /// This must never throw. QueueWorker awaits the job's error callback before clearing the job;
   /// propagating a database failure from here strands the failed job and can stop the worker.
-  private func persistFailure(
+  func persistFailure(
     job: String,
     subject: String,
     identifier: String,

@@ -28,6 +28,11 @@ let package = Package(
     // 🟥 Redis client. Already resolved transitively through the queues driver; declared here
     // so rate limit counters can share the Valkey instance queues already use.
     .package(url: "https://github.com/vapor/redis.git", from: "4.11.0"),
+    // 🔏 SHA-256 and HMAC for signing backup uploads with AWS Signature Version 4. Already
+    // resolved through JWTKit, so this adds no new package; declared directly so the import does
+    // not lean on a transitive dependency. Soto was rejected: it is hundreds of generated files
+    // for one PutObject, and compile time is already the slowest part of CI.
+    .package(url: "https://github.com/apple/swift-crypto.git", from: "4.1.0"),
 
   ],
   targets: [
@@ -44,6 +49,7 @@ let package = Package(
         .product(name: "SwiftSoup", package: "SwiftSoup"),
         .product(name: "JWT", package: "jwt"),
         .product(name: "Redis", package: "redis"),
+        .product(name: "Crypto", package: "swift-crypto"),
       ],
       swiftSettings: swiftSettings,
     ),

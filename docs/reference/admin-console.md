@@ -24,7 +24,7 @@ The token is held in memory only. Reloading the page forgets it unless TapisUI s
 | **Waiting on "metrics"** | Jobs queued and not yet picked up |
 | **In progress** | Jobs a worker is running now |
 | **Scheduler** | **Healthy**, *Stale — no recent heartbeat* after 2 hours of silence, or *Not seen yet*. Plus **Last seen** |
-| **Recent failures** | Collections that used up their retries, newest first. *No failures recorded.* when empty |
+| **Recent failures** | Collections and backups that used up their retries, newest first. *No failures recorded.* when empty |
 | **Watermarks** | Per resource and metric: the last day folded into the all-time total (**Counted through**) |
 
 ## Accounts

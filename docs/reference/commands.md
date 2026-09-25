@@ -22,6 +22,7 @@ a container the binary is `./Insights`. From the repository it is `swift run Ins
 | `collect-resources --force` | Mark every active resource due, then queue them. Shifts every schedule |
 | `collect-accounts` | Queue a follower sync for every GitHub account |
 | `collect-patra-catalog` | Queue Patra catalog discovery |
+| `backup-database` | Dump the database and upload it to the backup bucket now, and wait. Exits non-zero when backups are off or the backup fails |
 | `service-token init-key` | Create the signing keyset in Tapis Vault. Refuses if one exists |
 | `service-token init-key --force` | Replace the keyset. Every issued token stops working |
 | `service-token rotate-key` | Add a new signing key; old tokens keep working. Restart the API afterwards |
@@ -29,7 +30,8 @@ a container the binary is `./Insights`. From the repository it is `swift run Ins
 | `service-token revoke --jti <uuid>` | Revoke a token |
 | `service-token list` | List issued tokens, without values |
 
-The collect commands only queue work; a worker must be running.
+The collect commands only queue work; a worker must be running. `backup-database` does the work
+itself and sends no alert, so run it where the worker's environment is set.
 
 ## `just` recipes
 
@@ -91,5 +93,6 @@ The app is reachable at <http://app.icicle-insights> and <http://127.0.0.1:8080>
 | `docker compose run --rm collect-all-now` | Sweep every resource |
 | `docker compose run --rm collect-accounts-now` | Account sweep |
 | `docker compose run --rm collect-patra-catalog-now` | Patra sweep |
+| `docker compose run --rm queues backup-database` | Back up now, with the worker's settings |
 
 #icicle-insights# #Reference# #Developer# #Administrator#

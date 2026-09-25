@@ -155,6 +155,18 @@ services:
       # the primary channel carries only the credential ones.
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
       SLACK_WEBHOOK_URL_WARNINGS: ${SLACK_WEBHOOK_URL_WARNINGS:-}
+      # -- database backups: the worker and the scheduler ---------------------
+      # Off while BACKUP_S3_BUCKET is empty. Set, the scheduler queues a backup
+      # at 02:00 UTC and the worker dumps and uploads it, so both need the same
+      # values. See docs/how-to/set-up-database-backups.md.
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-}
+      BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
+      BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
+      BACKUP_S3_PATH_STYLE: ${BACKUP_S3_PATH_STYLE:-}
+      BACKUP_S3_SSE: ${BACKUP_S3_SSE:-}
     depends_on:
       db:
         condition: service_healthy
@@ -198,6 +210,18 @@ services:
       # rather than being enqueued.
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
       SLACK_WEBHOOK_URL_WARNINGS: ${SLACK_WEBHOOK_URL_WARNINGS:-}
+      # -- database backups: the worker and the scheduler ---------------------
+      # Off while BACKUP_S3_BUCKET is empty. Set, the scheduler queues a backup
+      # at 02:00 UTC and the worker dumps and uploads it, so both need the same
+      # values. See docs/how-to/set-up-database-backups.md.
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-}
+      BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
+      BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
+      BACKUP_S3_PATH_STYLE: ${BACKUP_S3_PATH_STYLE:-}
+      BACKUP_S3_SSE: ${BACKUP_S3_SSE:-}
     depends_on:
       db:
         condition: service_healthy

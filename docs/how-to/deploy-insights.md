@@ -36,6 +36,8 @@ deployment. [Architecture](../explanation/architecture.md) explains the moving p
 
 7. To embed in TapisUI, set `FRAME_ANCESTORS` on the API. See
    [Embed the dashboard in TapisUI](embed-in-tapisui.md).
+8. Optionally, back up the database every night. Set the `BACKUP_S3_*` values on the worker and the
+   scheduler. See [Set up database backups](set-up-database-backups.md).
 
 ## Check it worked
 

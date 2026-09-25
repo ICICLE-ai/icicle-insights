@@ -105,6 +105,43 @@ RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
       # libxml2 \
     && rm -r /var/lib/apt/lists/*
 
+# pg_dump, for the nightly database backup (Sources/Insights/Services/Backups/). pg_dump refuses
+# to dump a server whose major version is newer than its own. Noble's own postgresql-client is 16
+# and the database runs 18, so the client comes from PostgreSQL's apt repository instead, checked
+# against its signing key. Keep PG_CLIENT_MAJOR at or above the server's major version: a newer
+# pg_dump reads an older server, never the reverse.
+#
+# curl is only here to fetch the key, and is purged in the same layer so it adds nothing to the
+# image. Pinning the key file by checksum with `ADD --checksum` was rejected: PGDG extends the
+# key's expiry from time to time, which changes the file and would break every build until the
+# checksum was updated. HTTPS to www.postgresql.org is what vouches for it, as in PGDG's own
+# instructions.
+#
+# The layer is about 70 MB installed, and most of that is Perl: postgresql-client-common depends on
+# it for Debian's pg_wrapper, which nothing here runs. Unpacking pg_dump alone from the .deb would
+# save it, but leaves a binary apt does not know about, with libraries nothing keeps in step.
+# Worth revisiting only if image size starts to matter.
+ARG PG_CLIENT_MAJOR=18
+RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
+    && apt-get -q update \
+    && apt-get -q install -y --no-install-recommends curl \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl --fail --silent --show-error --location \
+      --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+      https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && . /etc/os-release \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+      > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get -q update \
+    && apt-get -q install -y --no-install-recommends "postgresql-client-${PG_CLIENT_MAJOR}" \
+    && apt-get -q purge -y --auto-remove curl \
+    && rm -r /var/lib/apt/lists/*
+
+# `pg_dump` resolves straight to the pinned major's binary rather than through Debian's
+# pg_wrapper, which chooses among installed versions by rules of its own. The backup finds it on
+# this PATH, which is the one variable it passes through to the child process.
+ENV PATH=/usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin:${PATH}
+
 # Create a vapor user and group with /app as its home directory
 RUN useradd --user-group --create-home --system --skel /dev/null --home-dir /app vapor
 
