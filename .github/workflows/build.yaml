@@ -169,11 +169,13 @@ jobs:
             swift-release-${{ runner.os }}-${{ steps.toolchain.outputs.version }}-${{ hashFiles('Package.resolved') }}-
             swift-release-${{ runner.os }}-${{ steps.toolchain.outputs.version }}-
 
-      # Flags match the Dockerfile's `build` stage exactly. N.B.: the static version of jemalloc is
+      # Flags match the Dockerfile's `build` stage exactly, `--build-system native` included; the
+      # Dockerfile says why and when it can go. N.B.: the static version of jemalloc is
       # incompatible with the static Swift runtime.
       - name: Build
         run: |
           swift build -c release \
+            --build-system native \
             --product Insights \
             --static-swift-stdlib \
             -Xlinker -ljemalloc
@@ -189,7 +191,7 @@ jobs:
       # executable bit, and the image would then ship a binary it cannot run.
       - name: Stage
         run: |
-          bin="$(swift build -c release --show-bin-path)"
+          bin="$(swift build -c release --build-system native --show-bin-path)"
           mkdir staging
           cp "$bin/Insights" staging/
           find -L "$bin" -regex '.*\.resources$' -exec cp -Ra {} staging/ \;

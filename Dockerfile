@@ -64,15 +64,21 @@ RUN mkdir /staging
 
 # Build the application, with optimizations, with static linking, and using jemalloc
 # N.B.: The static version of jemalloc is incompatible with the static Swift runtime.
+#
+# `--build-system native` works around a Swift 6.4.0 regression: the new default build system
+# fails to link Foundation with `--static-swift-stdlib` on Linux, here in the SwiftOpenAPIMacros
+# plugin (swiftlang/swift-build#1764, fixed by #1763). Drop it once a 6.4.x ships that fix. Every
+# call below passes it, because the two build systems put their output in different places.
 RUN --mount=type=cache,target=/build/.build \
     swift build -c release \
+        --build-system native \
         --product Insights \
         --static-swift-stdlib \
         -Xlinker -ljemalloc && \
     # Copy main executable to staging area
-    cp "$(swift build -c release --show-bin-path)/Insights" /staging && \
+    cp "$(swift build -c release --build-system native --show-bin-path)/Insights" /staging && \
     # Copy resources bundled by SPM to staging area
-    find -L "$(swift build -c release --show-bin-path)" -regex '.*\.resources$' -exec cp -Ra {} /staging \;
+    find -L "$(swift build -c release --build-system native --show-bin-path)" -regex '.*\.resources$' -exec cp -Ra {} /staging \;
 
 # Switch to the staging area
 WORKDIR /staging
