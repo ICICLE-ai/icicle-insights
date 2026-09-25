@@ -1,6 +1,14 @@
 import Foundation
 import NIOConcurrencyHelpers
 
+#if canImport(Glibc)
+  import Glibc
+#elseif canImport(Musl)
+  import Musl
+#elseif canImport(Darwin)
+  import Darwin
+#endif
+
 /// What a finished child process reported.
 struct ProcessOutcome: Sendable, Equatable {
   let exitCode: Int32
@@ -24,7 +32,7 @@ protocol ProcessRunner: Sendable {
   ///   - arguments: Its arguments. Never put a credential here: the arguments of every process
   ///     are readable by anything on the host that can list processes.
   ///   - environment: The child's whole environment. Nothing is inherited implicitly.
-  ///   - timeout: How long to wait before stopping it with SIGTERM.
+  ///   - timeout: How long to wait before stopping it with SIGKILL.
   /// - Throws: When the program cannot be started at all.
   func run(
     _ executable: String,
@@ -83,8 +91,8 @@ struct FoundationProcessRunner: ProcessRunner {
         continuation.resume(throwing: error)
         return
       }
-      // Armed only once the process is running: `terminate()` on a process that was never
-      // launched raises an Objective-C exception on macOS rather than doing nothing.
+      // Armed only once the process is running, so the watchdog never holds the pid of 0 that an
+      // unlaunched `Process` reports.
       watchdog.arm(after: timeout)
     }
     watchdog.disarm()
@@ -100,6 +108,13 @@ struct FoundationProcessRunner: ProcessRunner {
 /// Without it a `pg_dump` stalled on a dead connection would hold a queue worker's slot forever.
 /// Retries cannot rescue that, for the reason `configure` gives about HTTP read timeouts: they
 /// fire on failure, and a hang never fails.
+///
+/// SIGKILL, not `Process.terminate()`, which sends SIGTERM. Both `serve` and `queues` set SIGTERM
+/// to ignored so they can handle shutdown themselves (`ServeCommand`, `QueuesCommand`), an ignored
+/// signal stays ignored across `exec`, and Foundation's `Process` does not reset it. So in the
+/// worker, where backups actually run, a SIGTERM never reached `pg_dump` and the timeout did
+/// nothing. SIGKILL cannot be ignored. `pg_dump` gets no chance to clean up, which costs nothing:
+/// the caller deletes the partial file, and the server drops the connection on its own.
 private final class Watchdog: @unchecked Sendable {
   // `Process` is not `Sendable`; every touch of it below happens under this lock.
   private let process: Process
@@ -115,8 +130,12 @@ private final class Watchdog: @unchecked Sendable {
       state.withLockedValue { state in
         // A process that exited in the instant before this woke is not a timeout.
         guard process.isRunning else { return }
+        // Never 0 or less. `kill(0, …)` signals this whole process group, the worker included;
+        // `isRunning` above already rules that out, and this keeps it ruled out if that changes.
+        let pid = process.processIdentifier
+        guard pid > 0 else { return }
         state.fired = true
-        process.terminate()
+        kill(pid, SIGKILL)
       }
     }
     state.withLockedValue { $0.task = task }
