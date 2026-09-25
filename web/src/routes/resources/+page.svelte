@@ -26,8 +26,7 @@
 	 */
 	const data = query(async () => {
 		const current = scope();
-		const src = await source();
-		const summary = await src.summary(current);
+		const summary = await source.summary(current);
 		const available = METRIC_ORDER.filter(
 			(type) => metricKind(type) !== 'lifetime' && summary.tiles.some((tile) => tile.type === type)
 		);
@@ -36,7 +35,12 @@
 			isMetricType(requested) && available.includes(requested)
 				? requested
 				: (available[0] ?? 'stars');
-		const resources = await src.resources(current, { sort, order: 'desc', limit: 500, offset: 0 });
+		const resources = await source.resources(current, {
+			sort,
+			order: 'desc',
+			limit: 500,
+			offset: 0
+		});
 		return { available, sort, resources };
 	});
 

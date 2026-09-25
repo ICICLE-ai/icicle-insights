@@ -3,7 +3,7 @@ import Foundation
 import SQLKit
 
 /// The real Patra catalog captured 2026-08-26 from the live `/modelcards` and `/datasheets`
-/// endpoints, checked in at `data/patra-modelcards.json` and `data/patra-datasheets.json`.
+/// endpoints, checked in at `Tests/Fixtures/Patra/modelcards.json` and `Tests/Fixtures/Patra/datasheets.json`.
 /// Registered only in `.development` (see `configure.swift`), so it targets the `dev` database
 /// and never `test`.
 ///
@@ -70,7 +70,7 @@ struct PatraCatalogAugust2026: AsyncMigration {
     }
   }
 
-  /// Grouped from the 37 captured model cards in `data/patra-modelcards.json` by `name` — a
+  /// Grouped from the 37 captured model cards in `Tests/Fixtures/Patra/modelcards.json` by `name` — a
   /// Patra card is a (name, version) pair, not a distinct model (see `SyncPatraCatalog`).
   /// 23 distinct names result; `MegaDetector for Wildlife Detection` alone is 11 of the 37 cards.
   private static let modelResources: [ResourceSpec] = [
@@ -279,7 +279,7 @@ struct PatraCatalogAugust2026: AsyncMigration {
       ]),
   ]
 
-  /// The 6 captured datasheets in `data/patra-datasheets.json`, each with a distinct `title` —
+  /// The 6 captured datasheets in `Tests/Fixtures/Patra/datasheets.json`, each with a distinct `title` —
   /// unlike model cards, no datasheet repeats a title under a different version.
   private static let datasetResources: [ResourceSpec] = [
     ResourceSpec(

@@ -35,3 +35,6 @@ personal-notes/
 
 # Server and dashboard staged by CI for the Dockerfile's `prebuilt` target. Never committed.
 .ci-staging/
+
+# Database dumps. This repository is public and a production dump carries real account data.
+*.sql

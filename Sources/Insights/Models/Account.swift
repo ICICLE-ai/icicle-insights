@@ -5,9 +5,9 @@ import struct Foundation.UUID
 
 /// A hosting provider that owns accounts and determines resource collection routing.
 enum Platform: String, Codable, CaseIterable {
-  // Append order, not alphabetical: `composition-chart.ts:125` colours by
-  // `PLATFORM_ORDER.indexOf`, so inserting a new case mid-array recolours every platform after
-  // it. A new platform always goes last.
+  // Declaration order carries no meaning. The dashboard gives each platform a fixed colour slot by
+  // name (`PLATFORMS` in `web/src/lib/format.ts`), so a new case can go anywhere; it also needs a
+  // slot there and a migration adding it to the `platform` enum.
   case github, ghcr, huggingface, npm, pypi, patra
 
   /// Longest cadence the API accepts for this platform.
