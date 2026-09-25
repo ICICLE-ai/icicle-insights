@@ -33,8 +33,14 @@ After changing a route or a DTO on the server, regenerate the TypeScript types f
 
 ```bash
 just run           # in one terminal
-just web-types     # in another; writes web/src/lib/api/schema.d.ts
+just web-types     # in another; writes and formats web/src/lib/api/schema.d.ts
 ```
+
+`just run` needs a current staging `TAPIS_TOKEN`. A development boot reads the vault keyset and exits
+if that read answers 401.
+
+Route order in the OpenAPI document changes between runs, so the file's line diff is noisy. Review
+the change by its path and schema names instead.
 
 Screens import types from `$lib/api/types`, which re-exports the generated schema.
 
