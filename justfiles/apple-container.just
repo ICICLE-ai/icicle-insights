@@ -239,7 +239,7 @@ stack-test: (up)
         --env VAPOR_ENV=testing \
         --env-file .env \
         --env SWIFT_BUILD_PATH=/build/.build-container \
-        swift:6.3-noble \
+        swift:6.4-noble \
         swift test --no-parallel --scratch-path /build/.build-container
 
 # ---------------------------------------------------------------------------

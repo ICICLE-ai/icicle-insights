@@ -36,7 +36,9 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    container: swift:6.3-noble
+    # The Swift image is written once, here, and the `build` job reuses it through the anchor, so a
+    # Dependabot bump changes both jobs in one edit. It should match the Dockerfile's `build` stage.
+    container: &swift-image swift:6.4-noble
 
     services:
       # The suite always targets the `test` database — configure.swift hardcodes it for
@@ -85,18 +87,32 @@ jobs:
       - name: Install cache compressor
         run: apt-get -q update && apt-get -q install -y zstd
 
+      # The compiler in this container goes into every cache key below. A `.build` made by one
+      # Swift version is useless to another, and restoring it through the fallback keys costs the
+      # download and can fail with modules "compiled by a different version of the compiler". Read
+      # from the toolchain itself rather than the image tag, so a bump needs no edit here.
+      - name: Read toolchain version
+        id: toolchain
+        # Fails rather than writing an empty version, which would quietly share one key across
+        # toolchains again.
+        run: |
+          version="$(swift --version 2>&1 | sed -nE 's/.*Swift version ([0-9][0-9.]*).*/\1/p' | head -1)"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       # Keyed on the sources so an unchanged tree reuses its exact entry, and falling back through
       # the prefixes so any change still starts from the nearest previous build rather than cold.
-      # A new Package.resolved drops to the last prefix, and SwiftPM rebuilds only what moved.
+      # A new Package.resolved drops to the last prefix, and SwiftPM rebuilds only what moved. No
+      # prefix drops the toolchain: a new Swift version starts cold.
       - name: Restore build cache
         id: cache
         uses: actions/cache/restore@v4
         with:
           path: .build
-          key: swift-debug-${{ runner.os }}-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Sources/**', 'Tests/**') }}
+          key: swift-debug-${{ runner.os }}-${{ steps.toolchain.outputs.version }}-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Sources/**', 'Tests/**') }}
           restore-keys: |
-            swift-debug-${{ runner.os }}-${{ hashFiles('Package.resolved') }}-
-            swift-debug-${{ runner.os }}-
+            swift-debug-${{ runner.os }}-${{ steps.toolchain.outputs.version }}-${{ hashFiles('Package.resolved') }}-
+            swift-debug-${{ runner.os }}-${{ steps.toolchain.outputs.version }}-
 
       - name: Build
         run: swift build --build-tests
@@ -118,15 +134,28 @@ jobs:
 
   build:
     runs-on: ubuntu-24.04
-    # The same image the Dockerfile's `build` stage uses, so this binary is the one a source build
-    # would produce, and it links against the same Ubuntu the runtime image is based on.
-    container: swift:6.3-noble
+    # The same image as `test`, and as the Dockerfile's `build` stage, so this binary is the one a
+    # source build would produce, and it links against the same Ubuntu the runtime image is based on.
+    container: *swift-image
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install build dependencies
         run: apt-get -q update && apt-get -q install -y libjemalloc-dev zstd
+
+      # The compiler in this container goes into every cache key below. A `.build` made by one
+      # Swift version is useless to another, and restoring it through the fallback keys costs the
+      # download and can fail with modules "compiled by a different version of the compiler". Read
+      # from the toolchain itself rather than the image tag, so a bump needs no edit here.
+      - name: Read toolchain version
+        id: toolchain
+        # Fails rather than writing an empty version, which would quietly share one key across
+        # toolchains again.
+        run: |
+          version="$(swift --version 2>&1 | sed -nE 's/.*Swift version ([0-9][0-9.]*).*/\1/p' | head -1)"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # A separate cache from `test`: release and debug share no build products, and one entry
       # holding both would be restored whole by each job.
@@ -135,10 +164,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .build
-          key: swift-release-${{ runner.os }}-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Sources/**') }}
+          key: swift-release-${{ runner.os }}-${{ steps.toolchain.outputs.version }}-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Sources/**') }}
           restore-keys: |
-            swift-release-${{ runner.os }}-${{ hashFiles('Package.resolved') }}-
-            swift-release-${{ runner.os }}-
+            swift-release-${{ runner.os }}-${{ steps.toolchain.outputs.version }}-${{ hashFiles('Package.resolved') }}-
+            swift-release-${{ runner.os }}-${{ steps.toolchain.outputs.version }}-
 
       # Flags match the Dockerfile's `build` stage exactly. N.B.: the static version of jemalloc is
       # incompatible with the static Swift runtime.
