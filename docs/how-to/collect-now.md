@@ -1,9 +1,19 @@
 # Collect now
 
-How to run a collection sweep immediately instead of waiting for the schedule. For administrators
-with access to the deployment, and developers on a local stack.
+How to collect one resource, or run a collection sweep, without waiting for the schedule. For
+administrators, and developers on a local stack.
 
-Each command below only queues work. A `queues` worker must be running to do it.
+Every option below only queues work. A `queues` worker must be running to do it.
+
+## Collect one resource from the console
+
+1. Sign in at `/admin` and open **Resources**.
+2. Open the **⋯** menu on the resource's row and choose **Collect now**.
+3. Check for *Collection queued for …*. The row's **Next collection** moves one cadence ahead.
+
+That date is the lease a sweep books, so the next sweep does not queue it twice. See
+[How collection works](../explanation/how-collection-works.md). The item is blocked with *npm is not
+collected*, *PyPI is not collected* or *Its account has been deleted*.
 
 ## Sweep resources that are due
 
@@ -32,16 +42,8 @@ this `collect-all-now`, and so does the Apple Container stack.
 npm and PyPI resources are never collected, on purpose, whatever **Next collection** says for them.
 
 Any other resource whose **Next collection** is *Not scheduled* is skipped by every sweep, except
-`collect-resources --force`. To book just that one, set its date in the database. Its id is the
-last part of its dashboard address, `/resources/{id}`.
-
-```sql
-UPDATE resources
-SET next_collection_at = now()
-WHERE id = 'the-resource-id';
-```
-
-Then run `collect-resources`, or wait for the next hourly sweep.
+`collect-resources --force`. Choose **Collect now** on its row. That queues it and books its next
+date, so later sweeps pick it up.
 
 ## Other sweeps
 

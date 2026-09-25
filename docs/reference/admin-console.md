@@ -45,6 +45,7 @@ The token is held in memory only. Reloading the page forgets it unless TapisUI s
 | Control | Fields or effect |
 |---|---|
 | **Add resource** | **Account**, **Name** (as in its URL, stored lowercase), **Kind**, **Collect every (days)**. Collected right away, then on the cadence. Disabled until an account exists |
+| **Collect now** | Queues one collection at once and shows *Collection queued for …*. **Next collection** moves one cadence ahead. Blocked with *npm is not collected*, *PyPI is not collected*, or *Its account has been deleted* on a row whose **Account** reads *Unknown* |
 | **Edit** | **Name**, **Kind**, **Collect every (days)**. Moving to another account means deleting and re-adding |
 | **Delete resource** | Collection stops and it leaves the dashboard. History stays in the database |
 

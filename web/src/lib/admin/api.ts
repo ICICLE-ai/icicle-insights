@@ -62,6 +62,10 @@ export const adminApi = {
 		body: { name?: string; type?: ResourceType; collectionIntervalDays?: number }
 	) => writes(api<Resource>(`/resources/${id}`, { method: 'PATCH', body })),
 	deleteResource: (id: string) => writes(api<void>(`/resources/${id}`, { method: 'DELETE' })),
+	// Only queues the job. The resource that comes back has its next collection booked a cadence
+	// out, which the public resource page shows, hence `writes`.
+	collectResource: (id: string) =>
+		writes(api<Resource>(`/resources/${id}/collect`, { method: 'POST' })),
 
 	createRelease: (body: { resourceID: string; version: string; month: number; year: number }) =>
 		writes(api<Release>('/releases', { method: 'POST', body })),

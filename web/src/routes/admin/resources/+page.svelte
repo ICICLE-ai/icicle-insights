@@ -12,6 +12,8 @@
 	import LoadError from '$lib/components/load-error.svelte';
 	import PlatformDot from '$lib/components/platform-dot.svelte';
 	import { adminApi, MAX_CADENCE_DAYS } from '$lib/admin/api';
+	import { collectBlockedReason } from '$lib/admin/collect';
+	import { ApiError } from '$lib/api/client';
 	import type { Account, Resource, ResourceType } from '$lib/api/types';
 	import { formatRelative, KIND_LABELS, kindLabel, pluralize } from '$lib/format';
 	import { query } from '$lib/query.svelte';
@@ -82,6 +84,22 @@
 
 	let deleting = $state<Resource | null>(null);
 	let confirmOpen = $state(false);
+
+	/**
+	 * Queues one collection now. No confirmation, unlike delete: nothing is lost by it, and a second
+	 * job for the same resource is safe because collectors are built to run twice.
+	 *
+	 * The refresh shows the lease the server booked, so **Next collection** moves a cadence out.
+	 */
+	async function collect(resource: Resource) {
+		try {
+			await adminApi.collectResource(resource.id!);
+			toast.success(`Collection queued for ${resource.name}`);
+			data.refresh();
+		} catch (e) {
+			toast.error(e instanceof ApiError ? e.reason : 'The collection could not be queued.');
+		}
+	}
 </script>
 
 <div class="flex flex-col gap-5">
@@ -154,6 +172,11 @@
 								<RowActions
 									label={resource.name ?? 'resource'}
 									actions={[
+										{
+											label: 'Collect now',
+											blockedBecause: collectBlockedReason(owner),
+											onselect: () => collect(resource)
+										},
 										{ label: 'Edit', onselect: () => openEdit(resource) },
 										{
 											label: 'Delete resource',

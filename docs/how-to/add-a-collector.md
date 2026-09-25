@@ -27,8 +27,9 @@ deliberately left uncollected; see [Metrics](../reference/metrics.md).
    - `Metric.foldDailyIntoAllTime` for per-day windows that must be summed by Insights
    - `resource.recordSuccessfulCollection(on: db)` last
 6. **Register the job** in `configure.swift` with `app.queues.add(SyncExampleStats())`.
-7. **Route to it** in `SyncDispatch.swift`. A platform that is not listed yet also needs a
-   `Platform` case, added last, and a migration that extends the `platform` enum.
+7. **Route to it** in `SyncDispatch.swift`, and make `Platform.hasCollector` true for it. The sweep
+   and **Collect now** both skip a platform where it is false. A platform that is not listed yet
+   also needs a `Platform` case, added last, and a migration that extends the `platform` enum.
 8. **Check the limits** in `Platform` (`Models/Account.swift`): `maxCollectionIntervalDays` and
    `retentionWindowDays`. A platform that drops daily data needs a cadence well inside its window.
 9. **Use a stored token only if the data is private.** GHCR and Patra read public pages without
@@ -44,6 +45,8 @@ deliberately left uncollected; see [Metrics](../reference/metrics.md).
 ## Docs and dashboard
 
 - Update the platform rows in [Metrics](../reference/metrics.md).
+- Set the platform to `true` in `HAS_COLLECTOR` in `web/src/lib/admin/collect.ts`, or the console
+  keeps **Collect now** blocked for it.
 - If you added a `MetricType`, add its label and kind to `METRICS` in `web/src/lib/format.ts` and
   regenerate the API types. See [Develop the dashboard](develop-the-dashboard.md).
 

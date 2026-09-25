@@ -40,7 +40,6 @@ and no failures are recorded.
 | Row menus | After closing a sheet or menu with Escape, the next click on a trigger was sometimes ignored |
 | **Add resource** for npm or PyPI | The resource is booked and dispatched weekly, and the dispatcher skips it. The console shows a **Next collection** that never collects anything |
 | **Vaults** | Nothing warns before a platform token expires, unlike service tokens and `TAPIS_TOKEN`. Both current tokens expire 2027-08-24 |
-| Console | No way to collect one resource now; only the command line can |
 
 ## Code and repository
 

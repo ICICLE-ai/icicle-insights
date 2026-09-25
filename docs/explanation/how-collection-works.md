@@ -11,7 +11,8 @@ cadence ahead.
 
 That early move is a lease, not a promise. It stops the next hourly sweep from queuing the same
 resource while the first job is still running. When the job succeeds, the date is booked again from
-the moment of success, so the cadence follows real collections rather than attempts.
+the moment of success, so the cadence follows real collections rather than attempts. Adding a
+resource and **Collect now** in the admin console book the same lease when they queue a job.
 
 A resource with no date at all is never swept, because the sweep looks for dates in the past. The
 API gives every new resource a date. Rows created any other way, such as by a seed migration, must do
@@ -60,7 +61,8 @@ Job delivery is at least once, so every collector must be safe to repeat. Each o
 everything first, then writes all of it in one database transaction, success booking included. A
 failure halfway through rolls back every row, and the retry starts clean.
 
-Two workers can still collect the same resource at once, for example after a manual sweep.
+Two workers can still collect the same resource at once, for example after a manual sweep or
+**Collect now** on a resource whose job is already running.
 Lifetime totals are guarded by a PostgreSQL advisory lock per resource and metric, so the two
 serialise instead of racing.
 
