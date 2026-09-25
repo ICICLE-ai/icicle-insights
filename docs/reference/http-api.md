@@ -43,6 +43,7 @@ range may span at most 731 days.
 | GET | `/api/resources/{id}` | Public | |
 | PATCH | `/api/resources/{id}` | Admin | `name`, `type`, `collectionIntervalDays` |
 | DELETE | `/api/resources/{id}` | Admin | Soft delete; history is kept |
+| POST | `/api/resources/{id}/collect` | Admin | Queues a collection now and books the next one a cadence ahead. `202` with the resource. `409` for npm, PyPI or a deleted account. `503` if the queue refuses the job |
 | GET | `/api/releases` | Public | |
 | POST | `/api/releases` | Admin | `resourceID`, `version`, `month`, `year` (1970–2100) |
 | GET | `/api/releases/{id}` | Public | |
