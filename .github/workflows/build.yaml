@@ -78,7 +78,7 @@ jobs:
       ROOT_ADMIN_USERNAME: ci-root-admin
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The Swift image has no zstd, and without it the cache archive falls back to gzip, which
       # is several times slower to pack and unpack at this size.
@@ -90,7 +90,7 @@ jobs:
       # A new Package.resolved drops to the last prefix, and SwiftPM rebuilds only what moved.
       - name: Restore build cache
         id: cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .build
           key: swift-debug-${{ runner.os }}-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Sources/**', 'Tests/**') }}
@@ -106,7 +106,7 @@ jobs:
       # and the fix's run would start cold.
       - name: Save build cache
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .build
           key: ${{ steps.cache.outputs.cache-primary-key }}
@@ -123,7 +123,7 @@ jobs:
     container: swift:6.3-noble
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install build dependencies
         run: apt-get -q update && apt-get -q install -y libjemalloc-dev zstd
@@ -132,7 +132,7 @@ jobs:
       # holding both would be restored whole by each job.
       - name: Restore build cache
         id: cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .build
           key: swift-release-${{ runner.os }}-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Sources/**') }}
@@ -151,7 +151,7 @@ jobs:
 
       - name: Save build cache
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .build
           key: ${{ steps.cache.outputs.cache-primary-key }}
@@ -167,7 +167,7 @@ jobs:
           cp /usr/libexec/swift/linux/swift-backtrace-static staging/
           tar -cf server.tar -C staging .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: server
           path: server.tar
@@ -180,7 +180,7 @@ jobs:
         working-directory: web
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The same Deno the Dockerfile's `frontend-build` stage uses. `cache` keeps Deno's download
       # cache between runs, keyed on deno.lock.
@@ -202,7 +202,7 @@ jobs:
       - name: Package
         run: tar -cf ../web.tar -C build .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: web
           path: web.tar
@@ -215,10 +215,10 @@ jobs:
     needs: [test, build, web]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No name, so both of this run's artifacts land side by side in one directory.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
@@ -234,11 +234,11 @@ jobs:
           test -f .ci-staging/Public/index.html
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ secrets.REGISTRY_USERNAME }}
@@ -246,7 +246,7 @@ jobs:
 
       # `prebuilt` copies the staged files onto the shared runtime base; nothing compiles here.
       - name: Build and push image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: prebuilt
@@ -265,7 +265,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: server
 
@@ -282,6 +282,6 @@ jobs:
         run: tar -czf icicle-insights-linux-amd64.tar.gz icicle-insights
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: icicle-insights-linux-amd64.tar.gz
