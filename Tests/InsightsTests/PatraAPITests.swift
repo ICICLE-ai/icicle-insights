@@ -136,7 +136,7 @@ struct PatraAPITests {
 struct PatraAPITimestampsTests {
   @Test
   func `Parses a real Patra value with a colon-separated UTC offset`() throws {
-    // Taken verbatim from the live API via `data/patra-modelcards.json`. Patra's own `updated_at`
+    // Taken verbatim from the live API via `Tests/Fixtures/Patra/modelcards.json`. Patra's own `updated_at`
     // always ends `+00:00` — an offset with a colon — never `Z`, which is the shape the formatter
     // most obviously supports at a glance. `ISO8601DateFormatter`'s `.withInternetDateTime`
     // already parses a colon-separated offset without needing `.withColonSeparatorInTimeZone`
@@ -168,8 +168,8 @@ struct PatraAPITimestampsTests {
       .deletingLastPathComponent()  // InsightsTests
       .deletingLastPathComponent()  // Tests
     let fixtures = [
-      "data/patra-modelcards.json",
-      "data/patra-datasheets.json",
+      "Tests/Fixtures/Patra/modelcards.json",
+      "Tests/Fixtures/Patra/datasheets.json",
     ]
 
     struct RawCatalogEntry: Decodable {
