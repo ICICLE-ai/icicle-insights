@@ -36,7 +36,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    container: swift:6.3-noble
+    container: swift:6.4-noble
 
     services:
       # The suite always targets the `test` database — configure.swift hardcodes it for
