@@ -10,6 +10,12 @@ import XCTQueues
 
 @testable import Insights
 
+#if canImport(Glibc)
+  import Glibc
+#elseif canImport(Darwin)
+  import Darwin
+#endif
+
 // MARK: - Fixtures
 
 /// A password that must never appear in an argument list, an alert, or a log line.
@@ -675,7 +681,7 @@ struct BackupConfigurationTests {
 /// Runs `sh` and `sleep`, which both the macOS host and CI's Swift image have, to prove the
 /// runner reports what the backup code relies on: the exit status, standard error, and a stop
 /// on timeout.
-@Suite("Foundation process runner")
+@Suite("Foundation process runner", .serialized)
 struct FoundationProcessRunnerTests {
   private let environment = ["PATH": "/usr/bin:/bin"]
 
@@ -701,6 +707,27 @@ struct FoundationProcessRunnerTests {
 
   @Test
   func `A process past its timeout is stopped and reported as timed out`() async throws {
+    let started = ContinuousClock.now
+    let outcome = try await FoundationProcessRunner().run(
+      "sleep", arguments: ["30"], environment: environment, timeout: .milliseconds(300))
+
+    #expect(outcome.timedOut)
+    #expect(outcome.exitCode != 0)
+    #expect(ContinuousClock.now - started < .seconds(10))
+  }
+
+  /// The worker runs with SIGTERM ignored, because `QueuesCommand` takes over that signal to drain
+  /// on shutdown, and a child inherits an ignored signal. `Process.terminate()` sends SIGTERM, so
+  /// under these conditions it stopped nothing and a hung `pg_dump` ran on forever. The timeout
+  /// has to stop the child anyway.
+  ///
+  /// Serialized with its suite, and the disposition restored, because a signal disposition is
+  /// process-wide.
+  @Test
+  func `A timeout stops the process even when SIGTERM is ignored, as in the worker`() async throws {
+    let previous = signal(SIGTERM, SIG_IGN)
+    defer { signal(SIGTERM, previous) }
+
     let started = ContinuousClock.now
     let outcome = try await FoundationProcessRunner().run(
       "sleep", arguments: ["30"], environment: environment, timeout: .milliseconds(300))
