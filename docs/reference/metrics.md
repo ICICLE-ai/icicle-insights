@@ -73,6 +73,7 @@ The scheduler process runs these on the container clock, which is UTC unless `TZ
 |---|---|---|
 | `CollectDueResources` | Hourly, on the hour | Queues a sync for every resource whose next collection is due |
 | `CollectAccountStats` | Monthly, the 1st at 03:00 | Queues a follower sync for every GitHub account |
+| `ScheduleDatabaseBackup` | Daily at 02:00 | Queues a database backup, when `BACKUP_S3_BUCKET` is set |
 | `CollectPatraCatalog` | Daily at 04:00 | Queues discovery of new or changed Patra cards |
 | `WarnExpiringServiceTokens` | Daily at 07:00 | Alerts at 14, 7, 3 and 1 days before a service token expires |
 | `WarnExpiringTapisToken` | Daily at 07:00 | Alerts at 7, 3, 1 and 0 days before `TAPIS_TOKEN` expires |
@@ -88,6 +89,9 @@ The sync jobs run on the `metrics` queue:
 | `SyncPatraDeployments` | Patra resources |
 | `SyncGHCRStats` | GHCR containers |
 
+`BackupDatabase` also runs there. It dumps the database and uploads it; see
+[Set up database backups](../how-to/set-up-database-backups.md).
+
 ## Retries and re-booking
 
 | Situation | What happens |
@@ -97,6 +101,7 @@ The sync jobs run on the `metrics` queue:
 | Retries exhausted, anything else | Alerted as a warning, re-booked after a quarter of its overdue time, between 1 and 12 hours |
 | GitHub gap passes 14 days | One extra alert saying days were lost |
 | Same alert within 6 hours | Logged and stored, but not sent again |
+| A backup throws | Retried after 30 seconds, then 2 minutes. Then alerted as a warning, `backup_failed`, and tried again the next night |
 
 Error identifiers are listed in [Collection failures](collection-failures.md).
 

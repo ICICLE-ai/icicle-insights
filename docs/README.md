@@ -39,6 +39,8 @@ do. Each is written for a reader, an administrator or a developer.
 | [Deploy Insights](how-to/deploy-insights.md) | Administrator, Developer |
 | [Renew the Tapis service token](how-to/renew-the-tapis-token.md) | Administrator |
 | [Collect now](how-to/collect-now.md) | Administrator, Developer |
+| [Set up database backups](how-to/set-up-database-backups.md) | Administrator |
+| [Restore a database backup](how-to/restore-a-database-backup.md) | Administrator |
 | [Embed the dashboard in TapisUI](how-to/embed-in-tapisui.md) | Administrator |
 
 ### Changing the code

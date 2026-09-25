@@ -26,6 +26,15 @@ Failures reading the credential from Tapis Vault have their own identifiers:
 | `tapis_invalid_response` | Tapis answered with something unreadable | Warning | 1 to 12 hours |
 | `unknown` | Anything else | Warning | 1 to 12 hours |
 
+A nightly database backup that fails has one identifier of its own:
+
+| Identifier | Meaning | Severity | Tried again |
+|---|---|---|---|
+| `backup_failed` | The backup did not reach the bucket. The alert says which step failed and why | Warning | The next night, at 02:00 |
+
+`pg_dump`'s own message goes to the worker's log, never to the alert, because it can quote
+connection details.
+
 **Critical** means someone has to act, usually by replacing a token. Everything else may clear on its
 own.
 

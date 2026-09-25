@@ -84,19 +84,29 @@ func configure(_ app: Application) async throws {
     default: Environment.get("DATABASE_NAME") ?? "vapor_database"
     }
 
+  // Read once and bound to names, because the database backup's `pg_dump` connects with the same
+  // values as the pool. Reading the environment a second time elsewhere is how a backup would end
+  // up dumping a different database, with its own copy of the defaults.
+  let databaseHost = Environment.get("DATABASE_HOST") ?? "localhost"
+  let databasePort =
+    Environment.get("DATABASE_PORT").flatMap(Int.init(_:))
+    ?? SQLPostgresConfiguration.ianaPortNumber
+  let databaseUsername = Environment.get("DATABASE_USERNAME") ?? "vapor_username"
+  let databasePassword = Environment.get("DATABASE_PASSWORD") ?? "vapor_password"
+  let databaseRequiresTLS = Environment.get("DATABASE_TLS") != "disable"
+
   // Bound to a name rather than built inline because two things need it: the pool below, and the
   // single connection `migrate-locked` dials for its advisory lock. Sharing the value is what stops
   // the lock connection drifting from the database everything else talks to.
   let postgresConfiguration = try SQLPostgresConfiguration(
-    hostname: Environment.get("DATABASE_HOST") ?? "localhost",
-    port: Environment.get("DATABASE_PORT").flatMap(Int.init(_:))
-      ?? SQLPostgresConfiguration.ianaPortNumber,
-    username: Environment.get("DATABASE_USERNAME") ?? "vapor_username",
-    password: Environment.get("DATABASE_PASSWORD") ?? "vapor_password",
+    hostname: databaseHost,
+    port: databasePort,
+    username: databaseUsername,
+    password: databasePassword,
     database: databaseName,
-    tls: Environment.get("DATABASE_TLS") == "disable"
-      ? .disable
-      : .require(.init(configuration: tlsConfiguration)),
+    tls: databaseRequiresTLS
+      ? .require(.init(configuration: tlsConfiguration))
+      : .disable,
   )
 
   // Idle pruning is off by default — `pruneInterval` defaults to nil — and that default is wrong
@@ -301,6 +311,41 @@ func configure(_ app: Application) async throws {
     metadata: ["channel": .string(app.notifier is SlackNotifier ? "slack" : "log only")]
   )
 
+  // Optional like alerting: no bucket, no backups, and one line at boot saying so. A bucket with
+  // any other setting missing throws here instead, so a half-configured backup fails the deploy
+  // rather than every night at 02:00. See `BackupStorage.fromEnvironment`.
+  //
+  // The worker and the scheduler both need these: the scheduler decides whether to queue a
+  // backup, the worker takes it. The credentials themselves are never logged, only where they
+  // point.
+  if let storage = try BackupStorage.fromEnvironment() {
+    app.databaseBackup = DatabaseBackup(
+      target: PostgresDumpTarget(
+        host: databaseHost,
+        port: databasePort,
+        username: databaseUsername,
+        password: Secret(databasePassword),
+        database: databaseName,
+        requireTLS: databaseRequiresTLS,
+      ),
+      storage: storage,
+      runner: FoundationProcessRunner(),
+    )
+    app.logger.notice(
+      "Database backups configured.",
+      metadata: [
+        "endpoint": .string("\(storage.endpoint.scheme)://\(storage.endpoint.authority)"),
+        "region": .string(storage.region),
+        "bucket": .string(storage.bucket),
+        "prefix": .string(storage.prefix),
+        "path_style": .stringConvertible(storage.pathStyle),
+        "sse": .stringConvertible(storage.serverSideEncryption),
+      ]
+    )
+  } else {
+    app.logger.notice("BACKUP_S3_BUCKET is unset; database backups are disabled.")
+  }
+
   // Encode/decode JSON dates as ISO8601 so clients (e.g. the dashboard chart) can parse them.
   let jsonEncoder = JSONEncoder()
   jsonEncoder.dateEncodingStrategy = .iso8601
@@ -326,6 +371,10 @@ func configure(_ app: Application) async throws {
   app.queues.add(syncPatraDeployments)
   app.queues.add(syncGHCRStats)
 
+  // Registered even when backups are disabled, so a worker started without the bucket can still
+  // decode a backup the scheduler queued and report the mismatch, rather than failing to decode.
+  app.queues.add(BackupDatabase())
+
   // Run by the `--scheduled` worker. These only enqueue; the jobs run on the `metrics` queue,
   // so a slow sync never delays the next sweep.
   app.queues.schedule(CollectDueResources()).hourly().at(0)
@@ -345,11 +394,22 @@ func configure(_ app: Application) async throws {
   // depends on at once.
   app.queues.schedule(WarnExpiringTapisToken()).daily().at(7, 0)
 
+  // 02:00 UTC, evening in the US and apart from the other daily jobs at 04:00 and 07:00. It shares
+  // the minute with the hourly sweep, which is harmless: pg_dump reads one consistent snapshot and
+  // takes only the share locks ordinary writes never conflict with, so a reading written mid-dump
+  // simply lands in the next night's backup. Queues nothing when backups are disabled. Retention
+  // is the bucket's lifecycle rule, not code; see `DatabaseBackup`.
+  app.queues.schedule(ScheduleDatabaseBackup()).daily().at(2, 0)
+
   // One-shot equivalents for local testing and operator-initiated backfills. They invoke the
   // same scheduled job types without changing or waiting for the production clocks above.
   app.asyncCommands.use(CollectResourcesNowCommand(), as: "collect-resources")
   app.asyncCommands.use(CollectAccountsNowCommand(), as: "collect-accounts")
   app.asyncCommands.use(CollectPatraCatalogNowCommand(), as: "collect-patra-catalog")
+
+  // Unlike the three above it runs the work inline rather than queueing it, so it doubles as a
+  // check of the backup configuration. See `BackupDatabaseCommand`.
+  app.asyncCommands.use(BackupDatabaseCommand(), as: "backup-database")
 
   // Credential minting stays off the HTTP surface — see `ServiceTokenCommand`.
   app.asyncCommands.use(ServiceTokenCommand(), as: "service-token")

@@ -97,8 +97,8 @@
 			<Card.Header>
 				<Card.Title>Recent failures</Card.Title>
 				<Card.Description>
-					Collections that exhausted their retries, newest first. Critical ones need a person,
-					usually a token.
+					Collections and backups that exhausted their retries, newest first. Critical ones need a
+					person, usually a token.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>

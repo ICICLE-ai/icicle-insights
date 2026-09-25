@@ -42,6 +42,14 @@ date, because the sweep books that date when it queues the job.
 Credentials live in neither. Platform tokens and the service-token signing keys are stored in
 Tapis Vault and read when needed.
 
+## Backups
+
+When `BACKUP_S3_BUCKET` is set, the scheduler queues a backup at 02:00 UTC. A worker runs `pg_dump`
+and uploads the archive to S3-compatible storage in one signed request. It runs inside the app
+rather than in a backup container of its own. Tapis Pods offers no cron we know of, a separate pod
+is one more thing to deploy, and this way a failure alerts like a failed collection. The bucket's
+lifecycle rule deletes old backups, so the deployment's key only ever needs to write.
+
 ## What a request goes through
 
 Every response gets a request ID, security headers and, when configured, CORS headers. Static
@@ -79,8 +87,9 @@ the process at boot rather than half-starting it.
 | `Models/`, `Migrations/`, `DTOs/` | Database models, schema changes, request and response shapes |
 | `Queues/Collectors/` | One sync job per platform |
 | `Queues/Scheduled/` | The scheduler's jobs |
+| `Queues/Backups/` | The database backup job |
 | `Queues/Support/` | Retry, backoff, failure reporting, alert deduplication |
-| `Services/` | Tapis, secrets, notifications, service tokens, Patra and GHCR parsing |
+| `Services/` | Tapis, secrets, notifications, service tokens, Patra and GHCR parsing, backups |
 | `Commands/` | Command-line tools |
 | `web/` | The SvelteKit dashboard |
 | `Tests/InsightsTests/` | The server test suite |
