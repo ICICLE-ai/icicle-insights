@@ -3,7 +3,8 @@ import Queues
 import Vapor
 import VaporToOpenAPI
 
-/// Serves resource catalog endpoints and dispatches collection when a resource is created.
+/// Serves resource catalog endpoints and dispatches collection when a resource is created or an
+/// administrator asks for one.
 struct ResourceController: RouteCollection {
   /// Mounts resource routes under `/resources`.
   func boot(routes: any RoutesBuilder) throws {
@@ -44,6 +45,14 @@ struct ResourceController: RouteCollection {
           tags: "Resources",
           summary: "Delete resource",
           statusCode: 204,
+          auth: .bearer(),
+        )
+      resource.grouped(Require.admin).post("collect", use: collect)
+        .openAPI(
+          tags: "Resources",
+          summary: "Collect resource now",
+          response: .type(Resource.Public.self),
+          statusCode: 202,
           auth: .bearer(),
         )
     }
@@ -235,5 +244,97 @@ struct ResourceController: RouteCollection {
 
     try await resource.delete(on: req.db)
     return .noContent
+  }
+
+  @Sendable
+  /// Queues a collection for one resource now, instead of at its due date.
+  ///
+  /// For an administrator who has just repaired a token or shipped a collector fix and wants to
+  /// see it work. Before this, the choices were waiting for the due date or running
+  /// `collect-resources --force`, which re-books every resource from now and shifts the whole
+  /// schedule to fix one row.
+  ///
+  /// Dispatched exactly as `CollectDueResources` dispatches, retry budget included, then booked as
+  /// the same lease. The lease stops the next hourly sweep from queuing a second job while this
+  /// one runs. It cannot bury a broken resource, because the job replaces it when it settles:
+  /// from the moment of success, or on the capped backoff after its retries run out.
+  ///
+  /// - Returns: 202 with the resource's public form, its new lease in `nextCollectionAt`.
+  /// - Throws: 404 for an unknown resource. 409 when its account is deleted or its platform is
+  ///   not collected. 503 when the queue refuses the job, with the due date left as it was.
+  func collect(req: Request) async throws -> Response {
+    guard let resourceID = req.parameters.get("resourceID", as: UUID.self) else {
+      throw Abort(.notFound)
+    }
+
+    // `withDeleted: true` on the account, as in the sweep. A plain eager load throws
+    // `missingParent` for a soft-deleted account, which would answer 500 instead of saying why.
+    guard
+      let resource = try await Resource.query(on: req.db)
+        .filter(\.$id == resourceID)
+        .with(\.$account, withDeleted: true)
+        .first()
+    else {
+      throw Abort(.notFound)
+    }
+
+    // Refused, not queued. The job would find the account deleted, skip the resource and write
+    // nothing, so a 202 would promise a collection that cannot happen. The sweep leaves these due
+    // for the same reason; this leaves the due date alone too.
+    guard !resource.accountIsDeleted else {
+      throw Abort(
+        .conflict,
+        reason:
+          "This resource's account has been deleted, so it cannot be collected. "
+          + "Restore the account or delete the resource.",
+      )
+    }
+
+    // `dispatchSync` skips these without an error, which suits a sweep and not a request: the
+    // caller would get a 202 for a job that was never queued.
+    let platform = resource.account.platform
+    guard platform.hasCollector else {
+      throw Abort(
+        .conflict,
+        reason:
+          "Resources on \(platform.rawValue) are not collected, so there is nothing to queue.",
+      )
+    }
+
+    // One instant for the dispatch and the booking, as in the sweep.
+    let now = Date()
+
+    // Thrown, unlike the same failure in `create`. There the row was already committed and due,
+    // so the resource existed whatever the queue said. Here the dispatch is the whole request.
+    // The lease is booked only after it succeeds, so a failure leaves the due date as it was.
+    do {
+      try await req.queues(.metrics).dispatchSync(
+        for: resource,
+        platform: platform,
+        logger: req.logger,
+      )
+    } catch {
+      req.logger.report(error: error)
+      throw Abort(
+        .serviceUnavailable,
+        reason: "The job queue did not accept the collection. Nothing was booked; try again.",
+      )
+    }
+
+    resource.scheduleNextCollection(from: now)
+    try await resource.save(on: req.db)
+
+    // At `notice`, because this is the one collection an administrator starts by hand, and the
+    // log is where a job that follows it gets traced back to a person.
+    req.logger.notice(
+      "Collection queued on request",
+      metadata: [
+        "resource": .string(resourceID.uuidString),
+        "platform": .string(platform.rawValue),
+        "administrator": .string(req.auth.get(TapisUser.self)?.username ?? "unknown"),
+      ]
+    )
+
+    return try await resource.toPublic().encodeResponse(status: .accepted, for: req)
   }
 }

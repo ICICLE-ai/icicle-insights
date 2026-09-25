@@ -44,6 +44,22 @@ enum Platform: String, Codable, CaseIterable {
     case .patra: nil
     }
   }
+
+  /// Whether a sync job exists to collect this platform's resources at all.
+  ///
+  /// npm and PyPI are false on purpose, not for want of a collector: their download counts include
+  /// every CI runner, mirror and cache that fetches a package, so they cannot say how many people
+  /// use it. Both stay in the catalog uncollected.
+  ///
+  /// The one place this answer lives. `Queue.dispatchSync` skips on it and the collect-now route
+  /// refuses on it. A second switch in the route could drift from the dispatcher's, and a platform
+  /// the dispatcher skips but the route accepts would answer 202 and queue nothing.
+  var hasCollector: Bool {
+    switch self {
+    case .github, .ghcr, .huggingface, .patra: true
+    case .npm, .pypi: false
+    }
+  }
 }
 
 /// A platform identity that owns resources and optionally references a Tapis Vault secret.
