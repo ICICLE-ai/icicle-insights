@@ -27,10 +27,9 @@ Screens ask for summaries, not raw readings:
 PostgreSQL does the adding up over the whole history. The response size depends on the range, not
 on how much has been collected.
 
-An older path still exists. When the summary endpoint answers 404, the dashboard fetches raw
-readings from `/api/metrics` and adds them up in the browser. That path is capped at 1,000 readings
-per metric, so long histories are cut short. It remains only for deployments older than the summary
-endpoints, and screens never know which path they are using.
+The dashboard once fell back to fetching raw readings from `/api/metrics` and adding them up in the
+browser, for servers older than these endpoints. That path was capped at 1,000 readings per metric,
+so long histories were cut short. It was removed once every deployment served the summaries.
 
 ## State lives in the URL
 

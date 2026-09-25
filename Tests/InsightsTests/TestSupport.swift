@@ -505,7 +505,7 @@ func stubPagedAPI(
 ///
 /// Outside the test target's own directory, so SwiftPM neither warns about an unhandled file nor
 /// needs a `resources:` entry, and read through `#filePath`, as `PatraAPITimestampsTests` reads
-/// `data/`. CI runs the suite from a checkout, so the path resolves there too.
+/// `Fixtures/Patra/`. CI runs the suite from a checkout, so the path resolves there too.
 func ghcrFixture(_ name: String) throws -> String {
   let url = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()  // TestSupport.swift

@@ -53,7 +53,7 @@ export const METRICS: Record<MetricType, MetricInfo> = {
 	}
 };
 
-/** Display order: what people look for first. Also the closed list the legacy fan-out fetches. */
+/** Display order: what people look for first. */
 export const METRIC_ORDER: readonly MetricType[] = [
 	'stars',
 	'forks',

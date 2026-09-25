@@ -30,7 +30,6 @@ DerivedData/
 
 # Development-only files not used by the production image
 assets/
-data/
 docs/
 justfiles/
 docker-compose.yml

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { TriangleAlert } from '@lucide/svelte';
 	import * as Card from '$lib/components/ui/card';
 	import CatalogSummary from '$lib/components/catalog-summary.svelte';
 	import Delta from '$lib/components/delta.svelte';
@@ -27,9 +26,8 @@
 
 	const overview = query(async () => {
 		const current = scope();
-		const [src, catalog] = await Promise.all([source(), loadCatalog()]);
-		const [summary, truncated] = await Promise.all([src.summary(current), src.truncated()]);
-		return { src, catalog, summary, truncated, current };
+		const [catalog, summary] = await Promise.all([loadCatalog(), source.summary(current)]);
+		return { catalog, summary, current };
 	});
 
 	// Tiles for things that change over time lead; lifetime totals follow as a quieter strip,
@@ -52,10 +50,9 @@
 		const metric = selected;
 		const current = scope();
 		if (!metric) return null;
-		const src = await source();
 		const [series, resources] = await Promise.all([
-			src.series(current, metric, 'platform', bucketFor(current)),
-			src.resources(current, { sort: metric, order: 'desc', limit: 500, offset: 0 })
+			source.series(current, metric, 'platform', bucketFor(current)),
+			source.resources(current, { sort: metric, order: 'desc', limit: 500, offset: 0 })
 		]);
 		return { metric, series, resources };
 	});
@@ -91,11 +88,6 @@
 			? scopedResourceIDs(overview.data.catalog, overview.data.current)
 			: new Set<string>()
 	);
-	const truncatedHere = $derived(
-		(overview.data?.truncated ?? []).filter((type) =>
-			overview.data?.summary.tiles.some((t) => t.type === type)
-		)
-	);
 </script>
 
 <svelte:head><title>Overview · ICICLE Insights</title></svelte:head>
@@ -112,9 +104,6 @@
 				{:else}&nbsp;{/if}
 			</p>
 		</div>
-		{#if overview.data?.src.name === 'legacy'}
-			<p class="text-xs text-muted-foreground">Computed in the browser from raw readings</p>
-		{/if}
 	</div>
 
 	{#if overview.error && !overview.data}
@@ -126,22 +115,6 @@
 		<Skeleton class="h-80 rounded-xl" />
 	{:else}
 		<div class="flex flex-col gap-6 transition-opacity {overview.loading ? 'opacity-60' : ''}">
-			{#if truncatedHere.length}
-				<div class="flex items-start gap-3 rounded-xl border bg-card p-4 text-sm" role="note">
-					<TriangleAlert class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-					<p>
-						<span class="font-medium"
-							>Older history is missing for {truncatedHere.map(metricLabel).join(', ')}.</span
-						>
-						<span class="text-muted-foreground">
-							The current API returns at most 1,000 readings per metric, so trends start later than
-							the range you picked. Totals are unaffected. This goes away once the server's summary
-							endpoints are deployed.
-						</span>
-					</p>
-				</div>
-			{/if}
-
 			{#if trending.length === 0 && lifetime.length === 0}
 				<div class="rounded-xl border bg-card p-10 text-center text-sm text-muted-foreground">
 					No readings for these resources yet. Collection runs on each resource's own schedule.

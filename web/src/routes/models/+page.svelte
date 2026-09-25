@@ -25,13 +25,10 @@
 	 */
 	const data = query(async () => {
 		const current = scope();
-		const [src, catalog] = await Promise.all([source(), loadCatalog()]);
-		const page = await src.resources(current, {
-			sort: 'deployments',
-			order: 'desc',
-			limit: 500,
-			offset: 0
-		});
+		const [catalog, page] = await Promise.all([
+			loadCatalog(),
+			source.resources(current, { sort: 'deployments', order: 'desc', limit: 500, offset: 0 })
+		]);
 		return {
 			catalog,
 			rows: new Map(page.rows.map((row) => [row.id.toLowerCase(), row])),
