@@ -20,8 +20,8 @@ finish.
 
 | Job | Runs in | Does |
 |---|---|---|
-| `test` | `swift:6.3-noble`, with PostgreSQL 18 and Valkey 9 services | `swift build --build-tests`, then `swift test --no-parallel` against a `test` database |
-| `build` | `swift:6.3-noble` | Release build of `Insights`, statically linked with jemalloc. Uploads the binary as `server` |
+| `test` | `swift:6.4-noble`, with PostgreSQL 18 and Valkey 9 services | `swift build --build-tests`, then `swift test --no-parallel` against a `test` database |
+| `build` | The same image as `test` | Release build of `Insights`, statically linked with jemalloc. Uploads the binary as `server` |
 | `web` | Ubuntu with Deno 2.9.7 | `deno install --frozen`, `deno task check`, `deno task test`, `deno task build`. Uploads the site as `web` |
 | `image` | Ubuntu with Buildx | Unpacks both artifacts and builds the Dockerfile's `prebuilt` target. Pushes except on pull requests |
 | `release` | Ubuntu | Tags only. Publishes `icicle-insights-linux-amd64.tar.gz` |
@@ -41,13 +41,17 @@ finish.
 
 | Cache | Key | Restores from |
 |---|---|---|
-| Debug `.build` | `swift-debug-<os>-<Package.resolved hash>-<Sources and Tests hash>` | The same resolved packages, then any debug build |
-| Release `.build` | `swift-release-<os>-<Package.resolved hash>-<Sources hash>` | The same resolved packages, then any release build |
+| Debug `.build` | `swift-debug-<os>-<Swift version>-<Package.resolved hash>-<Sources and Tests hash>` | The same resolved packages, then any debug build from the same Swift version |
+| Release `.build` | `swift-release-<os>-<Swift version>-<Package.resolved hash>-<Sources hash>` | The same resolved packages, then any release build from the same Swift version |
 | Deno | `deno.lock` | Managed by `setup-deno` |
 | Docker layers | GitHub Actions cache | `cache-from` and `cache-to` `type=gha` |
 
 Swift caches are saved right after building, before tests run, so a failing test does not throw
 away a good build.
+
+The Swift version is read from `swift --version` inside the job's container, not written in the
+workflow. A new Swift image therefore starts a fresh cache on its own, and never restores a build
+made by another compiler.
 
 ## Image
 
@@ -57,6 +61,16 @@ away a good build.
 | `ghcr.io/icicle-ai/insights:<commit sha>` | That commit |
 
 Pushing needs the repository secrets `REGISTRY_USERNAME` and `REGISTRY_PASSWORD`.
+
+## Swift version
+
+The Swift image is named in three places. Dependabot's weekly `images` update covers the first two.
+
+| Where | How it is written |
+|---|---|
+| `Dockerfile` | `FROM swift:<version>-noble AS build` |
+| `.github/workflows/build.yaml` | Once, on the `test` job as `&swift-image`. The `build` job reuses it as `*swift-image` |
+| `justfiles/apple-container.just` | The image `stack-test` runs in. Update it by hand |
 
 ## Dockerfile targets
 

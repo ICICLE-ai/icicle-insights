@@ -35,7 +35,7 @@ runner or a mirror refreshing its cache.
 
 | Part | Technology |
 |---|---|
-| API and collectors | Swift 6.3, Vapor 4, Fluent |
+| API and collectors | Swift 6.4, Vapor 4, Fluent |
 | Storage | PostgreSQL 18 |
 | Job queue and rate limits | Valkey 9 (any Redis-protocol server) |
 | Dashboard | SvelteKit (Svelte 5), Tailwind 4, shadcn-svelte, built with Deno |

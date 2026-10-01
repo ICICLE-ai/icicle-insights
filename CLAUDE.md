@@ -1,6 +1,6 @@
 # ICICLE Insights: working notes
 
-A Swift 6.3 and Vapor 4 service that collects usage metrics for ICICLE's open-source work into
+A Swift 6.4 and Vapor 4 service that collects usage metrics for ICICLE's open-source work into
 PostgreSQL. Jobs run on Valkey queues. A SvelteKit dashboard in `web/` is built with Deno and served
 by the same process.
 
