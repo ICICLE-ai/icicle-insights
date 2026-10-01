@@ -4,6 +4,61 @@
  */
 
 export interface paths {
+	'/api/accounts': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** List accounts */
+		get: operations['getApiAccounts'];
+		put?: never;
+		/** Create account */
+		post: operations['postApiAccounts'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/resources/{resourceID}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Get resource by ID */
+		get: operations['getApiResourcesByResourceID'];
+		put?: never;
+		post?: never;
+		/** Delete resource */
+		delete: operations['deleteApiResourcesByResourceID'];
+		options?: never;
+		head?: never;
+		/** Update resource */
+		patch: operations['patchApiResourcesByResourceID'];
+		trace?: never;
+	};
+	'/api/admins': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** List admins */
+		get: operations['getApiAdmins'];
+		put?: never;
+		/** Grant admin access */
+		post: operations['postApiAdmins'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/admin/failures': {
 		parameters: {
 			query?: never;
@@ -21,58 +76,21 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/admin/watermarks': {
+	'/api/resources/{resourceID}/collect': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		/** List metric watermarks */
-		get: operations['getApiAdminWatermarks'];
+		get?: never;
 		put?: never;
-		post?: never;
+		/** Collect resource now */
+		post: operations['postApiResourcesByResourceIDCollect'];
 		delete?: never;
 		options?: never;
 		head?: never;
 		patch?: never;
-		trace?: never;
-	};
-	'/api/metrics': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** List metrics */
-		get: operations['getApiMetrics'];
-		put?: never;
-		/** Create metric */
-		post: operations['postApiMetrics'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/releases/{releaseID}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** Get release by ID */
-		get: operations['getApiReleasesByReleaseID'];
-		put?: never;
-		post?: never;
-		/** Delete release */
-		delete: operations['deleteApiReleasesByReleaseID'];
-		options?: never;
-		head?: never;
-		/** Update release */
-		patch: operations['patchApiReleasesByReleaseID'];
 		trace?: never;
 	};
 	'/api/accounts/{accountID}': {
@@ -94,7 +112,61 @@ export interface paths {
 		patch: operations['patchApiAccountsByAccountID'];
 		trace?: never;
 	};
-	'/api/admins/{adminID}': {
+	'/api/insights/summary': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Totals and daily series for every metric type in scope */
+		get: operations['getApiInsightsSummary'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/resources': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** List resources */
+		get: operations['getApiResources'];
+		put?: never;
+		/** Create resource */
+		post: operations['postApiResources'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/metrics/{metricID}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Get metric by ID */
+		get: operations['getApiMetricsByMetricID'];
+		put?: never;
+		post?: never;
+		/** Delete metric */
+		delete: operations['deleteApiMetricsByMetricID'];
+		options?: never;
+		head?: never;
+		/** Update metric */
+		patch: operations['patchApiMetricsByMetricID'];
+		trace?: never;
+	};
+	'/api/service-tokens/rotate-key': {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -103,9 +175,9 @@ export interface paths {
 		};
 		get?: never;
 		put?: never;
-		post?: never;
-		/** Revoke admin access */
-		delete: operations['deleteApiAdminsByAdminID'];
+		/** Rotate the signing key */
+		post: operations['postApiService-tokensRotate-key'];
+		delete?: never;
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -147,55 +219,69 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/metrics/{metricID}': {
+	'/api/insights/resources': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		/** Get metric by ID */
-		get: operations['getApiMetricsByMetricID'];
+		/** Resources ranked by one metric, with their figures and a sparkline */
+		get: operations['getApiInsightsResources'];
 		put?: never;
 		post?: never;
-		/** Delete metric */
-		delete: operations['deleteApiMetricsByMetricID'];
-		options?: never;
-		head?: never;
-		/** Update metric */
-		patch: operations['patchApiMetricsByMetricID'];
-		trace?: never;
-	};
-	'/api/resources': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** List resources */
-		get: operations['getApiResources'];
-		put?: never;
-		/** Create resource */
-		post: operations['postApiResources'];
 		delete?: never;
 		options?: never;
 		head?: never;
 		patch?: never;
 		trace?: never;
 	};
-	'/api/vaults': {
+	'/api/admin/watermarks': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		/** List vaults */
-		get: operations['getApiVaults'];
+		/** List metric watermarks */
+		get: operations['getApiAdminWatermarks'];
 		put?: never;
-		/** Create vault */
-		post: operations['postApiVaults'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/insights/series': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** One metric type's history, by day or week, whole or by platform */
+		get: operations['getApiInsightsSeries'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/metrics': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** List metrics */
+		get: operations['getApiMetrics'];
+		put?: never;
+		/** Create metric */
+		post: operations['postApiMetrics'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -220,77 +306,6 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/admin/queues': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** Inspect queue and scheduler health */
-		get: operations['getApiAdminQueues'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/resources/{resourceID}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** Get resource by ID */
-		get: operations['getApiResourcesByResourceID'];
-		put?: never;
-		post?: never;
-		/** Delete resource */
-		delete: operations['deleteApiResourcesByResourceID'];
-		options?: never;
-		head?: never;
-		/** Update resource */
-		patch: operations['patchApiResourcesByResourceID'];
-		trace?: never;
-	};
-	'/api/service-tokens/rotate-key': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Rotate the signing key */
-		post: operations['postApiService-tokensRotate-key'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/accounts': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** List accounts */
-		get: operations['getApiAccounts'];
-		put?: never;
-		/** Create account */
-		post: operations['postApiAccounts'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
 	'/api/resources/{resourceID}/metrics': {
 		parameters: {
 			query?: never;
@@ -308,17 +323,17 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/resources/{resourceID}/collect': {
+	'/api/admin/queues': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		get?: never;
+		/** Inspect queue and scheduler health */
+		get: operations['getApiAdminQueues'];
 		put?: never;
-		/** Collect resource now */
-		post: operations['postApiResourcesByResourceIDCollect'];
+		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -343,47 +358,143 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/admins': {
+	'/api/admins/{adminID}': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		/** List admins */
-		get: operations['getApiAdmins'];
+		get?: never;
 		put?: never;
-		/** Grant admin access */
-		post: operations['postApiAdmins'];
+		post?: never;
+		/** Revoke admin access */
+		delete: operations['deleteApiAdminsByAdminID'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/vaults': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** List vaults */
+		get: operations['getApiVaults'];
+		put?: never;
+		/** Create vault */
+		post: operations['postApiVaults'];
 		delete?: never;
 		options?: never;
 		head?: never;
 		patch?: never;
 		trace?: never;
 	};
+	'/api/releases/{releaseID}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Get release by ID */
+		get: operations['getApiReleasesByReleaseID'];
+		put?: never;
+		post?: never;
+		/** Delete release */
+		delete: operations['deleteApiReleasesByReleaseID'];
+		options?: never;
+		head?: never;
+		/** Update release */
+		patch: operations['patchApiReleasesByReleaseID'];
+		trace?: never;
+	};
 }
 export type webhooks = Record<string, never>;
 export interface components {
 	schemas: {
-		AccountPublic: {
-			/** Format: int64 */
-			followers?: number | null;
-			resources?: components['schemas']['ResourcePublic'][] | null;
-			/** Format: uuid */
-			id?: string | null;
-			vault?: components['schemas']['VaultPublic'];
-			platform?: components['schemas']['Platform'];
+		ServiceTokenControllerRotatedKey: {
+			message: string;
+			activeKid: string;
+		};
+		ResourceUpdate: {
 			name?: string | null;
-			/** Format: date-time */
-			deletedAt?: string | null;
+			/** Format: int64 */
+			collectionIntervalDays?: number | null;
+			type?: components['schemas']['ResourceType'];
+		};
+		VaultPublic: {
+			name?: string | null;
+			/** Format: uuid */
+			accountID?: string | null;
 			/** Format: date-time */
 			createdAt?: string | null;
 			/** Format: date-time */
 			updatedAt?: string | null;
+			/** Format: date-time */
+			expiresAt?: string | null;
+			/** Format: uuid */
+			id?: string | null;
 		};
-		VaultUpdate: {
+		InsightsResourcePage: {
+			/** Format: int64 */
+			total: number;
+			rows: components['schemas']['InsightResourceRow'][];
+		};
+		VaultCreate: {
+			/** Format: uuid */
+			accountID: string;
 			token: string;
 			expires: components['schemas']['VaultExpires'];
+		};
+		JobFailureInsight: {
+			/** Format: uuid */
+			resourceID?: string | null;
+			job: string;
+			severity: string;
+			details: string;
+			/** Format: uuid */
+			id?: string | null;
+			subject: string;
+			/** Format: uuid */
+			accountID?: string | null;
+			identifier: string;
+			/** Format: date-time */
+			failedAt: string;
+		};
+		AccountPublic: {
+			/** Format: date-time */
+			deletedAt?: string | null;
+			platform?: components['schemas']['Platform'];
+			/** Format: int64 */
+			followers?: number | null;
+			/** Format: date-time */
+			createdAt?: string | null;
+			vault?: components['schemas']['VaultPublic'];
+			name?: string | null;
+			resources?: components['schemas']['ResourcePublic'][] | null;
+			/** Format: date-time */
+			updatedAt?: string | null;
+			/** Format: uuid */
+			id?: string | null;
+		};
+		VaultExpires: {
+			/** Format: int64 */
+			year: number;
+			/** Format: int64 */
+			month: number;
+			/** Format: int64 */
+			day: number;
+		};
+		ServiceTokenCreate: {
+			/** Format: uuid */
+			resourceID: string;
+			label: string;
+			/** Format: int64 */
+			expiresInDays?: number | null;
 		};
 		/** @enum {string} */
 		MetricType:
@@ -402,219 +513,245 @@ export interface components {
 			| 'downloadsAllTime'
 			| 'pullsAllTime'
 			| 'viewsAllTime';
-		JobFailureInsight: {
-			identifier: string;
-			job: string;
-			severity: string;
-			details: string;
-			/** Format: uuid */
-			accountID?: string | null;
-			/** Format: uuid */
-			resourceID?: string | null;
-			/** Format: uuid */
-			id?: string | null;
-			subject: string;
-			/** Format: date-time */
-			failedAt: string;
+		AdminCreate: {
+			username: string;
 		};
-		MetricPublic: {
-			/** Format: double */
-			reading?: number | null;
-			type?: components['schemas']['MetricType'];
-			/** Format: uuid */
-			id?: string | null;
-			/** Format: uuid */
-			resourceID?: string | null;
+		InsightsSummary: {
+			tiles: components['schemas']['InsightTile'][];
+			from: string;
 			/** Format: date-time */
-			recordedAt?: string | null;
+			generatedAt: string;
+			to: string;
 		};
-		ServiceTokenCreate: {
+		ReleaseCreate: {
+			version: string;
+			/** Format: int64 */
+			year: number;
 			/** Format: uuid */
 			resourceID: string;
 			/** Format: int64 */
-			expiresInDays?: number | null;
-			label: string;
+			month: number;
 		};
 		/** @enum {string} */
-		ResourceType:
-			'agent' | 'container' | 'dataset' | 'model' | 'package' | 'repository' | 'service';
-		ReleaseUpdate: {
+		InsightGrouping: 'none' | 'platform';
+		PatraCardPublic: {
+			/** Format: date-time */
+			updatedAt?: string | null;
+			keywords?: string[] | null;
+			gated?: boolean | null;
 			/** Format: int64 */
-			year?: number | null;
+			publicationYear?: number | null;
+			framework?: string | null;
+			uuid: string;
+			modelType?: string | null;
+			inputType?: string | null;
 			version?: string | null;
-			/** Format: int64 */
-			month?: number | null;
+			size?: string | null;
+			author?: string | null;
+			sourceURL?: string | null;
+			description?: string | null;
+			license?: string | null;
+			/** Format: double */
+			accuracy?: number | null;
+			kind: components['schemas']['PatraCardKind'];
+			format?: string | null;
+			category?: string | null;
 		};
-		VaultExpires: {
-			/** Format: int64 */
-			year: number;
-			/** Format: int64 */
-			day: number;
-			/** Format: int64 */
-			month: number;
+		MetricCreate: {
+			/** Format: uuid */
+			resourceID: string;
+			/** Format: double */
+			reading: number;
+			type: components['schemas']['MetricType'];
 		};
 		MetricCreateForResource: {
 			/** Format: double */
 			reading: number;
 			type: components['schemas']['MetricType'];
 		};
-		QueueInsight: {
+		WatermarkInsight: {
 			/** Format: date-time */
-			schedulerLastSeenAt?: string | null;
+			countedThrough: string;
+			/** Format: uuid */
+			resourceID: string;
+			/** Format: date-time */
+			updatedAt?: string | null;
+			resourceName: string;
+			type: components['schemas']['MetricType'];
+			/** Format: uuid */
+			id?: string | null;
+		};
+		InsightPoint: {
+			/** Format: double */
+			v: number;
+			t: string;
+		};
+		ReleaseUpdate: {
+			version?: string | null;
+			/** Format: int64 */
+			year?: number | null;
+			/** Format: int64 */
+			month?: number | null;
+		};
+		VaultUpdate: {
+			token: string;
+			expires: components['schemas']['VaultExpires'];
+		};
+		ResourceCreate: {
+			name: string;
+			/** Format: uuid */
+			accountID: string;
+			/** Format: int64 */
+			collectionIntervalDays?: number | null;
+			type: components['schemas']['ResourceType'];
+		};
+		QueueInsight: {
+			schedulerState: string;
+			queue: string;
 			/** Format: int64 */
 			processing: number;
 			/** Format: int64 */
 			pending: number;
-			schedulerState: string;
-			queue: string;
+			/** Format: date-time */
+			schedulerLastSeenAt?: string | null;
 		};
-		ReleaseCreate: {
-			/** Format: int64 */
-			year: number;
-			/** Format: uuid */
-			resourceID: string;
-			version: string;
-			/** Format: int64 */
-			month: number;
-		};
+		/** @enum {string} */
+		InsightKind: 'lifetime' | 'window' | 'gauge';
 		MetricUpdate: {
 			/** Format: double */
 			reading?: number | null;
 			type?: components['schemas']['MetricType'];
 		};
-		AccountUpdate: {
-			/** Format: int64 */
-			followers?: number | null;
-		};
-		WatermarkInsight: {
-			/** Format: date-time */
-			updatedAt?: string | null;
-			/** Format: uuid */
-			resourceID: string;
-			resourceName: string;
-			/** Format: uuid */
-			id?: string | null;
-			/** Format: date-time */
-			countedThrough: string;
-			type: components['schemas']['MetricType'];
-		};
-		MetricCreate: {
-			/** Format: double */
-			reading: number;
-			/** Format: uuid */
-			resourceID: string;
-			type: components['schemas']['MetricType'];
-		};
-		ResourceUpdate: {
-			/** Format: int64 */
-			collectionIntervalDays?: number | null;
-			name?: string | null;
-			type?: components['schemas']['ResourceType'];
-		};
-		AdminCreate: {
-			username: string;
-		};
-		ResourcePublic: {
-			/** Format: int64 */
-			collectionIntervalDays?: number | null;
-			/** Format: date-time */
-			updatedAt?: string | null;
-			/** Format: uuid */
-			accountID?: string | null;
-			releases?: components['schemas']['ReleasePublic'][] | null;
-			/** Format: uuid */
-			id?: string | null;
-			links?: components['schemas']['ResourceResourceLink'][] | null;
-			/** Format: date-time */
-			createdAt?: string | null;
-			name?: string | null;
-			metrics?: components['schemas']['MetricPublic'][] | null;
-			/** Format: date-time */
-			deletedAt?: string | null;
-			/** Format: date-time */
-			nextCollectionAt?: string | null;
-			type?: components['schemas']['ResourceType'];
-		};
 		ServiceTokenPublic: {
 			/** Format: date-time */
-			createdAt?: string | null;
+			revokedAt?: string | null;
 			/** Format: uuid */
 			resourceID?: string | null;
-			/** Format: uuid */
-			id?: string | null;
 			/** Format: date-time */
-			expiresAt?: string | null;
+			createdAt?: string | null;
 			/** Format: uuid */
 			jti?: string | null;
 			/** Format: date-time */
-			revokedAt?: string | null;
+			expiresAt?: string | null;
+			/** Format: uuid */
+			id?: string | null;
 			label?: string | null;
 		};
-		ResourceResourceLink: {
-			platform?: components['schemas']['Platform'];
-			/** Format: uuid */
-			id?: string | null;
-			name?: string | null;
-		};
-		ReleasePublic: {
-			/** Format: uuid */
-			id?: string | null;
-			version?: string | null;
+		MetricPublic: {
+			/** Format: date-time */
+			recordedAt?: string | null;
 			/** Format: uuid */
 			resourceID?: string | null;
-			/** Format: date-time */
-			releasedAt?: string | null;
-		};
-		VaultCreate: {
+			/** Format: double */
+			reading?: number | null;
+			type?: components['schemas']['MetricType'];
 			/** Format: uuid */
-			accountID: string;
-			token: string;
-			expires: components['schemas']['VaultExpires'];
+			id?: string | null;
 		};
-		VaultPublic: {
+		InsightResourceRow: {
+			atStart: {
+				[key: string]: number;
+			};
+			name: string;
+			latest: {
+				[key: string]: number;
+			};
+			kind: components['schemas']['ResourceType'];
+			/** Format: uuid */
+			id: string;
+			account: string;
+			platform: components['schemas']['Platform'];
+			spark: components['schemas']['InsightPoint'][];
+			/** Format: date-time */
+			lastCollectedAt?: string | null;
+		};
+		InsightTile: {
+			series: components['schemas']['InsightPoint'][];
+			kind: components['schemas']['InsightKind'];
+			type: components['schemas']['MetricType'];
+			/** Format: double */
+			current: number;
+			/** Format: double */
+			atStart?: number | null;
+		};
+		/** @enum {string} */
+		InsightBucket: 'day' | 'week';
+		ResourcePublic: {
 			/** Format: date-time */
 			updatedAt?: string | null;
 			/** Format: uuid */
 			accountID?: string | null;
 			/** Format: date-time */
-			expiresAt?: string | null;
-			/** Format: date-time */
-			createdAt?: string | null;
-			/** Format: uuid */
-			id?: string | null;
-			name?: string | null;
-		};
-		AdminPublic: {
-			username?: string | null;
-			/** Format: date-time */
-			createdAt?: string | null;
-			addedBy?: string | null;
-			/** Format: uuid */
-			id?: string | null;
-			isRoot?: boolean | null;
-		};
-		AccountCreate: {
-			name: string;
-			platform: components['schemas']['Platform'];
-		};
-		ResourceCreate: {
-			/** Format: uuid */
-			accountID: string;
+			deletedAt?: string | null;
+			card?: components['schemas']['PatraCardPublic'];
+			type?: components['schemas']['ResourceType'];
 			/** Format: int64 */
 			collectionIntervalDays?: number | null;
-			name: string;
-			type: components['schemas']['ResourceType'];
+			metrics?: components['schemas']['MetricPublic'][] | null;
+			links?: components['schemas']['ResourceResourceLink'][] | null;
+			/** Format: date-time */
+			createdAt?: string | null;
+			releases?: components['schemas']['ReleasePublic'][] | null;
+			name?: string | null;
+			/** Format: date-time */
+			nextCollectionAt?: string | null;
+			/** Format: uuid */
+			id?: string | null;
 		};
-		/** @enum {string} */
-		Platform: 'github' | 'ghcr' | 'huggingface' | 'npm' | 'pypi' | 'patra';
-		ServiceTokenControllerRotatedKey: {
-			activeKid: string;
-			message: string;
+		ResourceResourceLink: {
+			platform?: components['schemas']['Platform'];
+			name?: string | null;
+			/** Format: uuid */
+			id?: string | null;
+		};
+		AccountUpdate: {
+			/** Format: int64 */
+			followers?: number | null;
 		};
 		ServiceTokenMinted: {
 			token: string;
 			endpoint: string;
 			serviceToken: components['schemas']['ServiceTokenPublic'];
+		};
+		AdminPublic: {
+			/** Format: date-time */
+			createdAt?: string | null;
+			isRoot?: boolean | null;
+			addedBy?: string | null;
+			username?: string | null;
+			/** Format: uuid */
+			id?: string | null;
+		};
+		/** @enum {string} */
+		PatraCardKind: 'model' | 'datasheet';
+		InsightsSeries: {
+			bucket: components['schemas']['InsightBucket'];
+			type: components['schemas']['MetricType'];
+			groups: components['schemas']['InsightSeriesGroup'][];
+		};
+		/** @enum {string} */
+		Platform: 'github' | 'ghcr' | 'huggingface' | 'npm' | 'pypi' | 'patra';
+		AccountCreate: {
+			name: string;
+			platform: components['schemas']['Platform'];
+		};
+		/** @enum {string} */
+		ResourceType:
+			'agent' | 'container' | 'dataset' | 'model' | 'package' | 'repository' | 'service';
+		/** @enum {string} */
+		InsightOrder: 'asc' | 'desc';
+		ReleasePublic: {
+			/** Format: uuid */
+			resourceID?: string | null;
+			version?: string | null;
+			/** Format: date-time */
+			releasedAt?: string | null;
+			/** Format: uuid */
+			id?: string | null;
+		};
+		InsightSeriesGroup: {
+			points: components['schemas']['InsightPoint'][];
+			key: string;
 		};
 	};
 	responses: never;
@@ -625,6 +762,154 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+	getApiAccounts: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description OK */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['AccountPublic'][];
+				};
+			};
+		};
+	};
+	postApiAccounts: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AccountCreate'];
+			};
+		};
+		responses: {
+			/** @description Created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['AccountPublic'];
+				};
+			};
+		};
+	};
+	getApiResourcesByResourceID: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				resourceID: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description OK */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ResourcePublic'];
+				};
+			};
+		};
+	};
+	deleteApiResourcesByResourceID: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				resourceID: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: never;
+	};
+	patchApiResourcesByResourceID: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				resourceID: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ResourceUpdate'];
+			};
+		};
+		responses: {
+			/** @description OK */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ResourcePublic'];
+				};
+			};
+		};
+	};
+	getApiAdmins: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description OK */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['AdminPublic'][];
+				};
+			};
+		};
+	};
+	postApiAdmins: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AdminCreate'];
+			};
+		};
+		responses: {
+			/** @description Created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['AdminPublic'];
+				};
+			};
+		};
+	};
 	getApiAdminFailures: {
 		parameters: {
 			query?: never;
@@ -645,130 +930,24 @@ export interface operations {
 			};
 		};
 	};
-	getApiAdminWatermarks: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['WatermarkInsight'][];
-				};
-			};
-		};
-	};
-	getApiMetrics: {
-		parameters: {
-			query?: {
-				resourceID?: string | null;
-				type?: components['schemas']['MetricType'];
-				limit?: number | null;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['MetricPublic'][];
-				};
-			};
-		};
-	};
-	postApiMetrics: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['MetricCreate'];
-			};
-		};
-		responses: {
-			/** @description Created */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['MetricPublic'];
-				};
-			};
-		};
-	};
-	getApiReleasesByReleaseID: {
+	postApiResourcesByResourceIDCollect: {
 		parameters: {
 			query?: never;
 			header?: never;
 			path: {
-				releaseID: string;
+				resourceID: string;
 			};
 			cookie?: never;
 		};
 		requestBody?: never;
 		responses: {
-			/** @description OK */
-			200: {
+			/** @description Accepted */
+			202: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ReleasePublic'];
-				};
-			};
-		};
-	};
-	deleteApiReleasesByReleaseID: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				releaseID: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: never;
-	};
-	patchApiReleasesByReleaseID: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				releaseID: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['ReleaseUpdate'];
-			};
-		};
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ReleasePublic'];
+					'application/json': components['schemas']['ResourcePublic'];
 				};
 			};
 		};
@@ -833,17 +1012,154 @@ export interface operations {
 			};
 		};
 	};
-	deleteApiAdminsByAdminID: {
+	getApiInsightsSummary: {
+		parameters: {
+			query?: {
+				from?: string | null;
+				to?: string | null;
+				platform?: components['schemas']['Platform'];
+				resourceID?: string | null;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description OK */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['InsightsSummary'];
+				};
+			};
+		};
+	};
+	getApiResources: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description OK */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ResourcePublic'][];
+				};
+			};
+		};
+	};
+	postApiResources: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ResourceCreate'];
+			};
+		};
+		responses: {
+			/** @description Created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ResourcePublic'];
+				};
+			};
+		};
+	};
+	getApiMetricsByMetricID: {
 		parameters: {
 			query?: never;
 			header?: never;
 			path: {
-				adminID: string;
+				metricID: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description OK */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['MetricPublic'];
+				};
+			};
+		};
+	};
+	deleteApiMetricsByMetricID: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				metricID: string;
 			};
 			cookie?: never;
 		};
 		requestBody?: never;
 		responses: never;
+	};
+	patchApiMetricsByMetricID: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				metricID: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['MetricUpdate'];
+			};
+		};
+		responses: {
+			/** @description OK */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['MetricPublic'];
+				};
+			};
+		};
+	};
+	'postApiService-tokensRotate-key': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description OK */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ServiceTokenControllerRotatedKey'];
+				};
+			};
+		};
 	};
 	getApiVaultsByVaultID: {
 		parameters: {
@@ -927,13 +1243,21 @@ export interface operations {
 			};
 		};
 	};
-	getApiMetricsByMetricID: {
+	getApiInsightsResources: {
 		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				metricID: string;
+			query?: {
+				from?: string | null;
+				to?: string | null;
+				platform?: components['schemas']['Platform'];
+				resourceID?: string | null;
+				sort?: components['schemas']['MetricType'];
+				order?: components['schemas']['InsightOrder'];
+				limit?: number | null;
+				offset?: number | null;
+				kind?: components['schemas']['ResourceType'];
 			};
+			header?: never;
+			path?: never;
 			cookie?: never;
 		};
 		requestBody?: never;
@@ -944,50 +1268,12 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['MetricPublic'];
+					'application/json': components['schemas']['InsightsResourcePage'];
 				};
 			};
 		};
 	};
-	deleteApiMetricsByMetricID: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				metricID: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: never;
-	};
-	patchApiMetricsByMetricID: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				metricID: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['MetricUpdate'];
-			};
-		};
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['MetricPublic'];
-				};
-			};
-		};
-	};
-	getApiResources: {
+	getApiAdminWatermarks: {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -1002,12 +1288,64 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ResourcePublic'][];
+					'application/json': components['schemas']['WatermarkInsight'][];
 				};
 			};
 		};
 	};
-	postApiResources: {
+	getApiInsightsSeries: {
+		parameters: {
+			query?: {
+				from?: string | null;
+				to?: string | null;
+				platform?: components['schemas']['Platform'];
+				resourceID?: string | null;
+				type?: components['schemas']['MetricType'];
+				bucket?: components['schemas']['InsightBucket'];
+				groupBy?: components['schemas']['InsightGrouping'];
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description OK */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['InsightsSeries'];
+				};
+			};
+		};
+	};
+	getApiMetrics: {
+		parameters: {
+			query?: {
+				resourceID?: string | null;
+				type?: components['schemas']['MetricType'];
+				limit?: number | null;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description OK */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['MetricPublic'][];
+				};
+			};
+		};
+	};
+	postApiMetrics: {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -1016,7 +1354,7 @@ export interface operations {
 		};
 		requestBody: {
 			content: {
-				'application/json': components['schemas']['ResourceCreate'];
+				'application/json': components['schemas']['MetricCreate'];
 			};
 		};
 		responses: {
@@ -1026,51 +1364,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ResourcePublic'];
-				};
-			};
-		};
-	};
-	getApiVaults: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['VaultPublic'][];
-				};
-			};
-		};
-	};
-	postApiVaults: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['VaultCreate'];
-			};
-		};
-		responses: {
-			/** @description Created */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['VaultPublic'];
+					'application/json': components['schemas']['MetricPublic'];
 				};
 			};
 		};
@@ -1119,150 +1413,6 @@ export interface operations {
 			};
 		};
 	};
-	getApiAdminQueues: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['QueueInsight'];
-				};
-			};
-		};
-	};
-	getApiResourcesByResourceID: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				resourceID: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ResourcePublic'];
-				};
-			};
-		};
-	};
-	deleteApiResourcesByResourceID: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				resourceID: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: never;
-	};
-	patchApiResourcesByResourceID: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				resourceID: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['ResourceUpdate'];
-			};
-		};
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ResourcePublic'];
-				};
-			};
-		};
-	};
-	'postApiService-tokensRotate-key': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ServiceTokenControllerRotatedKey'];
-				};
-			};
-		};
-	};
-	getApiAccounts: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['AccountPublic'][];
-				};
-			};
-		};
-	};
-	postApiAccounts: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['AccountCreate'];
-			};
-		};
-		responses: {
-			/** @description Created */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['AccountPublic'];
-				};
-			};
-		};
-	};
 	postApiResourcesByResourceIDMetrics: {
 		parameters: {
 			query?: never;
@@ -1289,24 +1439,22 @@ export interface operations {
 			};
 		};
 	};
-	postApiResourcesByResourceIDCollect: {
+	getApiAdminQueues: {
 		parameters: {
 			query?: never;
 			header?: never;
-			path: {
-				resourceID: string;
-			};
+			path?: never;
 			cookie?: never;
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Accepted */
-			202: {
+			/** @description OK */
+			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ResourcePublic'];
+					'application/json': components['schemas']['QueueInsight'];
 				};
 			};
 		};
@@ -1355,7 +1503,19 @@ export interface operations {
 			};
 		};
 	};
-	getApiAdmins: {
+	deleteApiAdminsByAdminID: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				adminID: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: never;
+	};
+	getApiVaults: {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -1370,12 +1530,12 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['AdminPublic'][];
+					'application/json': components['schemas']['VaultPublic'][];
 				};
 			};
 		};
 	};
-	postApiAdmins: {
+	postApiVaults: {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -1384,7 +1544,7 @@ export interface operations {
 		};
 		requestBody: {
 			content: {
-				'application/json': components['schemas']['AdminCreate'];
+				'application/json': components['schemas']['VaultCreate'];
 			};
 		};
 		responses: {
@@ -1394,7 +1554,67 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['AdminPublic'];
+					'application/json': components['schemas']['VaultPublic'];
+				};
+			};
+		};
+	};
+	getApiReleasesByReleaseID: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				releaseID: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description OK */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ReleasePublic'];
+				};
+			};
+		};
+	};
+	deleteApiReleasesByReleaseID: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				releaseID: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: never;
+	};
+	patchApiReleasesByReleaseID: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				releaseID: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReleaseUpdate'];
+			};
+		};
+		responses: {
+			/** @description OK */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ReleasePublic'];
 				};
 			};
 		};
