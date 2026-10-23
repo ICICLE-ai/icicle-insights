@@ -45,6 +45,8 @@ export const adminApi = {
 	recentMetrics: (limit = 100) => api<Metric[]>('/metrics', { query: { limit } }),
 	queues: () => api<QueueInsight>('/admin/queues'),
 	failures: (limit = 50) => api<JobFailureInsight[]>('/admin/failures', { query: { limit } }),
+	dismissFailure: (id: string) => api<void>(`/admin/failures/${id}`, { method: 'DELETE' }),
+	clearFailures: () => api<void>('/admin/failures', { method: 'DELETE' }),
 	watermarks: () => api<WatermarkInsight[]>('/admin/watermarks'),
 
 	createAccount: (body: { name: string; platform: Platform }) =>

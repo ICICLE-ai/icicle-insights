@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { toast } from 'svelte-sonner';
+	import ConfirmAction from '$lib/components/admin/confirm-action.svelte';
 	import { CircleAlert, CircleCheck, TriangleAlert, RefreshCw } from '@lucide/svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
@@ -38,6 +40,22 @@
 		}
 	);
 	let expanded = $state<string | null>(null);
+	let clearing = $state(false);
+	let dismissing = $state<string | null>(null);
+
+	async function dismissFailure(id: string) {
+		dismissing = id;
+		try {
+			await adminApi.dismissFailure(id);
+			if (expanded === id) expanded = null;
+			toast.success('Failure dismissed');
+			data.refresh();
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'Could not dismiss failure.');
+		} finally {
+			dismissing = null;
+		}
+	}
 </script>
 
 <div class="flex flex-col gap-6">
@@ -96,9 +114,19 @@
 		<Card.Root>
 			<Card.Header>
 				<Card.Title>Recent failures</Card.Title>
+				<Card.Action>
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => (clearing = true)}
+						disabled={!failures.length || data.loading || dismissing !== null}
+					>
+						Clear all
+					</Button>
+				</Card.Action>
 				<Card.Description>
 					Collections and backups that exhausted their retries, newest first. Critical ones need a
-					person, usually a token.
+					person, usually a token. Showing up to 50; dismiss failures once resolved.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>
@@ -107,16 +135,17 @@
 						<CircleCheck class="size-4 text-gain" /> No failures recorded.
 					</p>
 				{:else}
-					<div class="overflow-x-auto rounded-lg border">
+					<div class="max-h-96 overflow-auto rounded-lg border">
 						<table class="w-full min-w-[640px] text-sm">
 							<caption class="sr-only">Recent job failures</caption>
-							<thead class="bg-muted/50 text-xs text-muted-foreground">
+							<thead class="sticky top-0 bg-muted text-xs text-muted-foreground">
 								<tr>
 									<th scope="col" class="px-3 py-2 text-left font-medium">Severity</th>
 									<th scope="col" class="px-3 py-2 text-left font-medium">Subject</th>
 									<th scope="col" class="px-3 py-2 text-left font-medium">Job</th>
 									<th scope="col" class="px-3 py-2 text-left font-medium">Cause</th>
 									<th scope="col" class="px-3 py-2 text-right font-medium">When</th>
+									<th scope="col" class="px-3 py-2 text-right font-medium">Action</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -159,6 +188,17 @@
 											class="px-3 py-2 text-right text-xs whitespace-nowrap text-muted-foreground"
 											title={formatDate(failure.failedAt)}>{formatRelative(failure.failedAt)}</td
 										>
+										<td class="px-3 py-2 text-right">
+											<Button
+												variant="ghost"
+												size="sm"
+												disabled={!failure.id || dismissing !== null || data.loading}
+												aria-label={`Dismiss failure for ${failure.subject}`}
+												onclick={() => failure.id && dismissFailure(failure.id)}
+											>
+												{dismissing === failure.id ? 'Dismissing…' : 'Dismiss'}
+											</Button>
+										</td>
 									</tr>
 								{/each}
 							</tbody>
@@ -206,3 +246,16 @@
 		</Card.Root>
 	{/if}
 </div>
+
+<ConfirmAction
+	bind:open={clearing}
+	title="Clear all failures?"
+	description="Permanently remove all recorded failures, including older entries outside the 50 shown here. New failures will still appear."
+	confirmLabel="Clear all failures"
+	onconfirm={async () => {
+		await adminApi.clearFailures();
+		expanded = null;
+		toast.success('All failures cleared');
+		data.refresh();
+	}}
+/>

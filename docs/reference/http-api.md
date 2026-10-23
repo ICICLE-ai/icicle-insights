@@ -81,6 +81,8 @@ A recorded, corrected or deleted reading of a windowed type also moves its lifet
 | POST | `/api/service-tokens/rotate-key` | Admin | Returns the new `activeKid` |
 | GET | `/api/admin/queues` | Admin | Queue depth and scheduler heartbeat |
 | GET | `/api/admin/failures` | Admin | `limit` (1–200, default 50) |
+| DELETE | `/api/admin/failures/:failureID` | Admin | Permanently dismiss one failure |
+| DELETE | `/api/admin/failures` | Admin | Permanently clear all recorded failures |
 | GET | `/api/admin/watermarks` | Admin | |
 
 ## Outside `/api`

@@ -4,15 +4,15 @@ How the dashboard in `web/` is built and why. For developers changing it.
 
 ## A static app served by the API
 
-The dashboard is a SvelteKit application compiled to static files. There is no Node or Deno server
+The dashboard is a SvelteKit application compiled to static files. There is no Node or Bun server
 in production. The Swift API serves the files from `Public/` and answers every unknown non-API path
 with `index.html`, so deep links work.
 
 Everything on screen comes from the API at request time, so there is nothing to prerender. Serving
 from the same origin also means no CORS setup, and one image to deploy.
 
-Deno runs the toolchain: installing packages, the Vite dev server, type checks, tests and the build.
-Packages are pinned by `deno.lock` and installed with `--frozen` in CI and in the Docker build.
+Bun runs the toolchain: installing packages, the Vite dev server, type checks, tests and the build.
+Packages are pinned by `bun.lock` and installed with `--frozen-lockfile` in CI and in the Docker build.
 
 ## Figures are totalled on the server
 

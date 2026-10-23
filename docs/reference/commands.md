@@ -56,7 +56,7 @@ Run `just` with no arguments to list them. They load `.env` automatically.
 
 | Recipe | Runs |
 |---|---|
-| `just web-install` | `deno install --frozen` in `web/` |
+| `just web-install` | `bun install --frozen-lockfile` in `web/` |
 | `just web` | Dev server on port 5174 |
 | `just web-check` | Type checks |
 | `just web-test` | Unit tests |

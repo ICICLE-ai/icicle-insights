@@ -56,6 +56,12 @@ own.
 | Slack, `SLACK_WEBHOOK_URL_WARNINGS` | Warnings, when set |
 | `job_failures` table | Every exhausted failure, for the console |
 
+The console shows the 50 newest failures in a table with a fixed maximum height. Use **Dismiss**
+on a resolved row to permanently remove that record, or **Clear all** to remove the entire failure
+log after confirmation, including older entries outside the displayed 50. These actions require an
+administrator. They do not change collection scheduling or alert deduplication; new failures still
+appear.
+
 Without either webhook, alerts go to the log only.
 
 ## Alert format

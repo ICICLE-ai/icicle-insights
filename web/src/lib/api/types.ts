@@ -2,7 +2,7 @@ import type { components } from './schema';
 
 /**
  * Names for the API's own schemas. `schema.d.ts` is generated from `/openapi.json` by
- * `deno task api:types` — never edit it by hand, regenerate it after a server change.
+ * `bun run api:types` — never edit it by hand, regenerate it after a server change.
  */
 type Schemas = components['schemas'];
 

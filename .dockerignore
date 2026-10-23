@@ -1,4 +1,4 @@
-# Frontend dependency and build state. The Deno stage installs from package.json and deno.lock
+# Frontend dependency and build state. The Bun stage installs from package.json and bun.lock
 # inside the image; a host node_modules would be the wrong platform's binaries and megabytes of
 # context.
 web/node_modules/

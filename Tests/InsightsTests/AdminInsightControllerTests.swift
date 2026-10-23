@@ -140,4 +140,75 @@ struct AdminInsightControllerTests {
       )
     }
   }
+
+  @Test
+  func `Admins can dismiss one failure without removing other failures`() async throws {
+    try await withInsightsApp { app in
+      let failure = JobFailure(
+        job: "BackupDatabase", subject: "Database", identifier: "backup_failed",
+        details: "Upload failed", severity: "warning"
+      )
+      let other = JobFailure(
+        job: "BackupDatabase", subject: "Database", identifier: "backup_failed",
+        details: "Another failure", severity: "warning"
+      )
+      try await failure.create(on: app.db)
+      try await other.create(on: app.db)
+      let path = "api/admin/failures/\(try failure.requireID())"
+
+      try await app.testing().test(
+        .DELETE, path, headers: app.adminAuth,
+        afterResponse: { response async throws in
+          #expect(response.status == .noContent)
+        }
+      )
+      #expect(try await JobFailure.find(failure.id, on: app.db) == nil)
+      #expect(try await JobFailure.find(other.id, on: app.db) != nil)
+      try await app.testing().test(
+        .DELETE, path, headers: app.adminAuth,
+        afterResponse: { response async throws in
+          #expect(response.status == .notFound)
+        }
+      )
+    }
+  }
+
+  @Test
+  func `Clearing failures is admin only and removes entries beyond the display limit`() async throws
+  {
+    try await withInsightsApp { app in
+      for index in 0..<51 {
+        try await JobFailure(
+          job: "BackupDatabase", subject: "Database", identifier: "backup_failed",
+          details: "Failure \(index)", severity: "warning"
+        ).create(on: app.db)
+      }
+      let failure = try #require(try await JobFailure.query(on: app.db).first())
+      for path in ["api/admin/failures", "api/admin/failures/\(try failure.requireID())"] {
+        try await app.testing().test(
+          .DELETE, path, headers: app.userAuth,
+          afterResponse: { response async throws in
+            #expect(response.status == .forbidden)
+          }
+        )
+        try await app.testing().test(
+          .DELETE, path,
+          afterResponse: { response async throws in
+            #expect(response.status == .unauthorized)
+          }
+        )
+      }
+      #expect(try await JobFailure.query(on: app.db).count() == 51)
+      for _ in 0..<2 {
+        try await app.testing().test(
+          .DELETE, "api/admin/failures", headers: app.adminAuth,
+          afterResponse: { response async throws in
+            #expect(response.status == .noContent)
+          }
+        )
+        #expect(try await JobFailure.query(on: app.db).count() == 0)
+      }
+    }
+  }
+
 }

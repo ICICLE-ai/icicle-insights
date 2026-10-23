@@ -12,15 +12,15 @@
 # Frontend build image
 # ================================
 # Debian rather than Alpine: Vite's bundler and Tailwind load native bindings, and the glibc
-# builds are the ones every platform in deno.lock is known to have.
-FROM denoland/deno:debian-2.9.7 AS frontend-build
+# builds are the ones every platform in bun.lock is known to have.
+FROM oven/bun:1.4.4-debian AS frontend-build
 
 WORKDIR /web
 
-# Dependency metadata first so source edits do not invalidate the install layer. `--frozen`
-# fails the build if deno.lock would change, rather than resolving something new at image time.
-COPY web/package.json web/deno.lock ./
-RUN deno install --frozen
+# Dependency metadata first so source edits do not invalidate the install layer. `--frozen-lockfile`
+# fails the build if bun.lock would change, rather than resolving something new at image time.
+COPY web/package.json web/bun.lock ./
+RUN bun install --frozen-lockfile
 
 COPY web/ ./
 
@@ -29,7 +29,7 @@ COPY web/ ./
 # docs/how-to/embed-in-tapisui.md.
 ARG VITE_TRUSTED_PARENT_ORIGINS=https://icicleai.tapis.io
 ENV VITE_TRUSTED_PARENT_ORIGINS=$VITE_TRUSTED_PARENT_ORIGINS
-RUN deno task build
+RUN bun run build
 
 # ================================
 # Server build image

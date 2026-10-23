@@ -213,21 +213,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The same Deno the Dockerfile's `frontend-build` stage uses. `cache` keeps Deno's download
-      # cache between runs, keyed on deno.lock.
-      - uses: denoland/setup-deno@v2
+      # Match the Dockerfile's frontend build runtime.
+      - uses: oven-sh/setup-bun@v2
         with:
-          deno-version: 2.9.7
-          cache: true
+          bun-version: 1.4.4
 
-      # `--frozen` fails on a lockfile that would change, rather than resolving something new in CI.
-      - run: deno install --frozen
+      # `--frozen-lockfile` fails on a lockfile that would change, rather than resolving something new in CI.
+      - run: bun install --frozen-lockfile
 
       # Type-check and unit-test before building: the Angular job only ever built, so a broken
       # test there never failed a run.
-      - run: deno task check
-      - run: deno task test
-      - run: deno task build
+      - run: bun run check
+      - run: bun run test
+      - run: bun run build
 
       # adapter-static writes the finished site to build/; Vapor serves it from Public/ as-is.
       - name: Package
