@@ -7,7 +7,7 @@ about 30 minutes, most of it for the first Swift build.
 ## What you need
 
 - macOS or Linux with Swift 6.4 (`swift --version`)
-- [Deno](https://deno.com) 2.9 and [just](https://just.systems)
+- [Bun](https://bun.sh) 1.4.4 and [just](https://just.systems)
 - Docker with Compose, or Apple Container on macOS 26
 - A Tapis account on the **staging** tenant, `icicleai.staging.tapis.io`, and a token for it
 

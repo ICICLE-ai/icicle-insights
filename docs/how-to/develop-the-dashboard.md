@@ -5,14 +5,14 @@ How to run, check and build the SvelteKit dashboard in `web/`, for developers. T
 
 ## Before you start
 
-- [Deno](https://deno.com) 2.9. CI and the Dockerfile use 2.9.7.
+- [Bun](https://bun.sh) 1.4.4 (matching CI and Docker).
 - The API running on port 8080, from `just run`. See
   [Run Insights locally](../tutorials/run-insights-locally.md).
 
 ## Run it
 
 ```bash
-just web-install   # deno install --frozen, exactly as deno.lock records
+just web-install   # bun install --frozen-lockfile, exactly as bun.lock records
 just web           # http://localhost:5174
 ```
 
@@ -48,7 +48,7 @@ Screens import types from `$lib/api/types`, which re-exports the generated schem
 
 ```bash
 cd web
-deno run -A npm:shadcn-svelte@1.7.0 add tooltip
+bunx --bun shadcn-svelte@1.7.0 add tooltip
 ```
 
 Components land in `src/lib/components/ui/`. The style settings are in `web/components.json`.
@@ -57,11 +57,11 @@ Components land in `src/lib/components/ui/`. The style settings are in `web/comp
 
 ```bash
 cd web
-deno add -D npm:some-package
+bun add -D some-package
 ```
 
 Everything the dashboard uses is a dev dependency, because the build output is static. Commit both
-`package.json` and `deno.lock`. The Docker build runs `deno install --frozen` and fails if the lock
+`package.json` and `bun.lock`. The Docker build runs `bun install --frozen-lockfile` and fails if the lock
 file is stale.
 
 #icicle-insights# #How-To# #Developer#

@@ -6,7 +6,7 @@ import VaporToOpenAPI
 
 import struct Foundation.Date
 
-/// Read-only operational projections for the administration console.
+/// Operational projections and failure log management for the administration console.
 struct AdminInsightController: RouteCollection {
   func boot(routes: any RoutesBuilder) throws {
     let insights = routes.grouped("admin").grouped(Require.admin)
@@ -30,6 +30,20 @@ struct AdminInsightController: RouteCollection {
         tags: "Admin Insights",
         summary: "List recent collection failures",
         response: .type([JobFailureInsight].self),
+        auth: .bearer()
+      )
+    insights.delete("failures", ":failureID", use: dismissFailure)
+      .openAPI(
+        tags: "Admin Insights",
+        summary: "Dismiss a recorded failure",
+        statusCode: 204,
+        auth: .bearer()
+      )
+    insights.delete("failures", use: clearFailures)
+      .openAPI(
+        tags: "Admin Insights",
+        summary: "Clear all recorded failures",
+        statusCode: 204,
         auth: .bearer()
       )
   }
@@ -107,5 +121,22 @@ struct AdminInsightController: RouteCollection {
       .limit(limit)
       .all()
       .map { $0.toInsight() }
+  }
+
+  @Sendable
+  func dismissFailure(request: Request) async throws -> HTTPStatus {
+    guard
+      let failure = try await JobFailure.find(request.parameters.get("failureID"), on: request.db)
+    else {
+      throw Abort(.notFound)
+    }
+    try await failure.delete(on: request.db)
+    return .noContent
+  }
+
+  @Sendable
+  func clearFailures(request: Request) async throws -> HTTPStatus {
+    try await JobFailure.query(on: request.db).delete()
+    return .noContent
   }
 }

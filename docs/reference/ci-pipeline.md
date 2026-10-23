@@ -22,7 +22,7 @@ finish.
 |---|---|---|
 | `test` | `swift:6.4-noble`, with PostgreSQL 18 and Valkey 9 services | `swift build --build-tests`, then `swift test --no-parallel` against a `test` database |
 | `build` | The same image as `test` | Release build of `Insights`, statically linked with jemalloc. Uploads the binary as `server` |
-| `web` | Ubuntu with Deno 2.9.7 | `deno install --frozen`, `deno task check`, `deno task test`, `deno task build`. Uploads the site as `web` |
+| `web` | Ubuntu with Bun 1.4.4 | `bun install --frozen-lockfile`, `bun run check`, `bun run test`, `bun run build`. Uploads the site as `web` |
 | `image` | Ubuntu with Buildx | Unpacks both artifacts and builds the Dockerfile's `prebuilt` target. Pushes except on pull requests |
 | `release` | Ubuntu | Tags only. Publishes `icicle-insights-linux-amd64.tar.gz` |
 
@@ -43,7 +43,7 @@ finish.
 |---|---|---|
 | Debug `.build` | `swift-debug-<os>-<Swift version>-<Package.resolved hash>-<Sources and Tests hash>` | The same resolved packages, then any debug build from the same Swift version |
 | Release `.build` | `swift-release-<os>-<Swift version>-<Package.resolved hash>-<Sources hash>` | The same resolved packages, then any release build from the same Swift version |
-| Deno | `deno.lock` | Managed by `setup-deno` |
+| Bun | `bun.lock` | Frozen installs; no separate dependency cache |
 | Docker layers | GitHub Actions cache | `cache-from` and `cache-to` `type=gha` |
 
 Swift caches are saved right after building, before tests run, so a failing test does not throw

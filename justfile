@@ -48,38 +48,38 @@ fmt-check:
     swift-format lint -r -p Sources Tests Package.swift
 
 # ---------------------------------------------------------------------------
-# Dashboard (SvelteKit, run with Deno, in web/)
+# Dashboard (SvelteKit, run with Bun, in web/)
 # ---------------------------------------------------------------------------
 
-# Install dashboard dependencies exactly as deno.lock records them.
+# Install dashboard dependencies exactly as bun.lock records them.
 [group('web')]
 web-install:
-    deno install --frozen --cwd web
+    bun install --cwd web --frozen-lockfile
 
 # Serve the dashboard on http://localhost:5174, proxying /api to port 8080.
 [group('web')]
 web:
-    deno task --cwd web dev
+    bun run --cwd web dev
 
 # Type-check the dashboard.
 [group('web')]
 web-check:
-    deno task --cwd web check
+    bun run --cwd web check
 
 # Run the dashboard unit tests.
 [group('web')]
 web-test:
-    deno task --cwd web test
+    bun run --cwd web test
 
 # Build the static dashboard into web/build.
 [group('web')]
 web-build:
-    deno task --cwd web build
+    bun run --cwd web build
 
 # Regenerate web/src/lib/api/schema.d.ts from the running API's OpenAPI document.
 [group('web')]
 web-types:
-    deno task --cwd web api:types
+    bun run --cwd web api:types
 
 # ---------------------------------------------------------------------------
 # Operator commands
