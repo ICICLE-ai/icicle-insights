@@ -102,7 +102,12 @@
 	{#if facts.length}
 		<ul class="flex flex-wrap gap-1.5" aria-label="Details">
 			{#each facts as fact (fact)}
-				<li class="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">{fact}</li>
+				<li
+					class="max-w-full truncate rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground"
+					title={fact}
+				>
+					{fact}
+				</li>
 			{/each}
 		</ul>
 	{/if}
@@ -139,7 +144,9 @@
 			<p class="text-muted-foreground">No usage figures collected yet.</p>
 		{/if}
 		{#if elsewhere.length}
-			<p class="relative z-10 flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+			<p
+				class="relative z-10 flex max-h-24 flex-wrap items-center gap-x-3 gap-y-1 overflow-auto text-muted-foreground"
+			>
 				<span>Also on</span>
 				{#each elsewhere as node (node.id)}
 					<a

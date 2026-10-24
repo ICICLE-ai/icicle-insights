@@ -36,7 +36,7 @@
 <div class="flex flex-col gap-5">
 	<ul class="flex flex-col gap-2.5" aria-label="Resources by kind">
 		{#each kinds as [kind, count] (kind)}
-			<li class="grid grid-cols-[6.5rem_1fr_2.5rem] items-center gap-3 text-sm">
+			<li class="grid grid-cols-[minmax(0,6.5rem)_minmax(0,1fr)_auto] items-center gap-3 text-sm">
 				<span class="truncate">{kindPlural(kind)}</span>
 				<span class="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
 					<span

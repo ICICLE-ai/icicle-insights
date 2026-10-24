@@ -1,4 +1,6 @@
 <script lang="ts">
+	import PagedCollection from '$lib/components/paged-collection.svelte';
+	import TableViewport from '$lib/components/table-viewport.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import LoadError from '$lib/components/load-error.svelte';
@@ -60,52 +62,61 @@
 				'link'
 			)}
 		</p>
-		<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-			{#each data.data.clusters as cluster (cluster.hub.id)}
-				<Card.Root class="gap-3 py-4">
-					<Card.Content class="flex flex-col gap-3 px-4">
-						<a
-							href={href(cluster.hub)}
-							class="-mx-2 flex flex-col gap-1 rounded-lg border-l-[3px] px-3 py-1.5 hover:bg-muted/50"
-							style="border-left-color:{platformColor(cluster.hub.platform)}"
-						>
-							<span class="leading-snug font-medium">{cluster.hub.name}</span>
-							<span class="text-xs text-muted-foreground"
-								><PlatformDot platform={cluster.hub.platform} /></span
-							>
-						</a>
-						<div class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-							Also registered as
-						</div>
-						<ul class="flex flex-col gap-1.5">
-							{#each cluster.others as other (other.id)}
-								<li>
-									<a
-										href={href(other)}
-										class="-mx-2 flex items-center justify-between gap-3 rounded-lg border-l-[3px] px-3 py-1 text-sm hover:bg-muted/50"
-										style="border-left-color:{platformColor(other.platform)}"
+		<PagedCollection items={data.data.clusters} label="Artifacts">
+			{#snippet children(visible)}
+				<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+					{#each visible as cluster (cluster.hub.id)}
+						<Card.Root class="gap-3 py-4">
+							<Card.Content class="flex flex-col gap-3 px-4">
+								<a
+									href={href(cluster.hub)}
+									class="-mx-2 flex flex-col gap-1 rounded-lg border-l-[3px] px-3 py-1.5 hover:bg-muted/50"
+									style="border-left-color:{platformColor(cluster.hub.platform)}"
+								>
+									<span class="leading-snug font-medium [overflow-wrap:anywhere]"
+										>{cluster.hub.name}</span
 									>
-										<span class="truncate">{other.name}</span>
-										<span class="shrink-0 text-xs text-muted-foreground"
-											>{platformLabel(other.platform)}</span
-										>
-									</a>
-								</li>
-							{/each}
-						</ul>
-					</Card.Content>
-				</Card.Root>
-			{/each}
-		</div>
+									<span class="text-xs text-muted-foreground"
+										><PlatformDot platform={cluster.hub.platform} /></span
+									>
+								</a>
+								<div class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+									Also registered as
+								</div>
+								<ul
+									aria-label="Other registry entries"
+									class="flex max-h-48 flex-col gap-1.5 overflow-auto"
+								>
+									{#each cluster.others as other (other.id)}
+										<li>
+											<a
+												href={href(other)}
+												class="-mx-2 flex items-center justify-between gap-3 rounded-lg border-l-[3px] px-3 py-1 text-sm hover:bg-muted/50"
+												style="border-left-color:{platformColor(other.platform)}"
+											>
+												<span class="truncate">{other.name}</span>
+												<span class="shrink-0 text-xs text-muted-foreground"
+													>{platformLabel(other.platform)}</span
+												>
+											</a>
+										</li>
+									{/each}
+								</ul>
+							</Card.Content>
+						</Card.Root>
+					{/each}
+				</div>
+			{/snippet}
+		</PagedCollection>
 
 		<details class="text-sm">
 			<summary class="cursor-pointer text-xs text-muted-foreground hover:text-foreground"
 				>Show every link as a table</summary
 			>
-			<div class="mt-2 overflow-x-auto rounded-lg border">
+			<TableViewport label="Every recorded cross-registry link" class="mt-2">
 				<table class="w-full text-sm">
 					<caption class="sr-only">Every recorded cross-registry link</caption>
-					<thead class="bg-muted/50 text-xs text-muted-foreground">
+					<thead class="bg-muted text-xs text-muted-foreground">
 						<tr
 							><th scope="col" class="px-3 py-2 text-left font-medium">Recorded by</th><th
 								scope="col"
@@ -116,12 +127,12 @@
 					<tbody>
 						{#each data.data.links as link (`${link.from.id}-${link.to.id}`)}
 							<tr class="border-t">
-								<td class="px-3 py-1.5"
+								<td class="max-w-64 px-3 py-1.5 [overflow-wrap:anywhere]"
 									>{link.from.name}
 									<span class="text-muted-foreground">({platformLabel(link.from.platform)})</span
 									></td
 								>
-								<td class="px-3 py-1.5"
+								<td class="max-w-64 px-3 py-1.5 [overflow-wrap:anywhere]"
 									>{link.to.name}
 									<span class="text-muted-foreground">({platformLabel(link.to.platform)})</span></td
 								>
@@ -129,7 +140,7 @@
 						{/each}
 					</tbody>
 				</table>
-			</div>
+			</TableViewport>
 		</details>
 	{/if}
 </div>

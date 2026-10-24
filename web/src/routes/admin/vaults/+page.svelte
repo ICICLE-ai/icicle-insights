@@ -1,4 +1,5 @@
 <script lang="ts">
+	import TableViewport from '$lib/components/table-viewport.svelte';
 	import { toast } from 'svelte-sonner';
 	import { CircleAlert, Plus, TriangleAlert } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -91,10 +92,10 @@
 	{:else if !data.data}
 		<Skeleton class="h-48 rounded-xl" />
 	{:else}
-		<div class="overflow-x-auto rounded-xl border bg-card">
+		<TableViewport label="Stored platform credentials" class="rounded-xl bg-card">
 			<table class="w-full min-w-[560px] text-sm">
 				<caption class="sr-only">Stored platform credentials</caption>
-				<thead class="bg-muted/50 text-xs text-muted-foreground">
+				<thead class="bg-muted text-xs text-muted-foreground">
 					<tr>
 						<th scope="col" class="px-4 py-2 text-left font-medium">Account</th>
 						<th scope="col" class="px-4 py-2 text-left font-medium">Secret name</th>
@@ -109,12 +110,16 @@
 						<tr class="border-t">
 							<td class="px-4 py-2"
 								><span class="flex items-center gap-2 font-medium"
-									>{owner?.name}<span class="font-normal text-muted-foreground"
+									><span class="max-w-48 truncate" title={owner?.name}>{owner?.name}</span><span
+										class="font-normal text-muted-foreground"
 										><PlatformDot platform={owner?.platform} /></span
 									></span
 								></td
 							>
-							<td class="px-4 py-2 font-mono text-xs text-muted-foreground">{vault.name}</td>
+							<td
+								class="max-w-64 truncate px-4 py-2 font-mono text-xs text-muted-foreground"
+								title={vault.name}>{vault.name}</td
+							>
 							<td class="px-4 py-2">
 								<span
 									class="flex items-center gap-1.5 {expiry === 'expired'
@@ -155,7 +160,7 @@
 					{/each}
 				</tbody>
 			</table>
-		</div>
+		</TableViewport>
 	{/if}
 </div>
 

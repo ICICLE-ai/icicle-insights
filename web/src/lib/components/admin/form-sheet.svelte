@@ -61,13 +61,13 @@
 </script>
 
 <Sheet.Root bind:open>
-	<Sheet.Content class="w-full sm:max-w-md">
-		<form onsubmit={submit} class="flex h-full flex-col" novalidate>
-			<Sheet.Header>
+	<Sheet.Content class="data-[side=right]:w-full sm:data-[side=right]:max-w-md">
+		<form onsubmit={submit} class="flex min-h-0 flex-1 flex-col" novalidate>
+			<Sheet.Header class="shrink-0">
 				<Sheet.Title>{title}</Sheet.Title>
 				{#if description}<Sheet.Description>{description}</Sheet.Description>{/if}
 			</Sheet.Header>
-			<div class="flex flex-1 flex-col gap-4 overflow-y-auto px-4">
+			<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4">
 				{@render children()}
 				{#if error}
 					<p
@@ -78,7 +78,7 @@
 					</p>
 				{/if}
 			</div>
-			<Sheet.Footer class="flex-row justify-end gap-2">
+			<Sheet.Footer class="shrink-0 flex-row justify-end gap-2">
 				<Button variant="outline" type="button" onclick={() => (open = false)}>Cancel</Button>
 				<Button
 					type="submit"

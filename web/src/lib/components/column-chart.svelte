@@ -1,4 +1,5 @@
 <script lang="ts">
+	import TableViewport from '$lib/components/table-viewport.svelte';
 	import { scaleBand, scaleLinear } from 'd3-scale';
 	import { whole } from '$lib/format';
 
@@ -54,9 +55,9 @@
 	const activeDatum = $derived(data.find((d) => d.key === active) ?? null);
 </script>
 
-<div class="flex flex-col gap-2">
-	<div class="relative" bind:clientWidth={width}>
-		<svg {width} {height} role="img" aria-label={label} class="block">
+<div class="flex min-w-0 flex-col gap-2">
+	<div class="relative w-full min-w-0" bind:clientWidth={width}>
+		<svg {width} {height} role="img" aria-label={label} class="block max-w-full">
 			{#each y.ticks(4) as tick (tick)}
 				<line
 					x1={MARGIN.left}
@@ -105,7 +106,7 @@
 		{#if activeDatum}
 			{@const cx = (x(activeDatum.key) ?? 0) + x.bandwidth() / 2}
 			<div
-				class="pointer-events-none absolute z-10 rounded-md border bg-popover px-2 py-1 text-xs shadow-md"
+				class="pointer-events-none absolute z-10 max-w-full rounded-md border bg-popover px-2 py-1 text-xs shadow-md"
 				style="left:{Math.min(width - 110, Math.max(0, cx - 50))}px; top:{Math.max(
 					0,
 					y(activeDatum.value) - 44
@@ -127,18 +128,20 @@
 			{showTable ? 'Hide data table' : 'Show data table'}
 		</button>
 		{#if showTable}
-			<table class="numeric mt-2 w-full max-w-sm text-xs">
-				<caption class="sr-only">{label}</caption>
-				<tbody>
-					{#each data as d (d.key)}
-						<tr class="border-t"
-							><th scope="row" class="py-1 text-left font-normal">{d.label}</th><td
-								class="py-1 text-right">{whole(d.value)}</td
-							></tr
-						>
-					{/each}
-				</tbody>
-			</table>
+			<TableViewport {label} class="mt-2 max-h-72 max-w-sm border-0">
+				<table class="numeric w-full text-xs">
+					<caption class="sr-only">{label}</caption>
+					<tbody>
+						{#each data as d (d.key)}
+							<tr class="border-t"
+								><th scope="row" class="py-1 text-left font-normal">{d.label}</th><td
+									class="py-1 text-right">{whole(d.value)}</td
+								></tr
+							>
+						{/each}
+					</tbody>
+				</table>
+			</TableViewport>
 		{/if}
 	</div>
 </div>

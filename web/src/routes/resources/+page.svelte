@@ -92,7 +92,7 @@
 						{/each}
 					</ToggleGroup.Root>
 					{#if data.data.available.length}
-						<div class="ml-auto flex items-center gap-2 text-sm">
+						<div class="ml-auto flex flex-wrap items-center gap-2 text-sm">
 							<span class="text-xs text-muted-foreground">Change and trend in</span>
 							<Select.Root
 								type="single"

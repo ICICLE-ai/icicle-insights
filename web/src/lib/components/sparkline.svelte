@@ -41,7 +41,7 @@
 		viewBox="0 0 {width} {height}"
 		role="img"
 		aria-label={label}
-		class="block overflow-visible"
+		class="block max-w-full overflow-visible"
 	>
 		<path
 			d={path.d}
@@ -61,5 +61,5 @@
 		/>
 	</svg>
 {:else}
-	<div style="width:{width}px;height:{height}px" aria-hidden="true"></div>
+	<div class="max-w-full" style="width:{width}px;height:{height}px" aria-hidden="true"></div>
 {/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import TableViewport from '$lib/components/table-viewport.svelte';
 	import { Search } from '@lucide/svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
@@ -126,10 +127,10 @@
 						class="h-8 pl-8 text-sm"
 					/>
 				</div>
-				<div class="overflow-x-auto rounded-lg border">
+				<TableViewport label="Releases in the selected range, newest first">
 					<table class="w-full min-w-[560px] text-sm">
 						<caption class="sr-only">Releases in the selected range, newest first</caption>
-						<thead class="bg-muted/50 text-xs text-muted-foreground">
+						<thead class="bg-muted text-xs text-muted-foreground">
 							<tr>
 								<th scope="col" class="px-3 py-2 text-left font-medium">Resource</th>
 								<th scope="col" class="px-3 py-2 text-left font-medium">Version</th>
@@ -138,15 +139,17 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each shown.slice(0, 100) as release (release.id)}
+							{#each shown as release (release.id)}
 								<tr class="border-t hover:bg-muted/40">
-									<td class="px-3 py-2"
+									<td class="max-w-64 truncate px-3 py-2" title={release.resource}
 										><a
 											href={withScope(`/resources/${release.resourceID}`, ['range'])}
 											class="font-medium hover:underline">{release.resource}</a
 										></td
 									>
-									<td class="px-3 py-2 font-mono text-xs">{release.version}</td>
+									<td class="max-w-48 truncate px-3 py-2 font-mono text-xs" title={release.version}
+										>{release.version}</td
+									>
 									<td class="px-3 py-2"><PlatformDot platform={release.platform} /></td>
 									<td
 										class="px-3 py-2 text-right text-xs whitespace-nowrap text-muted-foreground"
@@ -162,7 +165,7 @@
 							{/each}
 						</tbody>
 					</table>
-				</div>
+				</TableViewport>
 			</Card.Content>
 		</Card.Root>
 	{/if}

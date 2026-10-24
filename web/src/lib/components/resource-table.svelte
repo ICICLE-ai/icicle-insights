@@ -1,4 +1,5 @@
 <script lang="ts">
+	import TableViewport from '$lib/components/table-viewport.svelte';
 	import {
 		columnFilteringFeature,
 		createFilteredRowModel,
@@ -118,7 +119,7 @@
 </script>
 
 <div class="flex flex-col gap-3">
-	<div class="flex items-center gap-2">
+	<div class="flex flex-wrap items-center gap-2">
 		<div class="relative w-full max-w-64">
 			<Search
 				class="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
@@ -141,10 +142,10 @@
 		</span>
 	</div>
 
-	<div class="overflow-x-auto rounded-lg border">
+	<TableViewport label={caption}>
 		<table class="w-full min-w-[720px] text-sm">
 			<caption class="sr-only">{caption}</caption>
-			<thead class="bg-muted/50">
+			<thead class="bg-muted">
 				{#each table.getHeaderGroups() as group (group.id)}
 					<tr>
 						{#each group.headers as header (header.id)}
@@ -236,10 +237,10 @@
 				{/each}
 			</tbody>
 		</table>
-	</div>
+	</TableViewport>
 
 	{#if table.getPageCount() > 1}
-		<div class="flex items-center justify-end gap-2 text-xs">
+		<div class="flex flex-wrap items-center justify-end gap-2 text-xs">
 			<span class="text-muted-foreground"
 				>Page {pagination.pageIndex + 1} of {table.getPageCount()}</span
 			>

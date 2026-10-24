@@ -1,4 +1,5 @@
 <script lang="ts">
+	import TableViewport from '$lib/components/table-viewport.svelte';
 	import { toast } from 'svelte-sonner';
 	import { Copy, KeyRound, Plus } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -64,7 +65,7 @@
 				effect on the next request.
 			</p>
 		</div>
-		<div class="flex gap-2">
+		<div class="flex flex-wrap gap-2">
 			<Button variant="outline" onclick={() => (rotateOpen = true)}
 				><KeyRound /> Rotate signing key</Button
 			>
@@ -91,10 +92,10 @@
 				one under Resources first.
 			</p>
 		{/if}
-		<div class="overflow-x-auto rounded-xl border bg-card">
+		<TableViewport label="Issued service tokens" class="rounded-xl bg-card">
 			<table class="w-full min-w-[600px] text-sm">
 				<caption class="sr-only">Issued service tokens</caption>
-				<thead class="bg-muted/50 text-xs text-muted-foreground">
+				<thead class="bg-muted text-xs text-muted-foreground">
 					<tr>
 						<th scope="col" class="px-4 py-2 text-left font-medium">Label</th>
 						<th scope="col" class="px-4 py-2 text-left font-medium">Service</th>
@@ -107,8 +108,12 @@
 					{#each data.data.tokens as token (token.id)}
 						{@const s = tokenStatus(token)}
 						<tr class="border-t">
-							<td class="px-4 py-2 font-medium">{token.label}</td>
-							<td class="px-4 py-2 text-muted-foreground"
+							<td class="max-w-64 truncate px-4 py-2 font-medium" title={token.label}
+								>{token.label}</td
+							>
+							<td
+								class="max-w-64 truncate px-4 py-2 text-muted-foreground"
+								title={data.data.names.get(token.resourceID?.toLowerCase() ?? '')}
 								>{data.data.names.get(token.resourceID?.toLowerCase() ?? '') ?? 'Unknown'}</td
 							>
 							<td class="px-4 py-2">
@@ -151,7 +156,7 @@
 					{/each}
 				</tbody>
 			</table>
-		</div>
+		</TableViewport>
 	{/if}
 </div>
 
@@ -206,7 +211,8 @@
 		{#if minted}
 			<div class="flex flex-col gap-3 text-sm">
 				<div class="flex items-start gap-2">
-					<code class="flex-1 rounded-md border bg-muted px-3 py-2 font-mono text-xs break-all"
+					<code
+						class="max-h-48 min-w-0 flex-1 overflow-auto rounded-md border bg-muted px-3 py-2 font-mono text-xs break-all"
 						>{minted.token}</code
 					>
 					<Button

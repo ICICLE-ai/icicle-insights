@@ -1,4 +1,5 @@
 <script lang="ts">
+	import TableViewport from '$lib/components/table-viewport.svelte';
 	import { toast } from 'svelte-sonner';
 	import { Plus, ShieldCheck } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -43,10 +44,10 @@
 	{:else if !data.data}
 		<Skeleton class="h-40 rounded-xl" />
 	{:else}
-		<div class="overflow-x-auto rounded-xl border bg-card">
+		<TableViewport label="Administrators" class="rounded-xl bg-card">
 			<table class="w-full min-w-[480px] text-sm">
 				<caption class="sr-only">Administrators</caption>
-				<thead class="bg-muted/50 text-xs text-muted-foreground">
+				<thead class="bg-muted text-xs text-muted-foreground">
 					<tr>
 						<th scope="col" class="px-4 py-2 text-left font-medium">Username</th>
 						<th scope="col" class="px-4 py-2 text-left font-medium">Added by</th>
@@ -59,7 +60,7 @@
 						<tr class="border-t">
 							<td class="px-4 py-2 font-medium">
 								<span class="flex items-center gap-2">
-									{admin.username}
+									<span class="max-w-48 truncate" title={admin.username}>{admin.username}</span>
 									{#if admin.isRoot}<span
 											class="inline-flex items-center gap-1 text-xs font-normal text-muted-foreground"
 											><ShieldCheck class="size-3.5" />Root</span
@@ -69,7 +70,7 @@
 										>{/if}
 								</span>
 							</td>
-							<td class="px-4 py-2 text-muted-foreground"
+							<td class="max-w-64 truncate px-4 py-2 text-muted-foreground" title={admin.addedBy}
 								>{admin.isRoot ? 'Deployment environment' : admin.addedBy}</td
 							>
 							<td class="px-4 py-2 text-right text-muted-foreground"
@@ -92,7 +93,7 @@
 					{/each}
 				</tbody>
 			</table>
-		</div>
+		</TableViewport>
 	{/if}
 </div>
 

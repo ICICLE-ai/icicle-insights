@@ -1,4 +1,5 @@
 <script lang="ts">
+	import TableViewport from '$lib/components/table-viewport.svelte';
 	import { toast } from 'svelte-sonner';
 	import { Plus, Search } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -132,10 +133,10 @@
 				class="h-8 pl-8"
 			/>
 		</div>
-		<div class="overflow-x-auto rounded-xl border bg-card">
+		<TableViewport label="Resources under collection" class="rounded-xl bg-card">
 			<table class="w-full min-w-[720px] text-sm">
 				<caption class="sr-only">Resources under collection</caption>
-				<thead class="bg-muted/50 text-xs text-muted-foreground">
+				<thead class="bg-muted text-xs text-muted-foreground">
 					<tr>
 						<th scope="col" class="px-4 py-2 text-left font-medium">Resource</th>
 						<th scope="col" class="px-4 py-2 text-left font-medium">Kind</th>
@@ -152,11 +153,14 @@
 							<td class="max-w-72 truncate px-4 py-2 font-medium" title={resource.name}
 								>{resource.name}</td
 							>
-							<td class="px-4 py-2 text-muted-foreground">{kindLabel(resource.type)}</td>
+							<td class="px-4 py-2 whitespace-nowrap text-muted-foreground"
+								>{kindLabel(resource.type)}</td
+							>
 							<td class="px-4 py-2"
 								><span class="flex items-center gap-2"
-									><PlatformDot platform={owner?.platform} /><span class="text-muted-foreground"
-										>{owner?.name}</span
+									><PlatformDot platform={owner?.platform} /><span
+										class="max-w-48 truncate text-muted-foreground"
+										title={owner?.name}>{owner?.name}</span
 									></span
 								></td
 							>
@@ -196,7 +200,7 @@
 					{/each}
 				</tbody>
 			</table>
-		</div>
+		</TableViewport>
 	{/if}
 </div>
 

@@ -27,7 +27,9 @@
 <Tooltip.Provider delayDuration={200}>
 	<div class="flex min-h-dvh flex-col">
 		<AppHeader {catalog} />
-		<main class="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">
+		<main
+			class="mx-auto w-full max-w-7xl min-w-0 flex-1 px-4 py-6 [overflow-wrap:anywhere] sm:px-6"
+		>
 			{@render children()}
 		</main>
 		<footer class="border-t text-muted-foreground">

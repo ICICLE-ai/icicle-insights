@@ -21,7 +21,7 @@
 
 {#snippet body()}
 	<span class="truncate text-xs text-muted-foreground">{label}</span>
-	<span class="flex items-baseline gap-2">
+	<span class="flex flex-wrap items-baseline gap-x-2">
 		<span class="text-2xl font-semibold tracking-tight" title={whole(tile.current)}
 			>{compact(tile.current)}</span
 		>

@@ -57,8 +57,8 @@
 <svelte:head><title>Administration · ICICLE Insights</title></svelte:head>
 
 {#if session.state.status === 'admin'}
-	<div class="grid gap-6 md:grid-cols-[13rem_1fr]">
-		<aside class="flex flex-col gap-4">
+	<div class="grid gap-6 md:grid-cols-[13rem_minmax(0,1fr)]">
+		<aside class="flex min-w-0 flex-col gap-4">
 			<nav aria-label="Administration" class="flex gap-1 overflow-x-auto md:flex-col">
 				{#each NAV as item (item.href)}
 					<a
