@@ -1,4 +1,5 @@
 <script lang="ts">
+	import TableViewport from '$lib/components/table-viewport.svelte';
 	import { toast } from 'svelte-sonner';
 	import { Plus } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -73,10 +74,10 @@
 	{:else if !data.data}
 		<Skeleton class="h-64 rounded-xl" />
 	{:else}
-		<div class="overflow-x-auto rounded-xl border bg-card">
+		<TableViewport label="Platform accounts" class="rounded-xl bg-card">
 			<table class="w-full min-w-[560px] text-sm">
 				<caption class="sr-only">Platform accounts</caption>
-				<thead class="bg-muted/50 text-xs text-muted-foreground">
+				<thead class="bg-muted text-xs text-muted-foreground">
 					<tr>
 						<th scope="col" class="px-4 py-2 text-left font-medium">Account</th>
 						<th scope="col" class="px-4 py-2 text-left font-medium">Platform</th>
@@ -90,7 +91,9 @@
 					{#each data.data.accounts as account (account.id)}
 						{@const id = account.id?.toLowerCase() ?? ''}
 						<tr class="border-t">
-							<td class="px-4 py-2 font-medium">{account.name}</td>
+							<td class="max-w-64 truncate px-4 py-2 font-medium" title={account.name}
+								>{account.name}</td
+							>
 							<td class="px-4 py-2"><PlatformDot platform={account.platform} /></td>
 							<td class="numeric px-4 py-2 text-right"
 								>{whole(data.data.resourceCount.get(id) ?? 0)}</td
@@ -122,7 +125,7 @@
 					{/each}
 				</tbody>
 			</table>
-		</div>
+		</TableViewport>
 	{/if}
 </div>
 

@@ -5,7 +5,7 @@
 	let { platform }: { platform: string | null | undefined } = $props();
 </script>
 
-<span class="inline-flex items-center gap-1.5">
+<span class="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap">
 	<span
 		class="inline-block size-2 shrink-0 rounded-full"
 		style="background:{platformColor(platform)}"

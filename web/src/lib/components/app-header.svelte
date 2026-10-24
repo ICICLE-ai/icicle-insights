@@ -36,7 +36,9 @@
 			<span>ICICLE Insights</span>
 		</a>
 		{#if !inAdmin}
-			<div class="order-last flex w-full items-center gap-2 sm:order-none sm:w-auto sm:flex-1">
+			<div
+				class="order-last flex w-full min-w-0 flex-wrap items-center gap-2 sm:order-none sm:w-auto sm:flex-1"
+			>
 				<ScopePicker {catalog} />
 				<RangePicker />
 			</div>
@@ -54,7 +56,7 @@
 			</Button>
 			<Button variant={inAdmin ? 'secondary' : 'ghost'} size="sm" href="/admin">
 				<ShieldCheck />
-				{auth.claims.username ?? 'Admin'}
+				<span class="max-w-32 truncate">{auth.claims.username ?? 'Admin'}</span>
 			</Button>
 		</div>
 	</div>

@@ -20,7 +20,7 @@
 	class="flex flex-col items-start gap-3 rounded-xl border bg-card p-5 text-sm sm:flex-row sm:items-center"
 >
 	<CircleAlert class="size-5 shrink-0 text-loss" />
-	<div class="flex-1">
+	<div class="min-w-0 flex-1 [overflow-wrap:anywhere]">
 		<p class="font-medium">Couldn't load this data.</p>
 		<p class="text-muted-foreground">
 			{message}

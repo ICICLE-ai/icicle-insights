@@ -1,4 +1,5 @@
 <script lang="ts">
+	import TableViewport from '$lib/components/table-viewport.svelte';
 	import { toast } from 'svelte-sonner';
 	import { Plus, Search } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -101,10 +102,10 @@
 				class="h-8 pl-8"
 			/>
 		</div>
-		<div class="overflow-x-auto rounded-xl border bg-card">
+		<TableViewport label="Recorded releases" class="rounded-xl bg-card">
 			<table class="w-full min-w-[520px] text-sm">
 				<caption class="sr-only">Recorded releases</caption>
-				<thead class="bg-muted/50 text-xs text-muted-foreground">
+				<thead class="bg-muted text-xs text-muted-foreground">
 					<tr>
 						<th scope="col" class="px-4 py-2 text-left font-medium">Resource</th>
 						<th scope="col" class="px-4 py-2 text-left font-medium">Version</th>
@@ -115,8 +116,12 @@
 				<tbody>
 					{#each rows as release (release.id)}
 						<tr class="border-t">
-							<td class="px-4 py-2 font-medium">{release.resourceName}</td>
-							<td class="px-4 py-2 font-mono text-xs">{release.version}</td>
+							<td class="max-w-64 truncate px-4 py-2 font-medium" title={release.resourceName}
+								>{release.resourceName}</td
+							>
+							<td class="max-w-48 truncate px-4 py-2 font-mono text-xs" title={release.version}
+								>{release.version}</td
+							>
 							<td class="px-4 py-2 text-right text-muted-foreground"
 								>{monthYear(release.releasedAt)}</td
 							>
@@ -143,7 +148,7 @@
 					{/each}
 				</tbody>
 			</table>
-		</div>
+		</TableViewport>
 	{/if}
 </div>
 

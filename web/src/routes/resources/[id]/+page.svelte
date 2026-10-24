@@ -258,10 +258,16 @@
 					</Card.Header>
 					{#if view.releases.length}
 						<Card.Content>
-							<ul class="divide-y text-sm">
-								{#each view.releases.slice(0, 12) as release (release.id)}
-									<li class="flex items-center justify-between py-1.5">
-										<span class="font-mono text-xs">{release.version}</span>
+							<!-- The release list scrolls independently and must be reachable by keyboard. -->
+							<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+							<ul
+								aria-label="Resource releases"
+								tabindex="0"
+								class="max-h-72 divide-y overflow-auto text-sm"
+							>
+								{#each view.releases as release (release.id)}
+									<li class="flex items-center justify-between gap-3 py-1.5">
+										<span class="min-w-0 font-mono text-xs">{release.version}</span>
 										<span class="text-xs text-muted-foreground"
 											>{formatDate(release.releasedAt)}</span
 										>
@@ -283,7 +289,10 @@
 					</Card.Header>
 					{#if view.linked.length}
 						<Card.Content>
-							<ul class="flex flex-col gap-2 text-sm">
+							<ul
+								aria-label="Other registry entries"
+								class="flex max-h-72 flex-col gap-2 overflow-auto text-sm"
+							>
 								{#each view.linked as link (link.id)}
 									<li class="flex items-center justify-between gap-3">
 										<a

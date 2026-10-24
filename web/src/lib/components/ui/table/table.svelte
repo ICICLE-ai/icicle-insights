@@ -1,4 +1,5 @@
 <script lang="ts">
+	import TableViewport from '$lib/components/table-viewport.svelte';
 	import { cn, type WithElementRef } from '$lib/utils.js';
 	import type { HTMLTableAttributes } from 'svelte/elements';
 
@@ -10,7 +11,11 @@
 	}: WithElementRef<HTMLTableAttributes> = $props();
 </script>
 
-<div data-slot="table-container" class="relative w-full overflow-x-auto">
+<TableViewport
+	label={restProps['aria-label'] ?? 'Data table'}
+	data-slot="table-container"
+	class="border-0"
+>
 	<table
 		bind:this={ref}
 		data-slot="table"
@@ -19,4 +24,4 @@
 	>
 		{@render children?.()}
 	</table>
-</div>
+</TableViewport>

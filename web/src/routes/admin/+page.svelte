@@ -1,4 +1,5 @@
 <script lang="ts">
+	import TableViewport from '$lib/components/table-viewport.svelte';
 	import { toast } from 'svelte-sonner';
 	import ConfirmAction from '$lib/components/admin/confirm-action.svelte';
 	import { CircleAlert, CircleCheck, TriangleAlert, RefreshCw } from '@lucide/svelte';
@@ -135,7 +136,7 @@
 						<CircleCheck class="size-4 text-gain" /> No failures recorded.
 					</p>
 				{:else}
-					<div class="max-h-96 overflow-auto rounded-lg border">
+					<TableViewport label="Recent job failures" class="max-h-[min(24rem,65dvh)]">
 						<table class="w-full min-w-[640px] text-sm">
 							<caption class="sr-only">Recent job failures</caption>
 							<thead class="sticky top-0 bg-muted text-xs text-muted-foreground">
@@ -165,8 +166,13 @@
 												{failure.severity}
 											</span>
 										</td>
-										<td class="px-3 py-2 font-medium">{failure.subject}</td>
-										<td class="px-3 py-2 text-muted-foreground">{failure.job}</td>
+										<td class="max-w-64 truncate px-3 py-2 font-medium" title={failure.subject}
+											>{failure.subject}</td
+										>
+										<td
+											class="max-w-48 truncate px-3 py-2 text-muted-foreground"
+											title={failure.job}>{failure.job}</td
+										>
 										<td class="px-3 py-2">
 											<button
 												type="button"
@@ -178,7 +184,7 @@
 											</button>
 											{#if expanded === key}
 												<p
-													class="mt-1 max-w-prose text-xs whitespace-pre-line text-muted-foreground"
+													class="mt-1 max-w-prose text-xs [overflow-wrap:anywhere] whitespace-pre-line text-muted-foreground"
 												>
 													{failure.details}
 												</p>
@@ -203,7 +209,7 @@
 								{/each}
 							</tbody>
 						</table>
-					</div>
+					</TableViewport>
 				{/if}
 			</Card.Content>
 		</Card.Root>
@@ -220,7 +226,10 @@
 				{#if watermarks.length === 0}
 					<p class="text-sm text-muted-foreground">No rolling metrics have been counted yet.</p>
 				{:else}
-					<div class="max-h-96 overflow-auto rounded-lg border">
+					<TableViewport
+						label="Watermarks per resource and metric"
+						class="max-h-[min(24rem,65dvh)]"
+					>
 						<table class="w-full text-sm">
 							<caption class="sr-only">Watermarks per resource and metric</caption>
 							<thead class="sticky top-0 bg-muted text-xs text-muted-foreground">
@@ -233,14 +242,16 @@
 							<tbody>
 								{#each [...watermarks].sort( (a, b) => a.countedThrough.localeCompare(b.countedThrough) ) as mark (mark.id ?? mark.resourceID + mark.type)}
 									<tr class="border-t">
-										<td class="px-3 py-1.5">{mark.resourceName}</td>
+										<td class="max-w-64 truncate px-3 py-1.5" title={mark.resourceName}
+											>{mark.resourceName}</td
+										>
 										<td class="px-3 py-1.5 text-muted-foreground">{metricLabel(mark.type)}</td>
 										<td class="px-3 py-1.5 text-right">{formatDate(mark.countedThrough)}</td>
 									</tr>
 								{/each}
 							</tbody>
 						</table>
-					</div>
+					</TableViewport>
 				{/if}
 			</Card.Content>
 		</Card.Root>

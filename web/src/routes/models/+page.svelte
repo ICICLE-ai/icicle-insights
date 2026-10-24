@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PagedCollection from '$lib/components/paged-collection.svelte';
 	import { page } from '$app/state';
 	import { Search } from '@lucide/svelte';
 	import { Input } from '$lib/components/ui/input';
@@ -253,20 +254,24 @@
 		{/if}
 
 		{#if shown.length}
-			<div
-				class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 {data.loading
-					? 'opacity-60 transition-opacity'
-					: 'transition-opacity'}"
-			>
-				{#each shown as m (m.id)}
-					<ModelCard
-						resource={m.resource}
-						platform={m.platform}
-						row={m.row}
-						elsewhere={m.elsewhere}
-					/>
-				{/each}
-			</div>
+			<PagedCollection items={shown} label={kind === 'model' ? 'Models' : 'Datasets'}>
+				{#snippet children(visible)}
+					<div
+						class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 {data.loading
+							? 'opacity-60 transition-opacity'
+							: 'transition-opacity'}"
+					>
+						{#each visible as m (m.id)}
+							<ModelCard
+								resource={m.resource}
+								platform={m.platform}
+								row={m.row}
+								elsewhere={m.elsewhere}
+							/>
+						{/each}
+					</div>
+				{/snippet}
+			</PagedCollection>
 		{:else}
 			<div class="rounded-xl border bg-card p-10 text-center text-sm text-muted-foreground">
 				{search || category

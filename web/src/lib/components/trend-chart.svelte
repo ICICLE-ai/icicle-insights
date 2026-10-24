@@ -10,6 +10,7 @@
 </script>
 
 <script lang="ts">
+	import TableViewport from '$lib/components/table-viewport.svelte';
 	import { scaleLinear, scaleUtc } from 'd3-scale';
 	import { compact, formatDate, formatShortDate, whole } from '$lib/format';
 
@@ -41,7 +42,7 @@
 	// soon as two would sit closer than a line of text, because nudging them apart detaches them
 	// from their lines; the legend and tooltip carry identity then.
 	const endLabels = $derived.by(() => {
-		if (drawn.length === 0 || drawn.length > 4) return [];
+		if (width < 480 || drawn.length === 0 || drawn.length > 4) return [];
 		return drawn.map((s) => ({ s, last: s.points[s.points.length - 1] }));
 	});
 
@@ -131,7 +132,7 @@
 	);
 </script>
 
-<div class="flex flex-col gap-3">
+<div class="flex min-w-0 flex-col gap-3">
 	{#if drawn.length > 1}
 		<ul class="flex flex-wrap gap-x-4 gap-y-1 text-xs" aria-label="Legend">
 			{#each drawn as s (s.key)}
@@ -143,7 +144,7 @@
 		</ul>
 	{/if}
 
-	<div class="relative" bind:clientWidth={width}>
+	<div class="relative w-full min-w-0" bind:clientWidth={width}>
 		{#if times.length === 0}
 			<div
 				class="flex items-center justify-center text-sm text-muted-foreground"
@@ -162,7 +163,7 @@
 				aria-roledescription="chart"
 				aria-label="{label}. Use the left and right arrow keys to read values by date."
 				tabindex="0"
-				class="block rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+				class="block max-w-full rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
 				onpointermove={(e) =>
 					(hover = nearestIndex(e.clientX, e.currentTarget.getBoundingClientRect()))}
 				onpointerleave={() => (hover = null)}
@@ -255,8 +256,11 @@
 			{#if hoverT !== null}
 				{@const left = xAt(hoverT)}
 				<div
-					class="pointer-events-none absolute top-2 z-10 min-w-36 rounded-lg border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md"
-					style={left > width / 2 ? `right:${width - left + 12}px` : `left:${left + 12}px`}
+					class="pointer-events-none absolute top-2 z-10 max-w-full rounded-lg border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md"
+					style="left:{Math.max(
+						0,
+						Math.min(width - Math.min(240, width), left + 12)
+					)}px; width:{Math.min(240, width)}px"
 					role="status"
 				>
 					<div class="mb-1 text-muted-foreground">{formatDate(hoverT)}</div>
@@ -284,10 +288,10 @@
 				{showTable ? 'Hide data table' : 'Show data table'}
 			</button>
 			{#if showTable}
-				<div class="mt-2 max-h-72 overflow-auto rounded-lg border">
+				<TableViewport {label} class="mt-2 max-h-72">
 					<table class="numeric w-full text-xs">
 						<caption class="sr-only">{label}</caption>
-						<thead class="sticky top-0 bg-muted/60">
+						<thead class="sticky top-0 bg-muted">
 							<tr>
 								<th scope="col" class="px-3 py-1.5 text-left font-medium">Date</th>
 								{#each drawn as s (s.key)}
@@ -306,7 +310,7 @@
 							{/each}
 						</tbody>
 					</table>
-				</div>
+				</TableViewport>
 			{/if}
 		</div>
 	{/if}
