@@ -13,7 +13,7 @@
 # ================================
 # Debian rather than Alpine: Vite's bundler and Tailwind load native bindings, and the glibc
 # builds are the ones every platform in bun.lock is known to have.
-FROM oven/bun:1.4.4-debian AS frontend-build
+FROM oven/bun:1.4.5-debian AS frontend-build
 
 WORKDIR /web
 
